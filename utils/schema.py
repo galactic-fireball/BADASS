@@ -149,7 +149,7 @@ DEFAULT_FIT_OPTIONS = {
     'fit_stat': {
         'type': 'string',
         'allowed': consts.FIT_STATS,
-        'default': 'RCHI2',
+        'default': 'ML',
     },
     # Number of consecutive basinhopping thresholds before solution achieved
     'n_basinhop': {
@@ -157,44 +157,10 @@ DEFAULT_FIT_OPTIONS = {
         'min': 0,
         'default': 5,
     },
+    # re-weight the noise after initial fit to achieve RCHI2 = 1
+    'reweighting': 'bool_true',
     # only test for outflows; stops after test
-    'test_outflows': 'bool_false',
-    'test_line': {
-        'type': 'dict',
-        'default': {},
-        'schema': {
-            'bool': 'bool_false',
-            'line': {
-                'type': ['string', 'list'],
-                'default': 'br_H_beta',
-            },
-            'cont_fit': 'bool_true',
-            'conf': {
-                'type': ['integer', 'float'],
-                'nullable': True,
-                'default': None
-            },
-            'f_conf': {
-                'type': ['integer', 'float'],
-                'nullable': True,
-                'default': 0.9,
-            },
-            'chi2_ratio': {
-                'type': ['integer', 'float'],
-                'nullable': True,
-                'default': None,
-            },
-            'ssr_ratio': {
-                'type': ['integer', 'float'],
-                'nullable': True,
-                'default': None,
-            },
-            'linetest_mask': {
-                'type': 'string',
-                'allowed': ['or', 'and'],
-            },
-        },
-    },
+    'test_lines': 'bool_false',
     # number of maximum likelihood iterations
     'max_like_niter': {
         'type': 'integer',
@@ -217,6 +183,37 @@ DEFAULT_FIT_OPTIONS = {
             },
         },
     },
+}
+
+
+# test_options
+DEFAULT_TEST_OPTIONS = {
+    'test_mode': {
+        'type': 'string',
+        'allowed': ['line', 'config'],
+    },
+    'lines': {
+        'type': ['string', 'list'],
+        'default': [],
+    },
+    'metrics': {
+        'type': 'list',
+        'default': ['BADASS'],
+    },
+    'thresholds': {
+        'type': 'list',
+        'default': [0.95],
+    },
+    'conv_mode': {
+        'type': 'string',
+        'allowed': ['any', 'all'],
+        'default': 'any',
+    },
+    'auto_stop': 'bool_true',
+    'full_verbose': 'bool_false',
+    'plot_tests': 'bool_true',
+    'force_best': 'bool_true',
+    'continue_fit': 'bool_true',
 }
 
 
@@ -339,17 +336,126 @@ DEFAULT_COMP_OPTIONS = {
     'fit_absorp': 'bool_true', # absorption lines
     'tie_line_disp': 'bool_false', # tie line widths
     'tie_line_voff': 'bool_false', # tie line velocity offsets
-    'na_line_profile': 'line_profile', # narrow line profile
-    'br_line_profile': 'line_profile', # broad line profile
-    'out_line_profile': 'line_profile', # outflow line profile
-    'abs_line_profile': 'line_profile', # absorption line profile
-    # number of higher-order moments for GH line profiles
-    'n_moments': {
-        'type': 'integer',
+}
+
+
+# narrow_options
+DEFAULT_NARROW_OPTIONS {
+    'amp_plim': { # line amplitude parameter limits
+        'type': 'list'
+        'minlength': 2,
+        'maxlength': 2,
+        'schema': {
+            'type': ['integer', 'float'],
+            'nullable': True,
+            'min': 0,
+        },
+        'nullable': True,
+        'default': [0,],
+    },
+    'disp_plim': { # line dispersion parameter limits
+        'type': 'list',
+        'schema': {
+            'is_lohi': True,
+        },
+        'nullable': True,
+        'default': [0.001,300],
+    },
+    'voff_plim': { # line velocity offset parameter limits
+        'type': 'list',
+        'schema': {
+            'is_lohi': True,
+        },
+        'nullable': True,
+        'default': [-500,500],
+    },
+    'line_profile': 'line_profile', # line profile shape
+    'n_moments': { # number of higher order Gauss-Hermite moments
+        'type': 'integer'
         'min': 2,
         'max': 10,
         'default': 4
+    }
+}
+
+
+# broad_options
+DEFAULT_BROAD_OPTIONS {
+    'amp_plim': { # line amplitude parameter limits
+        'type': 'list'
+        'minlength': 2,
+        'maxlength': 2,
+        'schema': {
+            'type': ['integer', 'float'],
+            'nullable': True,
+            'min': 0,
+        },
+        'nullable': True,
+        'default': [0,],
     },
+    'disp_plim': { # line dispersion parameter limits
+        'type': 'list',
+        'schema': {
+            'is_lohi': True,
+        },
+        'nullable': True,
+        'default': [300,3000],
+    },
+    'voff_plim': { # line velocity offset parameter limits
+        'type': 'list',
+        'schema': {
+            'is_lohi': True,
+        },
+        'nullable': True,
+        'default': [-1000,1000],
+    },
+    'line_profile': 'line_profile', # line profile shape
+    'n_moments': { # number of higher order Gauss-Hermite moments
+        'type': 'integer'
+        'min': 2,
+        'max': 10,
+        'default': 4
+    }
+}
+
+
+# absorp_options
+DEFAULT_ABSORP_OPTIONS {
+    'amp_plim': { # line amplitude parameter limits
+        'type': 'list'
+        'minlength': 2,
+        'maxlength': 2,
+        'schema': {
+            'type': ['integer', 'float'],
+            'nullable': True,
+            'max': 0,
+        },
+        'nullable': True,
+        'default': [-1,0],
+    },
+    'disp_plim': { # line dispersion parameter limits
+        'type': 'list',
+        'schema': {
+            'is_lohi': True,
+        },
+        'nullable': True,
+        'default': [0.001,3000],
+    },
+    'voff_plim': { # line velocity offset parameter limits
+        'type': 'list',
+        'schema': {
+            'is_lohi': True,
+        },
+        'nullable': True,
+        'default': [-1000,1000],
+    },
+    'line_profile': 'line_profile', # line profile shape
+    'n_moments': { # number of higher order Gauss-Hermite moments
+        'type': 'integer'
+        'min': 2,
+        'max': 10,
+        'default': 4
+    }
 }
 
 
@@ -441,7 +547,6 @@ DEFAULT_LOSVD_OPTIONS = {
 
 # poly_options
 DEFAULT_POLY_OPTIONS = {
-    'ppoly': 'poly_dict',
     'apoly': 'poly_dict',
     'mpoly': 'poly_dict',
 }
@@ -703,12 +808,6 @@ DEFAULT_BALMER_OPTIONS = {
 DEFAULT_PLOT_OPTIONS = {
     # Plot MCMC histograms and chains for each parameter
     'plot_param_hist': 'bool_true',
-    # Plot MCMC hist. and chains for component fluxes
-    'plot_flux_hist': 'bool_false',
-    # Plot MCMC hist. and chains for component luminosities
-    'plot_lum_hist': 'bool_false',
-    # Plot MCMC hist. and chains for equivalent widths 
-    'plot_eqwidth_hist': 'bool_false',
     # make interactive plotly HTML best-fit plot
     'plot_HTML': 'bool_false',
     # Plot PCA reconstructed spectrum
@@ -741,6 +840,7 @@ DEFAULT_OUTPUT_OPTIONS = {
     # and histograms. 
     'write_chain': 'bool_false',
     'write_options': 'bool_false',
+    'res_correct': 'bool_true', # Correct final emission line widths for the intrinsic resolution of the spectrum
     'verbose': 'bool_true',
 }
 
@@ -750,9 +850,13 @@ DEFAULT_OUTPUT_OPTIONS = {
 dict_options = {
     'io_options': DEFAULT_IO_OPTIONS,
     'fit_options': DEFAULT_FIT_OPTIONS,
+    'test_options': DEFAULT_TEST_OPTIONS,
     'ifu_options': DEFAULT_IFU_OPTIONS,
     'mcmc_options': DEFAULT_MCMC_OPTIONS,
     'comp_options': DEFAULT_COMP_OPTIONS,
+    'narrow_options': DEFAULT_NARROW_OPTIONS,
+    'broad_options': DEFAULT_BROAD_OPTIONS,
+    'absorp_options': DEFAULT_ABSORP_OPTIONS,
     'pca_options': DEFAULT_PCA_OPTIONS,
     'power_options': DEFAULT_POWER_OPTIONS,
     'losvd_options': DEFAULT_LOSVD_OPTIONS,
