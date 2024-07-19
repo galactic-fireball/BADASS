@@ -88,6 +88,7 @@ __status__	   = "Release"
 
 
 def run_BADASS(data,
+               run_dir=None,
                nobj=None,
                nprocesses=None,
                options_file=None,
@@ -133,14 +134,26 @@ def run_BADASS(data,
         # nprocesses = int(np.ceil(mp.cpu_count()/2))
         nprocesses = 1
 
-    # if (nprocesses>1) or ((nobj is not None) and ((nobj[1]-nobj[0])>1)):
-    #     if output_options:
-    #         output_options["verbose"] = False
-    #     else:
-    #         output_options = {"verbose": False}
+    if isinstance(data, list):
+        if not isinstance(run_dir, list):
+            raise Exception('Need output directories')
+        if len(data) != len(run_dir):
+            raise Exception('Need matching number of directories')
 
+        process = psutil.Process(os.getpid())
+        print(f"Start process memory: {process.memory_info().rss/1e9:<30.8f}")
+        arguments = [(pathlib.Path(file), pathlib.Path(run_dir[i]), options_file, dust_cache, fit_options, test_options, mcmc_options, comp_options,
+                      narrow_options, broad_options, absorp_options,
+                      pca_options, user_lines, user_constraints, user_mask,
+                      combined_lines, losvd_options, host_options, power_options, poly_options, opt_feii_options, uv_iron_options, balmer_options,
+                      outflow_test_options, plot_options, output_options, sdss_spec, ifu_spec, spec, wave, err, fwhm_res, z, ebv, flux_norm) for i, file in enumerate(data)]
 
-    if os.path.isdir(data):
+        pool = mp.Pool(processes=nprocesses, maxtasksperchild=1)
+        pool.starmap(run_single_thread, arguments, chunksize=1)
+        pool.close()
+        pool.join()
+
+    elif os.path.isdir(data):
         # Get locations of sub-directories for each fit within the parent data directory
         spec_loc = natsort.natsorted(glob.glob(os.path.join(data, '*')))
         if nobj is not None:
@@ -153,7 +166,7 @@ def run_BADASS(data,
         print(f"Start process memory: {process.memory_info().rss/1e9:<30.8f}")
 
         files = [glob.glob(os.path.join(wd, '*.fits'))[0] for wd in work_dirs]
-        arguments = [(pathlib.Path(file), options_file, dust_cache, fit_options, test_options, mcmc_options, comp_options,
+        arguments = [(pathlib.Path(file), run_dir, options_file, dust_cache, fit_options, test_options, mcmc_options, comp_options,
                       narrow_options, broad_options, absorp_options,
                       pca_options, user_lines, user_constraints, user_mask,
                       combined_lines, losvd_options, host_options, power_options, poly_options, opt_feii_options, uv_iron_options, balmer_options,
@@ -174,7 +187,7 @@ def run_BADASS(data,
         process = psutil.Process(os.getpid())
         print(f"Start process memory: {process.memory_info().rss/1e9:<30.8f}")
 
-        run_single_thread(pathlib.Path(data), options_file, dust_cache, fit_options, test_options, mcmc_options, comp_options, 
+        run_single_thread(pathlib.Path(data), run_dir, options_file, dust_cache, fit_options, test_options, mcmc_options, comp_options, 
                           narrow_options, broad_options, absorp_options,
                           pca_options,
                           user_lines, user_constraints, user_mask, combined_lines, losvd_options, host_options, power_options, poly_options,
@@ -188,7 +201,8 @@ def run_BADASS(data,
 
 
 def run_single_thread(fits_file,
-               options_file = None,
+               run_dir=None,
+               options_file=None,
                dust_cache=None,
                fit_options=False,
                test_options=False,
@@ -375,8 +389,9 @@ def run_single_thread(fits_file,
 
     # Set up run ('MCMC_output_#') directory
     work_dir = os.path.dirname(fits_file)+"/"
-    run_dir,prev_dir = setup_dirs(work_dir,output_options['verbose'])
-    run_dir = pathlib.Path(run_dir)
+    if not run_dir:
+        run_dir,prev_dir = setup_dirs(work_dir,output_options['verbose'])
+        run_dir = pathlib.Path(run_dir)
 
     # Do some sanity checks
     if (not sdss_spec) and (fwhm_res==0.0) and (output_options["res_correct"]==True):
