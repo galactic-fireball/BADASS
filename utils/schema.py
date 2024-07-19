@@ -116,7 +116,7 @@ DEFAULT_IO_OPTIONS = {
     },
     'multiprocess': 'bool_true',
     'flux_norm': {
-        'type': ['int', 'float'],
+        'type': ['integer', 'float'],
         'default': 1e-17,
     }
 }
@@ -340,9 +340,9 @@ DEFAULT_COMP_OPTIONS = {
 
 
 # narrow_options
-DEFAULT_NARROW_OPTIONS {
+DEFAULT_NARROW_OPTIONS = {
     'amp_plim': { # line amplitude parameter limits
-        'type': 'list'
+        'type': 'list',
         'minlength': 2,
         'maxlength': 2,
         'schema': {
@@ -371,18 +371,18 @@ DEFAULT_NARROW_OPTIONS {
     },
     'line_profile': 'line_profile', # line profile shape
     'n_moments': { # number of higher order Gauss-Hermite moments
-        'type': 'integer'
+        'type': 'integer',
         'min': 2,
         'max': 10,
-        'default': 4
-    }
+        'default': 4,
+    },
 }
 
 
 # broad_options
-DEFAULT_BROAD_OPTIONS {
+DEFAULT_BROAD_OPTIONS = {
     'amp_plim': { # line amplitude parameter limits
-        'type': 'list'
+        'type': 'list',
         'minlength': 2,
         'maxlength': 2,
         'schema': {
@@ -411,18 +411,18 @@ DEFAULT_BROAD_OPTIONS {
     },
     'line_profile': 'line_profile', # line profile shape
     'n_moments': { # number of higher order Gauss-Hermite moments
-        'type': 'integer'
+        'type': 'integer',
         'min': 2,
         'max': 10,
-        'default': 4
+        'default': 4,
     }
 }
 
 
 # absorp_options
-DEFAULT_ABSORP_OPTIONS {
+DEFAULT_ABSORP_OPTIONS = {
     'amp_plim': { # line amplitude parameter limits
-        'type': 'list'
+        'type': 'list',
         'minlength': 2,
         'maxlength': 2,
         'schema': {
@@ -451,10 +451,10 @@ DEFAULT_ABSORP_OPTIONS {
     },
     'line_profile': 'line_profile', # line profile shape
     'n_moments': { # number of higher order Gauss-Hermite moments
-        'type': 'integer'
+        'type': 'integer',
         'min': 2,
         'max': 10,
-        'default': 4
+        'default': 4,
     }
 }
 
