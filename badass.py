@@ -68,7 +68,11 @@ import gh_alternative as gh_alt # Gauss-Hermite alternative line profiles
 from sklearn.decomposition import PCA
 from astroML.datasets import sdss_corrected_spectra # SDSS templates for PCA analysis
 
-plt.style.use('dark_background') # For cool tron-style dark plots
+from utils.options import BadassOptions
+from input.input import BadassInput
+from utils.utils import log_rebin
+
+# plt.style.use('dark_background') # For cool tron-style dark plots
 import matplotlib
 matplotlib.rcParams['agg.path.chunksize'] = 100000
 import warnings
@@ -87,490 +91,98 @@ __status__	   = "Release"
 ##########################################################################################################
 
 
-def run_BADASS(data,
-               run_dir=None,
-               nobj=None,
-               nprocesses=None,
-               options_file=None,
-               dust_cache=None,
-               fit_options=False,
-               test_options=False,
-               mcmc_options=False,
-               comp_options=False,
-               narrow_options=False,
-               broad_options=False,
-               absorp_options=False,
-               pca_options=False,
-               user_lines=None,
-               user_constraints=None,
-               user_mask=None,
-               combined_lines={},
-               losvd_options=False,
-               host_options=False,
-               power_options=False,
-               poly_options=False,
-               opt_feii_options=False,
-               uv_iron_options=False,
-               balmer_options=False,
-               outflow_test_options=False,
-               plot_options=False,
-               output_options=False,
-               sdss_spec=True,
-               ifu_spec=False,
-               spec=None,
-               wave=None,
-               err=None,
-               fwhm_res=None,
-               z=None,
-               ebv=None,
-               flux_norm=1.E-17,
-               ):
-    """
-    The top-level BADASS function that handles the multiprocessing workers making calls to run_single_thread
-    """
+def run_BADASS(inputs, **kwargs):
+    # utils.options.BadassOptions.get_options_dep(kwargs)
+    opts = BadassOptions.get_options(kwargs['options_file'])
+    targets = BadassInput.get_inputs(inputs, opts)
+    # breakpoint()
 
-    # Determine the number of processes based on CPU count, if unspecified
-    if nprocesses is None:
-        # nprocesses = int(np.ceil(mp.cpu_count()/2))
-        nprocesses = 1
-
-    if isinstance(data, list):
-        if not isinstance(run_dir, list):
-            raise Exception('Need output directories')
-        if len(data) != len(run_dir):
-            raise Exception('Need matching number of directories')
-
-        process = psutil.Process(os.getpid())
-        print(f"Start process memory: {process.memory_info().rss/1e9:<30.8f}")
-        arguments = [(pathlib.Path(file), pathlib.Path(run_dir[i]), options_file, dust_cache, fit_options, test_options, mcmc_options, comp_options,
-                      narrow_options, broad_options, absorp_options,
-                      pca_options, user_lines, user_constraints, user_mask,
-                      combined_lines, losvd_options, host_options, power_options, poly_options, opt_feii_options, uv_iron_options, balmer_options,
-                      outflow_test_options, plot_options, output_options, sdss_spec, ifu_spec, spec, wave, err, fwhm_res, z, ebv, flux_norm) for i, file in enumerate(data)]
-
-        pool = mp.Pool(processes=nprocesses, maxtasksperchild=1)
-        pool.starmap(run_single_thread, arguments, chunksize=1)
-        pool.close()
-        pool.join()
-
-    elif os.path.isdir(data):
-        # Get locations of sub-directories for each fit within the parent data directory
-        spec_loc = natsort.natsorted(glob.glob(os.path.join(data, '*')))
-        if nobj is not None:
-            spec_loc = spec_loc[nobj[0]:nobj[1]]
-        work_dirs = [si + os.sep for si in spec_loc]
-        print(f"Fitting {len(spec_loc)} 1D spectra")
-
-        # Print memory of the python process at the start
-        process = psutil.Process(os.getpid())
-        print(f"Start process memory: {process.memory_info().rss/1e9:<30.8f}")
-
-        files = [glob.glob(os.path.join(wd, '*.fits'))[0] for wd in work_dirs]
-        arguments = [(pathlib.Path(file), run_dir, options_file, dust_cache, fit_options, test_options, mcmc_options, comp_options,
-                      narrow_options, broad_options, absorp_options,
-                      pca_options, user_lines, user_constraints, user_mask,
-                      combined_lines, losvd_options, host_options, power_options, poly_options, opt_feii_options, uv_iron_options, balmer_options,
-                      outflow_test_options, plot_options, output_options, sdss_spec, ifu_spec, spec, wave, err, fwhm_res, z, ebv, flux_norm) for file in files]
-
-        # map arguments to function
-        if len(files) > 1 and nprocesses > 1:
-            pool = mp.Pool(processes=nprocesses, maxtasksperchild=1)
-            pool.starmap(run_single_thread, arguments, chunksize=1)
-            pool.close()
-            pool.join()
-        else:
-            for i in range(len(files)):
-                run_single_thread(*arguments[i])
-
-    elif os.path.isfile(data):
-        # Print memory of the python process at the start
-        process = psutil.Process(os.getpid())
-        print(f"Start process memory: {process.memory_info().rss/1e9:<30.8f}")
-
-        run_single_thread(pathlib.Path(data), run_dir, options_file, dust_cache, fit_options, test_options, mcmc_options, comp_options, 
-                          narrow_options, broad_options, absorp_options,
-                          pca_options,
-                          user_lines, user_constraints, user_mask, combined_lines, losvd_options, host_options, power_options, poly_options,
-                          opt_feii_options, uv_iron_options, balmer_options, outflow_test_options, plot_options, output_options,
-                          sdss_spec, ifu_spec, spec, wave, err, fwhm_res, z, ebv, flux_norm)
-
-    # Print memory at the end
-    print(f"End process memory: {process.memory_info().rss / 1e9:<30.8f}")
+    # TODO: multiprocess
+    for target in targets:
+        run_single_target(target)
 
 
-
-
-def run_single_thread(fits_file,
-               run_dir=None,
-               options_file=None,
-               dust_cache=None,
-               fit_options=False,
-               test_options=False,
-               mcmc_options=False,
-               comp_options=False,
-               narrow_options=False,
-               broad_options=False,
-               absorp_options=False,
-               pca_options=False,
-               user_lines=None,
-               user_constraints=None,
-               user_mask=None,
-               combined_lines={},
-               losvd_options=False,
-               host_options=False,
-               power_options=False,
-               poly_options=False,
-               opt_feii_options=False,
-               uv_iron_options=False,
-               balmer_options=False,
-               outflow_test_options=False,
-               plot_options=False,
-               output_options=False,
-               sdss_spec =True,
-               ifu_spec  =False,
-               spec = None,
-               wave = None,
-               err  = None,
-               fwhm_res = None,
-               z	= None,
-               ebv  = None,
-               flux_norm = 1.E-17,
-               ):
-               
-    """
-    This is the main function calls all other sub-functions in order. 
-    """
-
-    if dust_cache != None:
+def run_single_target(target):
+    if target.options.io_options.dust_cache != None:
         IrsaDust.cache_location = str(dust_cache)
 
-
-    # Import options if options_file given
-    if options_file is not None:
-        try:
-
-            opt_file = pathlib.Path(options_file)
-            if not opt_file.exists():
-                raise ValueError("\n Options file not found!\n")
-
-            sys.path.append(str(opt_file.parent))
-            options = importlib.import_module(opt_file.stem)
-            # print("\n Successfully imported options file!\n")
-            if hasattr(options,"fit_options"):
-                fit_options			 = options.fit_options
-            if hasattr(options,"test_options"):
-                test_options          = options.test_options
-            if hasattr(options,"comp_options"):
-                comp_options		 = options.comp_options
-            if hasattr(options,"narrow_options"):
-                narrow_options     = options.narrow_options
-            if hasattr(options,"broad_options"):
-                broad_options       = options.broad_options
-            if hasattr(options,"absorp_options"):
-                absorp_options     = options.absorp_options
-            if hasattr(options,"mcmc_options"):
-                mcmc_options		 = options.mcmc_options
-            if hasattr(options,"pca_options"):
-                pca_options    = options.pca_options
-            if hasattr(options,"user_lines"):
-                user_lines			 = options.user_lines
-            if hasattr(options,"user_constraints"):
-                user_constraints	 = options.user_constraints
-            if hasattr(options,"user_mask"):
-                user_mask			 = options.user_mask
-            if hasattr(options,"losvd_options"):
-                losvd_options		 = options.losvd_options
-            if hasattr(options,"host_options"):
-                host_options		 = options.host_options
-            if hasattr(options,"power_options"):
-                power_options		 = options.power_options
-            if hasattr(options,"poly_options"):
-                poly_options         = options.poly_options
-            if hasattr(options,"opt_feii_options"):
-                opt_feii_options	 = options.opt_feii_options
-            if hasattr(options,"uv_iron_options"):
-                uv_iron_options		 = options.uv_iron_options
-            if hasattr(options,"balmer_options"):
-                balmer_options		 = options.balmer_options
-            if hasattr(options,"plot_options"):
-                plot_options		 = options.plot_options
-            if hasattr(options,"output_options"):
-                output_options		 = options.output_options
-            if hasattr(options,"line_list"):
-                user_lines		     = options.user_lines
-            if hasattr(options,"soft_cons"):
-                user_constraints     = options.user_constraints
-            if hasattr(options,"combined_lines"):
-                combined_lines	  = options.combined_lines
-        except ImportError:
-            print("\n Error in importing options file! Options file must be a .py file!\n ")
-
-    # Check inputs; raises exception if user input is invalid.
-    fit_options			 = badass_check_input.check_fit_options(fit_options,comp_options)
-    test_options         = badass_check_input.check_test_options(test_options)
-    comp_options		 = badass_check_input.check_comp_options(comp_options)
-    narrow_options     = badass_check_input.check_narrow_options(narrow_options)
-    broad_options      = badass_check_input.check_broad_options(broad_options)
-    absorp_options     = badass_check_input.check_absorp_options(absorp_options)
-    mcmc_options		 = badass_check_input.check_mcmc_options(mcmc_options)
-    pca_options    = badass_check_input.check_pca_options(pca_options)
-    user_lines			 = badass_check_input.check_user_lines(user_lines)
-    user_constraints	 = badass_check_input.check_user_constraints(user_constraints)
-    user_mask			 = badass_check_input.check_user_mask(user_mask)
-    losvd_options		 = badass_check_input.check_losvd_options(losvd_options)
-    host_options		 = badass_check_input.check_host_options(host_options)
-    power_options		 = badass_check_input.check_power_options(power_options)
-    poly_options         = badass_check_input.check_poly_options(poly_options)
-    opt_feii_options	 = badass_check_input.check_opt_feii_options(opt_feii_options)
-    uv_iron_options		 = badass_check_input.check_uv_iron_options(uv_iron_options)
-    balmer_options		 = badass_check_input.check_balmer_options(balmer_options)
-    plot_options		 = badass_check_input.check_plot_options(plot_options)
-    output_options		 = badass_check_input.check_output_options(output_options)
-    verbose				 = output_options["verbose"]
-
-    # Check user input spectrum if sdss_spec=False
-    if (not sdss_spec) and (not ifu_spec):
-        # If user does not provide a error spectrum one will be provided for them!
-        if err is None:
-            err = np.abs(0.1*spec)
-        spec, wave, err, fwhm_res, z, ebv, flux_norm = badass_check_input.check_user_input_spec(spec,wave,err,fwhm_res,z,ebv,flux_norm)
-
-    # Unpack input
-    # fit_options
-    fit_reg				= fit_options["fit_reg"]
-    good_thresh			= fit_options["good_thresh"]
-    mask_bad_pix	  	= fit_options["mask_bad_pix"]
-    mask_emline			= fit_options["mask_emline"]
-    mask_metal			= fit_options["mask_metal"]
-    fit_stat		  	= fit_options["fit_stat"]
-    n_basinhop	   		= fit_options["n_basinhop"]
-    reweighting         = fit_options["reweighting"]
-    test_lines			= fit_options["test_lines"]
-    max_like_niter		= fit_options["max_like_niter"]
-    output_pars			= fit_options["output_pars"]
-    cosmology		 = fit_options["cosmology"]
-    # mcmc_options
-    mcmc_fit 			= mcmc_options["mcmc_fit"]
-    nwalkers 			= mcmc_options["nwalkers"]
-    auto_stop 			= mcmc_options["auto_stop"]
-    conv_type 			= mcmc_options["conv_type"]
-    min_samp			= mcmc_options["min_samp"]
-    ncor_times 			= mcmc_options["ncor_times"]
-    autocorr_tol 		= mcmc_options["autocorr_tol"]
-    write_iter			= mcmc_options["write_iter"]
-    write_thresh		= mcmc_options["write_thresh"]
-    burn_in 			= mcmc_options["burn_in"]
-    min_iter			= mcmc_options["min_iter"]
-    max_iter			= mcmc_options["max_iter"]
-    # pca_options
-    do_pca        = pca_options['do_pca']
-    n_components        = pca_options['n_components']
-    pca_masks         = pca_options['pca_masks']
-    # comp_options
-    fit_opt_feii		= comp_options["fit_opt_feii"]
-    fit_uv_iron			= comp_options["fit_uv_iron"]
-    fit_balmer			= comp_options["fit_balmer"]
-    fit_losvd			= comp_options["fit_losvd"]
-    fit_host			= comp_options["fit_host"]
-    fit_power			= comp_options["fit_power"]
-    fit_poly            = comp_options["fit_poly"]
-    fit_narrow			= comp_options["fit_narrow"]
-    fit_broad			= comp_options["fit_broad"]
-    fit_absorp			= comp_options["fit_absorp"]
-    tie_line_disp		= comp_options["tie_line_disp"]
-    tie_line_voff		= comp_options["tie_line_voff"]
-    # plot_options
-    plot_param_hist		= plot_options["plot_param_hist"]
-    plot_HTML			= plot_options["plot_HTML"]
-    plot_pca            = plot_options["plot_pca"]
-    plot_corner   = plot_options["plot_corner"]
-    corner_options    = plot_options["corner_options"]
-
-
-    # Set up run ('MCMC_output_#') directory
-    work_dir = os.path.dirname(fits_file)+"/"
-    if not run_dir:
-        run_dir,prev_dir = setup_dirs(work_dir,output_options['verbose'])
-        run_dir = pathlib.Path(run_dir)
-
-    # Do some sanity checks
-    if (not sdss_spec) and (fwhm_res==0.0) and (output_options["res_correct"]==True):
-        print("\n WARNING: User-input FWHM resolution (in Angstroms) is zero or not provided, but you also asked BADASS to correct for resolution effects.  No correction will be applied...\n")
-
     # Check to make sure plotly is installed for HTML interactive plots:
-    if plot_HTML==True:
+    if target.options.plot_options.plot_HTML:
         if importlib.util.find_spec('plotly'):
             pass
-    else: plot_HTML=False # wrong indentation level?
+        else: target.options.plot_options.plot_HTML = False
 
-    # output_options
-    write_chain			= output_options["write_chain"]
-    write_options      = output_options["write_options"]
-    verbose				= output_options["verbose"]
-    #
-    # Start fitting process
-    print('\n > Starting fit for %s' % fits_file.parent.name)
+
+    print('\n > Starting fit for %s' % target.infile.parent.name)
     sys.stdout.flush()
     # Start a timer to record the total runtime
     start_time = time.time()
-    #
-    # Determine validity of fitting region
-    min_fit_reg = 25 # in Å; set the minimum fitting region size here
-    if (sdss_spec) or (ifu_spec): # if user-input spectrum is an SDSS spectrum
-        #
-        fit_reg,good_frac = determine_fit_reg_sdss(fits_file, run_dir, fit_reg, good_thresh, fit_losvd, losvd_options, verbose)
-        if (fit_reg is None) or ((fit_reg[1]-fit_reg[0]) < min_fit_reg):
-            print('\n Fitting region too small! The fitting region must be at least %d A!  Moving to next object... \n' % (min_fit_reg))
-            cleanup(run_dir)
-            return None
-        elif (good_frac < fit_options["good_thresh"]) and (fit_reg is not None): # if fraction of good pixels is less than good_threshold, then move to next object
-            print('\n Not enough good channels above threshold! Moving onto next object...')
-            cleanup(run_dir)
-            return None
-        elif (good_frac >= fit_options["good_thresh"]) and (fit_reg is not None):
-            pass
-    elif (not sdss_spec): # if user-input spectrum is not an SDSS spectrum
-        fit_reg,good_frac = determine_fit_reg_user(wave, z, run_dir, fit_reg, good_thresh, fit_losvd, losvd_options, verbose)
-        if (fit_reg is None) or ((fit_reg[1]-fit_reg[0]) < min_fit_reg):
-            print('\n Fitting region too small! The fitting region must be at least %d A!  Moving to next object... \n' % (min_fit_reg))
-            cleanup(run_dir)
-            return None
-        elif (fit_reg is not None):
-            pass
 
-    # Prepare spectrum for fitting
-    # SDSS spectrum
-    if (sdss_spec):
-        lam_gal,galaxy,noise,z,ebv,velscale,disp_res,fit_mask,fit_norm = prepare_sdss_spec(fits_file, fit_reg, mask_bad_pix, mask_emline, user_mask, mask_metal, cosmology, run_dir, verbose=verbose, plot=True)
-        binnum = spaxelx = spaxely = None
-    # ifu spectrum
-    elif (ifu_spec):
-        lam_gal,galaxy,noise,z,ebv,velscale,disp_res,fit_mask,binnum,spaxelx,spaxely,fit_norm = prepare_ifu_spec(fits_file, fit_reg, mask_bad_pix, mask_emline, user_mask, mask_metal, cosmology, flux_norm, run_dir, verbose=verbose, plot=True)
-    # non-SDSS spectrum
-    elif (not sdss_spec):
-        lam_gal,galaxy,noise,z,ebv,velscale,disp_res,fit_mask,fit_norm = prepare_user_spec(fits_file, spec, wave, err, fwhm_res, z, ebv, flux_norm, fit_reg, mask_emline, user_mask, mask_metal, cosmology, run_dir, verbose=verbose, plot=True)
-        binnum = spaxelx = spaxely = None
+    target.log.log_fit_information()
 
-    ####################################################################################################################################################################################
-    # Do PCA reconstruction if desired
+    # TODO: add in classified templates
+    host_template = None
+    if target.options.comp_options.fit_host:# & (lam_gal[0]>1680.2):
+        host_template = generate_host_template(target.wave, target.options.host_options, target.disp_res, target.velscale)
 
-    # Regardless of PCA, check for nans in flux and flux error arrays. If found, raise an error because they will prevent fit optimization
-    pca_nan_fix = False # boolean, just for diagnostic purposes in output log. If you have nans in your spectrum that were "fixed" by PCA, it's good to know. 
-    if ( (np.isnan(galaxy).any() ) or (np.isnan(noise).any() ) ) and  (not do_pca):
-        raise ValueError(f"\n The flux or flux error in fitting region {fit_reg} is nan, stopping fit. Change fitting region or enable PCA to cover nan region.\n")
-    elif ( (np.isnan(galaxy).any() ) or (np.isnan(noise).any() ) ) and (do_pca):
-        pca_nan_fix = True
-        print(f"Performing PCA on a spectrum with nans over region(s) {pca_masks}. Be careful to ensure PCA covers all nan regions, else PCA will fail.\n")
-        
-    if do_pca:
-        print("\n---------------------------------------\n")
-        print(" Performing PCA analysis...\n")
-        if len(pca_masks):
-            pca_reg_test = [(i[0]>=fit_reg[0],i[1]<=fit_reg[1]) for i in pca_masks] # check that pca mask regions are within fitting region
-            if not np.all(pca_reg_test):
-                raise ValueError(f"PCA region masks {pca_masks} must be within fitting region {fit_reg}")
-        else:
-            pca_masks = ([fit_reg])
-        galaxy,galaxy_pca_resid,noise,evecs,evals_cs,spec_mean_pca,pca_coeff = do_pca_fill(lam_gal,galaxy,noise,n_components=n_components, pca_masks=pca_masks, plot_pca=plot_pca, run_dir=run_dir)
-        pca_exp_var = evals_cs[-1]
-        print(" PCA analysis complete!")
-        print("\n---------------------------------------\n\n")
-
-    else:
-        pca_exp_var = None
-        
-
-    # Write to Log 
-    write_log((fit_options,mcmc_options,comp_options,pca_options,losvd_options,host_options,power_options,poly_options,opt_feii_options,uv_iron_options,balmer_options,
-               plot_options,output_options),'fit_information',run_dir)
-               
-    write_log((do_pca,n_components,pca_masks,pca_nan_fix,pca_exp_var),'pca_information',run_dir)
-
-    ####################################################################################################################################################################################
-    # Generate host-galaxy template
-    if (fit_host==True):# & (lam_gal[0]>1680.2):
-        host_template = generate_host_template(lam_gal, host_options, disp_res,fit_mask, velscale, verbose=verbose)
-    # elif (fit_host==True) & (lam_gal[0]<1680.2):
-    #    host_template = None
-    #    fit_host = False
-    #    comp_options["fit_host"]=False
-    #    if verbose:
-    #       print('\n - Host galaxy SSP template disabled because template is outside of fitting region.')
-    elif (fit_host==False):
-        host_template = None
-    # Load stellar templates if fit_losvd=True 
-    if (fit_losvd==True):
-        stel_templates = prepare_stellar_templates(galaxy, lam_gal, fit_reg, velscale, disp_res,fit_mask, losvd_options, run_dir)
-    elif (fit_losvd==False):
-        stel_templates = None
+    stel_templates = None
+    if target.options.comp_options.fit_losvd:
+        stel_templates = prepare_stellar_templates(target.spec, target.wave, target.fit_reg, target.velscale, target.disp_res, target.options.losvd_options)
 
     # For the Optical FeII, UV Iron, and Balmer templates, we disable the templates if the fitting region
     # is entirely outside of the range of the templates.  This saves resources.
 
     # Check conditions for and generate Optical FeII templates
     # Veron-Cetty et al. (2004)
-    if (fit_opt_feii==True) & (opt_feii_options["opt_template"]["type"]=="VC04") & (lam_gal[-1]>=3400.0) & (lam_gal[0]<=7200.0):
-        opt_feii_templates = initialize_opt_feii(lam_gal,opt_feii_options,disp_res,fit_mask,velscale)
-    elif (fit_opt_feii==True) & (opt_feii_options["opt_template"]["type"]=="VC04") & ((lam_gal[-1]<3400.0) | (lam_gal[0]>7200.0)):
-        if verbose:
-            print('\n - Optical FeII template disabled because template is outside of fitting region.')
-        fit_opt_feii = False
-        comp_options["fit_opt_feii"]=False
-        opt_feii_templates = None
-        write_log((),'update_opt_feii',run_dir)
+
+    opt_feii_templates = None
+    if target.options.comp_options.fit_opt_feii and target.options.opt_feii_options.opt_template.type == 'VC04':
+        if (target.wave[-1] >= 3400.0) and (target.wave[0] <= 7200.0):
+            opt_feii_templates = initialize_opt_feii(target.wave, target.options.opt_feii_options, target.disp_res, target.velscale)
+        else:
+            target.log.warn('\n - Optical FeII template disabled because template is outside of fitting region.')
+            target.options.comp_options.fit_opt_feii = False
+            # write_log((),'update_opt_feii',run_dir)
+
     # Kovacevic et al. (2010)
-    elif (fit_opt_feii==True) & (opt_feii_options["opt_template"]["type"]=="K10") & (lam_gal[-1]>=4400.0) & (lam_gal[0]<=5500.0):
-        opt_feii_templates = initialize_opt_feii(lam_gal,opt_feii_options,disp_res,fit_mask,velscale)
-    elif (fit_opt_feii==True) & (opt_feii_options["opt_template"]["type"]=="K10") & ((lam_gal[-1]<4400.0) | (lam_gal[0]>5500.0)):
-        if verbose:
-            print('\n - Optical FeII template disabled because template is outside of fitting region.')
-        opt_feii_templates = None
-        fit_opt_feii = False
-        comp_options["fit_opt_feii"]=False
-        opt_feii_templates = None
-        write_log((),'update_opt_feii',run_dir)
-    elif (fit_opt_feii==False):
-        opt_feii_templates = None
+    elif target.options.comp_options.fit_opt_feii and target.options.opt_feii_options.opt_template.type == 'K10':
+        if (target.wave[-1] >= 4400.0) & (target.wave[0] <= 5500.0):
+            opt_feii_templates = initialize_opt_feii(target.wave, target.options.opt_feii_options, target.disp_res, target.velscale)
+        else:
+            target.log.warn('\n - Optical FeII template disabled because template is outside of fitting region.')
+            target.options.comp_options.fit_opt_feii = False
+            # write_log((),'update_opt_feii',run_dir)
         
     # Generate UV Iron template - Vestergaard & Wilkes (2001)
-    if (fit_uv_iron==True) & (lam_gal[-1]>=1074.0) & (lam_gal[0]<=3100.0):
-        uv_iron_template = initialize_uv_iron(lam_gal,uv_iron_options,disp_res,fit_mask,velscale)
-    elif (fit_uv_iron==True) & ((lam_gal[-1]<1074.0) | (lam_gal[0]>3100.0)):
-        if verbose:
-            print('\n - UV Iron template disabled because template is outside of fitting region.')
-        uv_iron_template = None
-        fit_uv_iron = False
-        comp_options["fit_uv_iron"]=False
-        uv_iron_template = None
-        write_log((),'update_uv_iron',run_dir)
-    elif (fit_uv_iron==False):
-        uv_iron_template = None
+    uv_iron_template = None
+    if target.options.comp_options.fit_uv_iron:
+        if (target.wave[-1] >= 1074.0) & (target.wave[0] <= 3100.0):
+            uv_iron_template = initialize_uv_iron(target.wave, target.options.uv_iron_options, target.disp_res, target.velscale)
+        else:
+            target.log.warn('\n - UV Iron template disabled because template is outside of fitting region.')
+            target.options.comp_options.fit_uv_iron = False
+            # write_log((),'update_uv_iron',run_dir)
 
     # Generate Balmer continuum
-    if (fit_balmer==True) & (lam_gal[0]<3500.0):
-        balmer_template = initialize_balmer(lam_gal,balmer_options,disp_res,fit_mask,velscale)
-    elif (fit_balmer==True) & (lam_gal[0]>=3500.0):
-        if verbose:
-            print('\n - Balmer continuum disabled because template is outside of fitting region.')
-        balmer_template = None
-        fit_balmer = False
-        comp_options["fit_balmer"]=False
-        balmer_template = None
-        write_log((),'update_balmer',run_dir)
-    elif (fit_balmer==False):
-        balmer_template = None
+    balmer_template = None
+    if target.options.comp_options.fit_balmer:
+        if target.wave[0] < 3500.0:
+            balmer_template = initialize_balmer(target.wave, target.disp_res, target.velscale)
+        else:
+            target.log.warn('\n - Balmer continuum disabled because template is outside of fitting region.')
+            target.options.comp_options.fit_balmer = False
+            # write_log((),'update_balmer',run_dir)
 
-    # Set force_thresh to np.inf.  This will get overridden if 
-    # the user does the line test
-    force_thresh= badass_test_suite.root_mean_squared_error(copy.deepcopy(galaxy),np.full_like(galaxy,np.nanmedian(galaxy)) )
-
+    # TODO: need?
+    # Set force_thresh to np.inf.  This will get overridden if the user does the line test
+    force_thresh = badass_test_suite.root_mean_squared_error(copy.deepcopy(target.spec),np.full_like(target.spec,np.nanmedian(target.spec)) )
 
     #### Line Testing ################################################################################################################################################################################
 
     # Line testing is meant to be performed prior to max. like and MCMC to allow for a better line list determination (number of multiple components).
 
-
-    if (test_lines==True) and (test_options["test_mode"]=="line"):
+    # TODO: classify
+    if (target.options.fit_options.test_lines) and (test_options["test_mode"]=="line"):
 
         #
         if (user_lines is None) or (len(user_lines)==0):
@@ -700,7 +312,8 @@ def run_single_thread(fits_file,
         else:
             return
 
-    elif (test_lines==True) and (test_options["test_mode"]=="config"):
+    # TODO: classify
+    elif (target.options.fit_options.test_lines) and (test_options["test_mode"]=="config"):
         
         #
         if (user_lines is None) or (len(user_lines)==0):
@@ -802,63 +415,57 @@ def run_single_thread(fits_file,
 ####################################################################################################################################################################################
 
     # Initialize free parameters (all components, lines, etc.)
-    if verbose:
-        print('\n Initializing parameters...')
-        print('----------------------------------------------------------------------------------------------------')
+    target.log.info('\n Initializing parameters...')
+    target.log.info('----------------------------------------------------------------------------------------------------')
 
-    param_dict, line_list, combined_line_list, soft_cons, ncomp_dict = initialize_pars(lam_gal,galaxy,noise,fit_reg,disp_res,fit_mask,velscale,
-                                 comp_options,narrow_options,broad_options,absorp_options,
-                                 user_lines,user_constraints,combined_lines,losvd_options,host_options,power_options,poly_options,
-                                 opt_feii_options,uv_iron_options,balmer_options,
-                                 run_dir,fit_type='init',fit_stat=fit_stat,
-                                 fit_opt_feii=fit_opt_feii,fit_uv_iron=fit_uv_iron,fit_balmer=fit_balmer,
-                                 fit_losvd=fit_losvd,fit_host=fit_host,fit_power=fit_power,fit_poly=fit_poly,
-                                 fit_narrow=fit_narrow,fit_broad=fit_broad,fit_absorp=fit_absorp,
-                                 tie_line_disp=tie_line_disp,tie_line_voff=tie_line_voff,verbose=verbose)
+    param_dict, line_list, combined_line_list, soft_cons, ncomp_dict = initialize_pars(target.wave,target.spec,target.noise,target.fit_reg,target.disp_res,target.fit_mask,target.velscale,
+                                 target.options.comp_options,target.options.narrow_options,target.options.broad_options,target.options.absorp_options,
+                                 target.options.user_lines,target.options.user_constraints,target.options.combined_lines,target.options.losvd_options,target.options.host_options,target.options.power_options,target.options.poly_options,
+                                 target.options.opt_feii_options,target.options.uv_iron_options,target.options.balmer_options,
+                                 target.outdir,fit_type='init',fit_stat=target.options.fit_options.fit_stat,
+                                 fit_opt_feii=target.options.comp_options.fit_opt_feii,fit_uv_iron=target.options.comp_options.fit_uv_iron,fit_balmer=target.options.comp_options.fit_balmer,
+                                 fit_losvd=target.options.comp_options.fit_losvd,fit_host=target.options.comp_options.fit_host,fit_power=target.options.comp_options.fit_power,fit_poly=target.options.comp_options.fit_poly,
+                                 fit_narrow=target.options.comp_options.fit_narrow,fit_broad=target.options.comp_options.fit_broad,fit_absorp=target.options.comp_options.fit_absorp,
+                                 tie_line_disp=target.options.comp_options.tie_line_disp,tie_line_voff=target.options.comp_options.tie_line_voff,verbose=target.options.output_options.verbose)
 
 
 ####################################################################################################################################################################################    
 
     # Output all free parameters of fit prior to fitting (useful for diagnostics)
-    if output_pars and verbose:
+    if target.options.fit_options.output_pars or target.options.output_options.verbose:
         output_free_pars(line_list,param_dict,soft_cons)
-        write_log((line_list,param_dict,soft_cons),'output_line_list',run_dir)
-        return 
-    elif not output_pars and verbose:
-        output_free_pars(line_list,param_dict,soft_cons)
-        write_log((line_list,param_dict,soft_cons),'output_line_list',run_dir)
-    elif not output_pars and not verbose:
-        write_log((line_list,param_dict,soft_cons),'output_line_list',run_dir)
+    write_log((line_list,param_dict,soft_cons),'output_line_list',target.outdir)
 
 ####################################################################################################################################################################################
     
     # Construct blob-pars
-    blob_pars = get_blob_pars(lam_gal, line_list, combined_line_list, velscale)
+    blob_pars = get_blob_pars(target.wave, line_list, combined_line_list, target.velscale)
 
 ####################################################################################################################################################################################
 
+    # TODO: in logger
     # Write restart file
-    if write_options:
+    # if write_options:
 
-        dump_options(fit_options,
-            comp_options,
-            mcmc_options,
-            pca_options,
-            line_list,
-            soft_cons,
-            user_mask,
-            combined_lines,
-            losvd_options,
-            host_options,
-            power_options,
-            poly_options,
-            opt_feii_options,
-            uv_iron_options,
-            balmer_options,
-            plot_options,
-            output_options,
-            run_dir,
-            )
+    #     dump_options(fit_options,
+    #         comp_options,
+    #         mcmc_options,
+    #         pca_options,
+    #         line_list,
+    #         soft_cons,
+    #         user_mask,
+    #         combined_lines,
+    #         losvd_options,
+    #         host_options,
+    #         power_options,
+    #         poly_options,
+    #         opt_feii_options,
+    #         uv_iron_options,
+    #         balmer_options,
+    #         plot_options,
+    #         output_options,
+    #         run_dir,
+    #         )
 
     ####################################################################################################################################################################################
 
@@ -868,28 +475,30 @@ def run_single_thread(fits_file,
         force_best=False 
         force_thresh=np.inf
 
-    if verbose and force_best:
+    if target.options.output_options.verbose and force_best:
         print("\n Required Maximum Likelihood RMSE threshold: %0.4f \n" % (force_thresh))
 
+    # TODO: remove, used anywhere?
+    outflow_test_options = False
 
     # Peform the initial maximum likelihood fit (used for initial guesses for MCMC)
     result_dict, comp_dict   = max_likelihood(param_dict,
                                                 line_list,
                                                 combined_line_list,
                                                 soft_cons,
-                                                lam_gal,
-                                                galaxy,
-                                                noise,
-                                                z,
-                                                cosmology,
-                                                comp_options,
-                                                losvd_options,
-                                                host_options,
-                                                power_options,
-                                                poly_options,
-                                                opt_feii_options,
-                                                uv_iron_options,
-                                                balmer_options,
+                                                target.wave,
+                                                target.spec,
+                                                target.noise,
+                                                target.z,
+                                                target.options.fit_options.cosmology,
+                                                target.options.comp_options,
+                                                target.options.losvd_options,
+                                                target.options.host_options,
+                                                target.options.power_options,
+                                                target.options.poly_options,
+                                                target.options.opt_feii_options,
+                                                target.options.uv_iron_options,
+                                                target.options.balmer_options,
                                                 outflow_test_options,
                                                 host_template,
                                                 opt_feii_templates,
@@ -897,43 +506,46 @@ def run_single_thread(fits_file,
                                                 balmer_template,
                                                 stel_templates,
                                                 blob_pars,
-                                                disp_res,
-                                                fit_mask,
-                                                velscale,
-                                                flux_norm,
-                                                fit_norm,
-                                                run_dir,
+                                                target.disp_res,
+                                                target.fit_mask,
+                                                target.velscale,
+                                                target.options.fit_options.flux_norm,
+                                                target.fit_norm,
+                                                target.outdir,
                                                 fit_type='init',
-                                                fit_stat=fit_stat,
+                                                fit_stat=target.options.fit_options.fit_stat,
                                                 output_model=False,
                                                 test_outflows=False,
-                                                n_basinhop=n_basinhop,
-                                                reweighting=reweighting,
-                                                max_like_niter=max_like_niter,
+                                                n_basinhop=target.options.fit_options.n_basinhop,
+                                                reweighting=target.options.fit_options.reweighting,
+                                                max_like_niter=target.options.fit_options.max_like_niter,
                                                 force_best=force_best,
                                                 force_thresh=force_thresh,
-                                                full_verbose=verbose,
-                                                verbose=verbose)
+                                                full_verbose=target.options.output_options.verbose,
+                                                verbose=target.options.output_options.verbose)
     
-    if (mcmc_fit==False):
+    if not target.options.mcmc_options.mcmc_fit:
         # If not performing MCMC fitting, terminate BADASS here and write 
         # parameters, uncertainties, and components to a fits file
         # Write final parameters to file
         # Header information
         header_dict = {}
-        header_dict["z_sdss"] = z
-        header_dict["med_noise"] = np.nanmedian(noise)
-        header_dict["velscale"]  = velscale
-        header_dict["fit_norm"]  = fit_norm
-        header_dict["flux_norm"] = flux_norm
-        #
-        write_max_like_results(copy.deepcopy(result_dict),copy.deepcopy(comp_dict),header_dict,fit_mask,fit_norm,run_dir,binnum,spaxelx,spaxely)
+        header_dict["z_sdss"] = target.z
+        header_dict["med_noise"] = np.nanmedian(target.noise)
+        header_dict["velscale"]  = target.velscale
+        header_dict["fit_norm"]  = target.fit_norm
+        header_dict["flux_norm"] = target.options.fit_options.flux_norm
+
+        # TODO: remove, add to ifu inputs
+        binnum = spaxelx = spaxely = None
+        write_max_like_results(copy.deepcopy(result_dict),copy.deepcopy(comp_dict),header_dict,target.fit_mask,target.fit_norm,target.outdir,binnum,spaxelx,spaxely)
         
         # Make interactive HTML plot 
-        if plot_HTML:
-            plotly_best_fit(fits_file.parent.name,line_list,fit_mask,run_dir)
+        if target.options.plot_options.plot_HTML:
+            # TODO: object name option
+            plotly_best_fit(target.options.io_options.output_dir,line_list,target.fit_mask,target.outdir)
 
-        print(' - Done fitting %s! \n' % fits_file.parent.name)
+        print(' - Done fitting %s! \n' % target.options.io_options.output_dir)
         sys.stdout.flush()
         return
 
@@ -1804,66 +1416,6 @@ def insert_nan(spec,ibad):
         return spec
 
 
-def emline_masker(wave,spec,noise):
-    """
-    Runs a multiple moving window median  
-    to determine location of emission lines
-    to generate an emission line mask for 
-    continuum fitting.
-    """
-    # First we remove the continuum 
-    galaxy_csub = badass_tools.continuum_subtract(wave,spec,noise,sigma_clip=2.0,clip_iter=25,filter_size=[25,50,100,150,200,250,500],
-                   noise_scale=1.0,opt_rchi2=True,plot=False,
-                   fig_scale=8,fontsize=16,verbose=False)
-    #
-    signif = 3.0
-    pad = 3 # pixels on each side 
-    mask_bad = np.unique(np.where(((galaxy_csub)>(signif*(noise))) | ((galaxy_csub)<(-signif*(noise)))))
-    # Pad masked bad by pad pixels on each side
-    padded_mask_bad = np.array([])
-    for b in mask_bad:
-        # backwards pix
-        # forwards pix
-        pix = np.unique(np.abs(np.arange(b-pad,b+pad+1,1)))
-        padded_mask_bad = np.concatenate([padded_mask_bad,pix],axis=0)
-
-
-    mask_bad = np.array(np.unique(np.ravel(padded_mask_bad)),dtype=int)
-    #
-    edge_ignore = 25 # ignore this many pixels on the edges of the spectrum
-    mask_bad  = [m for m in mask_bad if m not in np.concatenate([np.arange(0,edge_ignore),np.arange(len(wave)-edge_ignore,len(wave))])]
-    #
-    return mask_bad
-
-
-def metal_masker(wave,spec,noise):
-    """
-    Performs masking on metal absorption features.
-    """
-    # First we remove the continuum 
-    galaxy_csub = badass_tools.continuum_subtract(wave,spec,noise,sigma_clip=2.0,clip_iter=25,filter_size=[3,5,8],#[25,50,100,150,200,250,500],
-                   noise_scale=1.0,opt_rchi2=True,plot=False,
-                   fig_scale=8,fontsize=16,verbose=False)
-    #
-    signif = 3.0
-    pad = 3 # pixels on each side 
-    mask_bad = np.unique(np.where(((galaxy_csub)>(signif*np.nanmean(noise))) | ((galaxy_csub)<(-signif*np.nanmean(noise)))))
-    # Pad masked bad by pad pixels on each side
-    padded_mask_bad = np.array([])
-    for b in mask_bad:
-        # backwards pix
-        # forwards pix
-        pix = np.unique(np.abs(np.arange(b-pad,b+pad+1,1)))
-        padded_mask_bad = np.concatenate([padded_mask_bad,pix],axis=0)
-
-
-    mask_bad = np.array(np.unique(np.ravel(padded_mask_bad)),dtype=int)
-    #
-    edge_ignore = 25 # ignore this many pixels on the edges of the spectrum
-    mask_bad  = [m for m in mask_bad if m not in np.concatenate([np.arange(0,edge_ignore),np.arange(len(wave)-edge_ignore,len(wave))])]
-    #
-    return mask_bad
-
 
 # def metal_masker_nn(wave,spec,noise,fits_file):
 #    """
@@ -1971,141 +1523,9 @@ def interpolate_metal(spec,noise):
 #### Prepare SDSS spectrum #######################################################
 
 def prepare_sdss_spec(fits_file,fit_reg,mask_bad_pix,mask_emline,user_mask,mask_metal,cosmology,run_dir,verbose=True,plot=False):
-    """
-    Adapted from example from Cappellari's pPXF (Cappellari et al. 2004,2017)
-    Prepare an SDSS spectrum for pPXF, returning all necessary 
-    parameters. 
-    """
-
-    # Load the data
-    hdu = fits.open(fits_file)
-    header_cols = [i.keyword for i in hdu[0].header.cards]
-    # Retrieve redshift from spectrum file (specobj table)
-    specobj = hdu[2].data
-    z = specobj['z'][0]
-
-    # For featureless objects, we force z = 0
-    # fit_reg = (0,20000)
-
-    # Retrieve RA and DEC from spectrum file
-    # if RA and DEC not present, assume an average Galactic E(B-V)
-    if ("RA" in header_cols) and ("DEC" in header_cols):
-        ra  = hdu[0].header['RA']
-        dec = hdu[0].header['DEC']
-        ebv_corr = True
-    elif ("PLUG_RA" in header_cols) and ("PLUG_DEC" in header_cols):
-        ra  = hdu[0].header['PLUG_RA']
-        dec = hdu[0].header['PLUG_DEC']
-        ebv_corr = True
-    else:
-        ebv_corr = False
-
-    # t = hdu['COADD'].data
-    t = hdu[1].data
-    hdu.close()
-
-    # Only use the wavelength range in common between galaxy and stellar library.
-    # Determine limits of spectrum vs templates
-    # mask = ( (t['loglam'] > np.log10(3540)) & (t['loglam'] < np.log10(7409)) )
-    fit_min,fit_max = float(fit_reg[0]),float(fit_reg[1])
-    # mask = ( ((t['loglam']) >= np.log10(fit_min*(1+z))) & ((t['loglam']) <= np.log10(fit_max*(1+z))) )
-
-    def generate_mask(fit_min, fit_max, lam):
-        """
-        This function generates a mask that includes all
-        channnels *including* the user-input fit_min and fit_max.
-        """
-        # Get lower limit
-        low, low_idx = find_nearest(lam, fit_min) 
-        if (low > fit_min) & (low_idx!=0):
-            low_idx -= 1
-        low_val, _ = find_nearest(lam, lam[low_idx])
-        # Get upper limit
-        upp, upp_idx = find_nearest(lam, fit_max) 
-        if (upp < fit_max) & (upp_idx == len(lam)): 
-            upp_idx += 1
-        upp_val, _ = find_nearest(lam, lam[upp_idx])
-
-        mask = ( ( ((10**t['loglam'])/(1+z)) >= low_val) & ( ((10**t['loglam'])/(1+z)) <= upp_val) )
-        return mask
-
-    mask = generate_mask(fit_min, fit_max, (10**t['loglam'])/(1+z) )
-    
-    # Unpack the spectra
-    galaxy = t['flux'][mask]
-    # SDSS spectra are already log10-rebinned
-    loglam_gal = t['loglam'][mask] # This is the observed SDSS wavelength range, NOT the rest wavelength range of the galaxy
-    lam_gal = 10**loglam_gal
-    ivar = t['ivar'][mask] # inverse variance
-    noise = np.sqrt(1.0/ivar) # 1-sigma spectral noise
-    and_mask = t['and_mask'][mask] # bad pixels 
-    bad_pix  = np.where(and_mask!=0)[0]
-
     ### Interpolating over bad pixels ############################
 
-    # Get locations of nan or -inf pixels
-    nan_gal   = np.where(~np.isfinite(galaxy))[0]
-    nan_noise = np.where(~np.isfinite(noise))[0]
-    inan = np.unique(np.concatenate([nan_gal,nan_noise]))
-    # Interpolate over nans and infs if in galaxy or noise
-    noise[inan] = np.nan
-    noise[inan] = 1.0 if all(np.isnan(noise)) else np.nanmedian(noise)
 
-    fit_mask_bad = []
-    if mask_bad_pix:
-        for b in bad_pix:
-            fit_mask_bad.append(b)
-
-    if mask_emline:
-        emline_mask_bad = emline_masker(lam_gal,galaxy,noise)
-        for b in emline_mask_bad:
-            fit_mask_bad.append(b)
-
-    if len(user_mask)>0:
-        for i in user_mask:
-            ibad = np.where((lam_gal/(1.0+z)>=i[0]) & (lam_gal/(1.0+z)<=i[1]))[0]
-            for b in ibad:
-                fit_mask_bad.append(b)
-    
-    if mask_metal:
-        # galaxy = interpolate_metal(galaxy,noise)
-        # metal_mask_bad = metal_masker_nn(lam_gal,galaxy,noise,fits_file)
-        metal_mask_bad = metal_masker(lam_gal,galaxy,noise)
-
-        for b in metal_mask_bad:
-            fit_mask_bad.append(b)
-
-    fit_mask_bad = np.sort(np.unique(fit_mask_bad))
-    fit_mask_good = np.setdiff1d(np.arange(0,len(lam_gal),1,dtype=int),fit_mask_bad)
-
-    ###############################################################
-
-    c = 299792.458				  # speed of light in km/s
-    frac = lam_gal[1]/lam_gal[0]	# Constant lambda fraction per pixel
-    dlam_gal = (frac - 1)*lam_gal   # Size of every pixel in Angstrom
-    # print('\n Size of every pixel: %s (A)' % dlam_gal)
-    wdisp = t['wdisp'][mask]		# Intrinsic dispersion of every pixel, in pixels units
-    disp_res = wdisp*dlam_gal # Resolution dispersion of every pixel, in angstroms
-    velscale = np.log(frac)*c	   # Constant velocity scale in km/s per pixel
-
-    # If the galaxy is at significant redshift, one should bring the galaxy
-    # spectrum roughly to the rest-frame wavelength, before calling pPXF
-    # (See Sec2.4 of Cappellari 2017). In practice there is no
-    # need to modify the spectrum in any way, given that a red shift
-    # corresponds to a linear shift of the log-rebinned spectrum.
-    # One just needs to compute the wavelength range in the rest-frame
-    # and adjust the instrumental resolution of the galaxy observations.
-    # This is done with the following three commented lines:
-    #
-    lam_gal = lam_gal/(1.0+z)  # Compute approximate restframe wavelength
-    disp_res = disp_res/(1.0+z)   # Adjust resolution in Angstrom
-
-    # disp_res = np.full_like(lam_gal,0.0)
-    # We pass this interp1d class to the fit_model function to correct for 
-    # the instrumental resolution of emission lines in our model
-    # disp_res_ftn = interp1d(lam_gal,disp_res,kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10)) 
-
-    val,idx = find_nearest(lam_gal,5175)
 
     ################################################################################
 
@@ -2224,140 +1644,7 @@ def prepare_plot(lam_gal,galaxy,noise,ibad,flux_norm,fit_norm,run_dir):
 #### Prepare User Spectrum #######################################################
 
 def prepare_user_spec(fits_file,spec,wave,err,fwhm_res,z,ebv,flux_norm,fit_reg,mask_emline,user_mask,mask_metal,cosmology,run_dir,verbose=True,plot=True):
-    """
-    Prepares user-input spectrum for BADASS fitting.
-    """
 
-    # Only use the wavelength range in common between galaxy and stellar library.
-    # Determine limits of spectrum vs templates
-    # mask = ( (t['loglam'] > np.log10(3540)) & (t['loglam'] < np.log10(7409)) )
-    fit_min,fit_max = float(fit_reg[0]),float(fit_reg[1])
-    # mask = ( ((t['loglam']) >= np.log10(fit_min*(1+z))) & ((t['loglam']) <= np.log10(fit_max*(1+z))) )
-
-    def generate_mask(fit_min, fit_max, lam):
-        """
-        This function generates a mask that includes all
-        channnels *including* the user-input fit_min and fit_max.
-        """
-        # Get lower limit
-        low, low_idx = find_nearest(lam, fit_min) 
-        if (low > fit_min) & (low_idx!=0):
-            low_idx -= 1
-        low_val, _ = find_nearest(lam, lam[low_idx])
-        # Get upper limit
-        upp, upp_idx = find_nearest(lam, fit_max) 
-        if (upp < fit_max) & (upp_idx == len(lam)): 
-            upp_idx += 1
-        upp_val, _ = find_nearest(lam, lam[upp_idx])
-
-        mask = ( lam >= low_val) & ( lam <= upp_val)
-        return mask
-
-    # First, we must log-rebin the linearly-binned input spectrum
-    # If the spectrum is NOT linearly binned, we need to do that before we 
-    # try to log-rebin:
-    if not np.isclose(wave[1]-wave[0],wave[-1]-wave[-2]):
-        if verbose:
-            print("\n Input spectrum is not linearly binned. BADASS will linearly rebin and conserve flux...")
-        new_wave = np.linspace(wave[0],wave[-1],len(wave))
-        spec, err = spectres.spectres(new_wavs=new_wave, spec_wavs=wave, spec_fluxes=spec, 
-                                      spec_errs=err, fill=None, verbose=False)
-        # Fill in any NaN
-        mask = np.isnan(spec)
-        spec[mask] = np.interp(np.flatnonzero(mask), np.flatnonzero(~mask), spec[~mask])        
-        mask = np.isnan(err)
-        err[mask] = np.interp(np.flatnonzero(mask), np.flatnonzero(~mask), err[~mask])    
-        #
-        wave = new_wave
-
-
-    lamRange = (np.min(wave),np.max(wave))
-    galaxy, logLam, velscale = log_rebin(lamRange, spec, velscale=None, flux=False)
-    noise, _, _ = log_rebin(lamRange, err, velscale=velscale, flux=False)
-    lam_gal = np.exp(logLam)
-
-    mask = generate_mask(fit_min, fit_max, lam_gal/(1+z) )
-    
-    if len(noise)<len(galaxy):
-        diff = len(galaxy)-len(noise)
-        noise = np.append(noise,np.full_like(np.nanmedian(noise),diff))
-
-    galaxy = galaxy[mask]
-    lam_gal = lam_gal[mask]
-    noise = noise[mask]
-
-    ### Interpolating over bad pixels ############################
-
-    # Get locations of nan or -inf pixels
-    nan_gal   = np.where(~np.isfinite(galaxy))[0]
-    nan_noise = np.where(~np.isfinite(noise))[0]
-    inan = np.unique(np.concatenate([nan_gal,nan_noise]))
-    # Interpolate over nans and infs if in galaxy or noise
-    noise[inan] = np.nan
-    noise[inan] = 1.0 if all(np.isnan(noise)) else np.nanmedian(noise)
-
-    fit_mask_bad = []
-    if mask_emline:
-        emline_mask_bad = emline_masker(lam_gal,galaxy,noise)
-        for b in emline_mask_bad:
-            fit_mask_bad.append(b)
-
-    if len(user_mask)>0:
-        for i in user_mask:
-            ibad = np.where((lam_gal/(1.0+z)>=i[0]) & (lam_gal/(1.0+z)<=i[1]))[0]
-            for b in ibad:
-                fit_mask_bad.append(b)
-    
-    if mask_metal:
-        # galaxy = interpolate_metal(galaxy,noise)
-        # metal_mask_bad = metal_masker_nn(lam_gal,galaxy,noise,fits_file)
-        metal_mask_bad = metal_masker(lam_gal,galaxy,noise)
-        for b in metal_mask_bad:
-            fit_mask_bad.append(b)
-
-    # Mask pixels exactly equal to zero (but not negative pixels)
-    mask_zeros = True 
-    edge_mask_pix = 5 
-    zero_pix = np.where(galaxy==0)[0]
-    if mask_zeros:
-        for i in zero_pix:
-            m = np.arange(i-edge_mask_pix,i+edge_mask_pix,1)
-            for b in m:
-                fit_mask_bad.append(b)
-
-    fit_mask_bad = np.sort(np.unique(fit_mask_bad))
-    fit_mask_good = np.setdiff1d(np.arange(0,len(lam_gal),1,dtype=int),fit_mask_bad)
-
-    ###############################################################
-
-    c = 299792.458				  # speed of light in km/s
-    frac = lam_gal[1]/lam_gal[0]	# Constant lambda fraction per pixel
-    # print(frac)
-    dlam_gal = (frac - 1)*lam_gal   # Size of every pixel in Angstrom
-    # print(dlam_gal)
-    # # print('\n Size of every pixel: %s (A)' % dlam_gal)
-    # print(disp/dlam_gal) # dispersion of every pixel in pixels
-    # wdisp = t['wdisp'][mask]		# Intrinsic dispersion of every pixel, in pixels units
-    # disp_res = wdisp*dlam_gal # Resolution dispersion of every pixel, in angstroms
-    # velscale = np.log(frac)*c	   # Constant velocity scale in km/s per pixel
-    if type(fwhm_res) in (list, np.ndarray):
-        disp_res = fwhm_res[mask]/2.3548
-    else:
-        disp_res = np.full(lam_gal.shape, fill_value=fwhm_res/2.3548)
-
-    velscale = velscale[0]
-
-    # If the galaxy is at significant redshift, one should bring the galaxy
-    # spectrum roughly to the rest-frame wavelength, before calling pPXF
-    # (See Sec2.4 of Cappellari 2017). In practice there is no
-    # need to modify the spectrum in any way, given that a red shift
-    # corresponds to a linear shift of the log-rebinned spectrum.
-    # One just needs to compute the wavelength range in the rest-frame
-    # and adjust the instrumental resolution of the galaxy observations.
-    # This is done with the following three commented lines:
-    #
-    lam_gal = lam_gal/(1+z)  # Compute approximate restframe wavelength
-    disp_res = disp_res/(1+z)   # Adjust resolution in Angstrom
 
     #################### Correct for galactic extinction ##################
 
@@ -2373,9 +1660,6 @@ def prepare_user_spec(fits_file,spec,wave,err,fwhm_res,z,ebv,flux_norm,fit_reg,m
     galaxy   = galaxy/fit_norm
     noise   = noise /fit_norm
 
-    # if noise vector is zero, set it to 10%
-    if np.nansum(noise)==0:
-        noise = np.full_like(galaxy,0.05)
 
     #######################################################################
     # Write to log
@@ -2604,7 +1888,7 @@ prepare_ifu_plot = prepare_plot
 
 #### Prepare stellar templates ###################################################
 
-def prepare_stellar_templates(galaxy, lam_gal, fit_reg, velscale, disp_res, fit_mask, losvd_options, run_dir):
+def prepare_stellar_templates(galaxy, lam_gal, fit_reg, velscale, disp_res, losvd_options):
     """
     Prepares stellar templates for convolution using pPXF. 
     This example is from Capellari's pPXF examples, the code 
@@ -9004,7 +8288,7 @@ def calc_mcmc_blob(p, lam_gal, comp_dict, comp_options, line_list, combined_line
 
 #### Host-Galaxy Template##############################################################################
 
-def generate_host_template(lam_gal,host_options,disp_res,fit_mask,velscale,verbose=True):
+def generate_host_template(lam_gal,host_options,disp_res,velscale):
     """
     
     """
@@ -9127,7 +8411,7 @@ def generate_host_template(lam_gal,host_options,disp_res,fit_mask,velscale,verbo
 
 #### Optical FeII Templates ##############################################################
 
-def initialize_opt_feii(lam_gal, opt_feii_options, disp_res, fit_mask, velscale):
+def initialize_opt_feii(lam_gal, opt_feii_options, disp_res, velscale):
     """
     Generate FeII templates.  Options:
 
@@ -9405,7 +8689,7 @@ def VC04_opt_feii_template(p, lam_gal, opt_feii_templates, opt_feii_options, vel
 
 #### UV Iron Template ##############################################################
     
-def initialize_uv_iron(lam_gal, feii_options, disp_res, fit_mask, velscale):
+def initialize_uv_iron(lam_gal, feii_options, disp_res, velscale):
     """
     Generate UV Iron template.
     """
@@ -9440,7 +8724,7 @@ def initialize_uv_iron(lam_gal, feii_options, disp_res, fit_mask, velscale):
 
 #### Balmer Template ###############################################################
 
-def initialize_balmer(lam_gal, balmer_options, disp_res,fit_mask, velscale):
+def initialize_balmer(lam_gal, disp_res, velscale):
     # Import the template for the higher-order balmer lines (7 <= n <= 500)
     data_dir = BADASS_DIR.joinpath("badass_data","balmer_template")
     # df = pd.read_csv(str(data_dir.joinpath("higher_order_balmer.csv")))
@@ -10133,81 +9417,6 @@ def gaussian_filter1d(spec, sig):
     return conv_spectrum
 
 ##################################################################################
-
-def log_rebin(lamRange, spec, oversample=1, velscale=None, flux=False):
-    """
-    Logarithmically rebin a spectrum, while rigorously conserving the flux.
-    Basically the photons in the spectrum are simply redistributed according
-    to a new grid of pixels, with non-uniform size in the spectral direction.
-    
-    When the flux keyword is set, this program performs an exact integration 
-    of the original spectrum, assumed to be a step function within the 
-    linearly-spaced pixels, onto the new logarithmically-spaced pixels. 
-    The output was tested to agree with the analytic solution.
-
-    :param lamRange: two elements vector containing the central wavelength
-        of the first and last pixels in the spectrum, which is assumed
-        to have constant wavelength scale! E.g. from the values in the
-        standard FITS keywords: LAMRANGE = CRVAL1 + [0, CDELT1*(NAXIS1 - 1)].
-        It must be LAMRANGE[0] < LAMRANGE[1].
-    :param spec: input spectrum.
-    :param oversample: can be used, not to loose spectral resolution,
-        especally for extended wavelength ranges and to avoid aliasing.
-        Default: OVERSAMPLE=1 ==> Same number of output pixels as input.
-    :param velscale: velocity scale in km/s per pixels. If this variable is
-        not defined, then it will contain in output the velocity scale.
-        If this variable is defined by the user it will be used
-        to set the output number of pixels and wavelength scale.
-    :param flux: (boolean) True to preserve total flux. In this case the
-        log rebinning changes the pixels flux in proportion to their
-        dLam so the following command will show large differences
-        beween the spectral shape before and after LOG_REBIN:
-
-           plt.plot(exp(logLam), specNew)  # Plot log-rebinned spectrum
-           plt.plot(np.linspace(lamRange[0], lamRange[1], spec.size), spec)
-
-        By defaul, when this is False, the above two lines produce
-        two spectra that almost perfectly overlap each other.
-    :return: [specNew, logLam, velscale] where logLam is the natural
-        logarithm of the wavelength and velscale is in km/s.
-
-    """
-    lamRange = np.asarray(lamRange)
-    assert len(lamRange) == 2, 'lamRange must contain two elements'
-    assert lamRange[0] < lamRange[1], 'It must be lamRange[0] < lamRange[1]'
-    assert spec.ndim == 1, 'input spectrum must be a vector'
-    n = spec.shape[0]
-    m = int(n*oversample)
-
-    dLam = np.diff(lamRange)/(n - 1.)		# Assume constant dLam
-    lim = lamRange/dLam + [-0.5, 0.5]		# All in units of dLam
-    borders = np.linspace(*lim, num=n+1)	 # Linearly
-    logLim = np.log(lim)
-
-    c = 299792.458						   # Speed of light in km/s
-    if velscale is None:					 # Velocity scale is set by user
-        velscale = np.diff(logLim)/m*c	   # Only for output
-    else:
-        logScale = velscale/c
-        m = int(np.diff(logLim)/logScale)	# Number of output pixels
-        logLim[1] = logLim[0] + m*logScale
-
-    newBorders = np.exp(np.linspace(*logLim, num=m+1)) # Logarithmically
-    k = (newBorders - lim[0]).clip(0, n-1).astype(int)
-
-    specNew = np.add.reduceat(spec, k)[:-1]  # Do analytic integral
-    specNew *= np.diff(k) > 0	# fix for design flaw of reduceat()
-    specNew += np.diff((newBorders - borders[k])*spec[k])
-
-    if not flux:
-        specNew /= np.diff(newBorders)
-
-    # Output log(wavelength): log of geometric mean
-    logLam = np.log(np.sqrt(newBorders[1:]*newBorders[:-1])*dLam)
-
-    return specNew, logLam, velscale
-
-###############################################################################
 
 def rebin(x, factor):
     """
@@ -12662,155 +11871,6 @@ def write_log(output_val,output_type,run_dir):
             logfile.write('\n-----------------------------------------------------------------------------------------------------------------')
         return None
 
-    if (output_type=='fit_information'):
-        fit_options,mcmc_options,comp_options,pca_options,losvd_options,host_options,power_options,poly_options,opt_feii_options,uv_iron_options,balmer_options,\
-        plot_options,output_options = output_val
-        with log_file_path.open(mode='a') as logfile:
-            logfile.write('\n')
-            logfile.write('\n### User-Input Fitting Paramters & Options ###')
-            logfile.write('\n-----------------------------------------------------------------------------------------------------------------')
-            logfile.write('\n')
-            # General fit options
-            logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   fit_options:','',''))
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('fit_reg',':',str(fit_options['fit_reg']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('good_thresh',':',str(fit_options['good_thresh']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('mask_bad_pix',':',str(fit_options['mask_bad_pix']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('n_basinhop',':',str(fit_options['n_basinhop']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('test_lines',':',str(fit_options['test_lines']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('max_like_niter',':',str(fit_options['max_like_niter']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('output_pars',':',str(fit_options['output_pars']) )) 
-            logfile.write('\n')
-            # MCMC options
-            if mcmc_options['mcmc_fit']==False:
-                logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   mcmc_options:','',''))
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('','','MCMC fitting is turned off.' )) 
-                logfile.write('\n')
-            elif mcmc_options['mcmc_fit']==True:
-                logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   mcmc_options:','',''))
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('mcmc_fit',':',str(mcmc_options['mcmc_fit']) )) 
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('nwalkers',':',str(mcmc_options['nwalkers']) )) 
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('auto_stop',':',str(mcmc_options['auto_stop']) )) 
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('conv_type',':',str(mcmc_options['conv_type']) )) 
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('min_samp',':',str(mcmc_options['min_samp']) )) 
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('ncor_times',':',str(mcmc_options['ncor_times']) )) 
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('autocorr_tol',':',str(mcmc_options['autocorr_tol']) )) 
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('write_iter',':',str(mcmc_options['write_iter']) )) 
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('write_thresh',':',str(mcmc_options['write_thresh']) )) 
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('burn_in',':',str(mcmc_options['burn_in']) )) 
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('min_iter',':',str(mcmc_options['min_iter']) )) 
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('max_iter',':',str(mcmc_options['max_iter']) )) 
-                logfile.write('\n')
-            # Fit Component options
-            logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   comp_options:','',''))
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('fit_opt_feii',':',str(comp_options['fit_opt_feii']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('fit_uv_iron',':',str(comp_options['fit_uv_iron']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('fit_balmer',':',str(comp_options['fit_balmer']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('fit_losvd',':',str(comp_options['fit_losvd']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('fit_host',':',str(comp_options['fit_host']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('fit_power',':',str(comp_options['fit_power']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('fit_poly',':',str(comp_options['fit_poly']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('fit_narrow',':',str(comp_options['fit_narrow']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('fit_broad',':',str(comp_options['fit_broad']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('fit_absorp',':',str(comp_options['fit_absorp']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('tie_line_disp',':',str(comp_options['tie_line_disp']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('tie_line_voff',':',str(comp_options['tie_line_voff']) )) 
-            logfile.write('\n')
-            # LOSVD options
-            if comp_options["fit_losvd"]==True:
-                logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   losvd_options:','',''))
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('library',':',str(losvd_options['library']) )) 
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('vel_const',':',str(losvd_options['vel_const']) )) 
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('disp_const',':',str(losvd_options['disp_const']) )) 
-                logfile.write('\n')
-            elif comp_options["fit_losvd"]==False:
-                logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   losvd_options:','',''))
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('','','Stellar LOSVD fitting is turned off.' )) 
-                logfile.write('\n')
-            # Host Options
-            if comp_options["fit_host"]==True:
-                logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   host_options:','',''))
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('age',':',str(host_options['age']) )) 
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('vel_const',':',str(host_options['vel_const']) )) 
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('disp_const',':',str(host_options['disp_const']) )) 
-                logfile.write('\n')
-            elif comp_options["fit_host"]==False:
-                logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   host_options:','',''))
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('','','Host-galaxy template component is turned off.' )) 
-                logfile.write('\n')
-            # Power-law continuum options
-            if comp_options['fit_power']==True:
-                logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   power_options:','',''))
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('type',':',str(power_options['type']) )) 
-                logfile.write('\n')
-            elif comp_options["fit_power"]==False:
-                logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   power_options:','',''))
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('','','Power Law component is turned off.' )) 
-                logfile.write('\n')
-            # Polynomial continuum options
-            if comp_options['fit_poly']==True:
-                logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   poly_options:','',''))
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('apoly',':','bool: %s, order: %s' % (str(poly_options['apoly']['bool']),str(poly_options['apoly']['order']),)))
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('mpoly',':','bool: %s, order: %s' % (str(poly_options['mpoly']['bool']),str(poly_options['mpoly']['order']),)))
-                logfile.write('\n')
-            elif comp_options["fit_poly"]==False:
-                logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   poly_options:','',''))
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('','','Polynomial continuum component is turned off.' )) 
-                logfile.write('\n')
-            # Optical FeII fitting options
-            if (comp_options['fit_opt_feii']==True):
-                logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   opt_feii_options:','',''))
-            if (comp_options['fit_opt_feii']==True) and (opt_feii_options['opt_template']['type']=='VC04'):
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('opt_template:',':','type: %s' % str(opt_feii_options['opt_template']['type']) ))
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('opt_amp_const',':','bool: %s, br_opt_feii_val: %s, na_opt_feii_val: %s' % (str(opt_feii_options['opt_amp_const']['bool']),str(opt_feii_options['opt_amp_const']['br_opt_feii_val']),str(opt_feii_options['opt_amp_const']['na_opt_feii_val']))))
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('opt_disp_const',':','bool: %s, br_opt_feii_val: %s, na_opt_feii_val: %s' % (str(opt_feii_options['opt_disp_const']['bool']),str(opt_feii_options['opt_disp_const']['br_opt_feii_val']),str(opt_feii_options['opt_disp_const']['na_opt_feii_val']))))
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('opt_voff_const',':','bool: %s, br_opt_feii_val: %s, na_opt_feii_val: %s' % (str(opt_feii_options['opt_voff_const']['bool']),str(opt_feii_options['opt_voff_const']['br_opt_feii_val']),str(opt_feii_options['opt_voff_const']['na_opt_feii_val']))))
-            if (comp_options['fit_opt_feii']==True) and (opt_feii_options['opt_template']['type']=='K10'):
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('opt_template:',':','type: %s' % str(opt_feii_options['opt_template']['type']) ))
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('opt_amp_const',':','bool: %s, f_feii_val: %s, s_feii_val: %s, g_feii_val: %s, z_feii_val: %s' % (str(opt_feii_options['opt_amp_const']['bool']),str(opt_feii_options['opt_amp_const']['f_feii_val']),str(opt_feii_options['opt_amp_const']['s_feii_val']),str(opt_feii_options['opt_amp_const']['g_feii_val']),str(opt_feii_options['opt_amp_const']['z_feii_val']))))
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('opt_disp_const',':','bool: %s, opt_feii_val: %s' % (str(opt_feii_options['opt_disp_const']['bool']),str(opt_feii_options['opt_disp_const']['opt_feii_val']),)))
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('opt_voff_const',':','bool: %s, opt_feii_val: %s' % (str(opt_feii_options['opt_voff_const']['bool']),str(opt_feii_options['opt_voff_const']['opt_feii_val']),)))
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('opt_temp_const',':','bool: %s, opt_feii_val: %s' % (str(opt_feii_options['opt_temp_const']['bool']),str(opt_feii_options['opt_temp_const']['opt_feii_val']),)))
-            elif comp_options["fit_opt_feii"]==False:
-                logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   opt_feii_options:','',''))
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('','','Optical FeII fitting is turned off.' )) 
-                logfile.write('\n')
-            # UV Iron options
-            if (comp_options['fit_uv_iron']==True):
-                logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   uv_iron_options:','',''))
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('uv_amp_const',':','bool: %s, uv_iron_val: %s' % (str(uv_iron_options['uv_amp_const']['bool']),str(uv_iron_options['uv_amp_const']['uv_iron_val']) )))
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('uv_disp_const',':','bool: %s, uv_iron_val: %s' % (str(uv_iron_options['uv_disp_const']['bool']),str(uv_iron_options['uv_disp_const']['uv_iron_val']),)))
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('uv_voff_const',':','bool: %s, uv_iron_val: %s' % (str(uv_iron_options['uv_voff_const']['bool']),str(uv_iron_options['uv_voff_const']['uv_iron_val']),)))
-            elif comp_options["fit_uv_iron"]==False:
-                logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   uv_iron_options:','',''))
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('','','UV Iron fitting is turned off.' )) 
-                logfile.write('\n')	
-            # Balmer options
-            if (comp_options['fit_balmer']==True):
-                logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   balmer_options:','',''))
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('R_const',':','bool: %s, R_val: %s' % (str(balmer_options['R_const']['bool']),str(balmer_options['R_const']['R_val']) )))
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('balmer_amp_const',':','bool: %s, balmer_amp_val: %s' % (str(balmer_options['balmer_amp_const']['bool']),str(balmer_options['balmer_amp_const']['balmer_amp_val']),)))
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('balmer_disp_const',':','bool: %s, balmer_disp_val: %s' % (str(balmer_options['balmer_disp_const']['bool']),str(balmer_options['balmer_disp_const']['balmer_disp_val']),)))
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('balmer_voff_const',':','bool: %s, balmer_voff_val: %s' % (str(balmer_options['balmer_voff_const']['bool']),str(balmer_options['balmer_voff_const']['balmer_voff_val']),)))
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('Teff_const',':','bool: %s, Teff_val: %s' % (str(balmer_options['Teff_const']['bool']),str(balmer_options['Teff_const']['Teff_val']),)))
-                logfile.write('\n{0:>30}{1:<2}{2:<100}'.format('tau_const',':','bool: %s, tau_val: %s' % (str(balmer_options['tau_const']['bool']),str(balmer_options['tau_const']['tau_val']),)))
-            elif comp_options["fit_balmer"]==False:
-                logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   balmer_options:','',''))
-                logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('','','Balmer pseudo-continuum fitting is turned off.' )) 
-                logfile.write('\n')
-
-            # Plotting options
-            logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   plot_options:','',''))
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('plot_param_hist',':',str(plot_options['plot_param_hist']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('plot_pca',':',str(plot_options['plot_pca']) ))
-            # Output options
-            logfile.write('\n{0:<30}{1:<30}{2:<30}'.format('   output_options:','',''))
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('write_chain',':',str(output_options['write_chain']) )) 
-            logfile.write('\n{0:>30}{1:<2}{2:<30}'.format('verbose',':',str(output_options['verbose']) )) 
-            #
-            logfile.write('\n')
-            logfile.write('\n-----------------------------------------------------------------------------------------------------------------')
-        return None
-    
     if (output_type=='pca_information'):
         do_pca,n_components,pca_masks,pca_nan_fix,pca_exp_var = output_val
         with log_file_path.open(mode='a') as logfile:
