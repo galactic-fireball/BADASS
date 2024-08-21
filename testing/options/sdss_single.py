@@ -24,6 +24,7 @@ fit_options={
 "max_like_niter": 25, # number of maximum likelihood iterations
 "output_pars": False, # only output free parameters of fit and stop code (diagnostic)
 "cosmology": {"H0":70.0, "Om0": 0.30}, # Flat Lam-CDM Cosmology
+"flux_norm": 1e-17,
 }
 ################################################################################
 

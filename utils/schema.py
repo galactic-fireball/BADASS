@@ -74,7 +74,7 @@ class DefaultValidator(Validator):
         if not constraint:
             return
 
-        if (not isinstance(value, list)) or (len(value) != 2) or (value[1] < value[0]):
+        if (not isinstance(value, (list,tuple))) or (len(value) != 2) or (value[1] < value[0]):
             self._error(field, '%s must be a list of length 2' % field)
 
 
@@ -182,6 +182,10 @@ DEFAULT_FIT_OPTIONS = {
                 'default': 0.30,
             },
         },
+    },
+    'flux_norm': {
+        'type': 'float',
+        'default': 1.0,
     },
 }
 
@@ -343,7 +347,7 @@ DEFAULT_COMP_OPTIONS = {
 DEFAULT_NARROW_OPTIONS = {
     'amp_plim': { # line amplitude parameter limits
         'type': 'list',
-        'minlength': 2,
+        'minlength': 1,
         'maxlength': 2,
         'schema': {
             'type': ['integer', 'float'],
@@ -351,23 +355,19 @@ DEFAULT_NARROW_OPTIONS = {
             'min': 0,
         },
         'nullable': True,
-        'default': [0,],
+        'default': None,
     },
     'disp_plim': { # line dispersion parameter limits
         'type': 'list',
-        'schema': {
-            'is_lohi': True,
-        },
+        'is_lohi': True,
         'nullable': True,
-        'default': [0.001,300],
+        'default': [0.001,300.0],
     },
     'voff_plim': { # line velocity offset parameter limits
         'type': 'list',
-        'schema': {
-            'is_lohi': True,
-        },
+        'is_lohi': True,
         'nullable': True,
-        'default': [-500,500],
+        'default': [-500.0,500.0],
     },
     'line_profile': 'line_profile', # line profile shape
     'n_moments': { # number of higher order Gauss-Hermite moments
@@ -383,7 +383,7 @@ DEFAULT_NARROW_OPTIONS = {
 DEFAULT_BROAD_OPTIONS = {
     'amp_plim': { # line amplitude parameter limits
         'type': 'list',
-        'minlength': 2,
+        'minlength': 1,
         'maxlength': 2,
         'schema': {
             'type': ['integer', 'float'],
@@ -391,23 +391,19 @@ DEFAULT_BROAD_OPTIONS = {
             'min': 0,
         },
         'nullable': True,
-        'default': [0,],
+        'default': None,
     },
     'disp_plim': { # line dispersion parameter limits
         'type': 'list',
-        'schema': {
-            'is_lohi': True,
-        },
+        'is_lohi': True,
         'nullable': True,
-        'default': [300,3000],
+        'default': [300.0,3000.0],
     },
     'voff_plim': { # line velocity offset parameter limits
         'type': 'list',
-        'schema': {
-            'is_lohi': True,
-        },
+        'is_lohi': True,
         'nullable': True,
-        'default': [-1000,1000],
+        'default': [-1000.0,1000.0],
     },
     'line_profile': 'line_profile', # line profile shape
     'n_moments': { # number of higher order Gauss-Hermite moments
@@ -435,19 +431,15 @@ DEFAULT_ABSORP_OPTIONS = {
     },
     'disp_plim': { # line dispersion parameter limits
         'type': 'list',
-        'schema': {
-            'is_lohi': True,
-        },
+        'is_lohi': True,
         'nullable': True,
-        'default': [0.001,3000],
+        'default': [0.001,3000.0],
     },
     'voff_plim': { # line velocity offset parameter limits
         'type': 'list',
-        'schema': {
-            'is_lohi': True,
-        },
+        'is_lohi': True,
         'nullable': True,
-        'default': [-1000,1000],
+        'default': [-1000.0,1000.0],
     },
     'line_profile': 'line_profile', # line profile shape
     'n_moments': { # number of higher order Gauss-Hermite moments
