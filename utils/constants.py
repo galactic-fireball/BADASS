@@ -3,11 +3,13 @@ import prodict
 
 DEFAULT_OUTDIR = 'MCMC_output'
 
-c = 299792.458 # speed of light in km/s
-k = 1.38064852e-23 # Boltzmann constant; m2 kg s-2 K-1
+# TODO: assign actual unit values via astropy?
+c = 299792.458 # speed of light (km/s)
+k = 1.38064852e-23 # Boltzmann constant (m2 kg s-2 K-1)
+h = 6.62607015e-34 # Planck's constant (m2 kg / s)
 
 # TODO: should be a fit_option?
-MIN_FIT_REGION = 25 # in Å, the minimum fitting region size
+MIN_FIT_REGION = 25 # (Angstroms), the minimum fitting region size
 
 FIT_STATS = ['ML','OLS','RCHI2','RMSE']
 LINE_PROFILES = ['gaussian','lorentzian','voigt','gauss-hermite','laplace','uniform']
