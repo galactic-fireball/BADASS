@@ -1,83 +1,125 @@
+from importlib import import_module
+import numpy as np
 import pathlib
 
+import utils.constants as constants
+from utils.logger import BadassLogger
+from utils.pca import pca_reconstruction
+from utils.utils import emline_masker, metal_masker
 
-INPUT_PARSER_PREFIX = 'read_'
-SDSS_FMT = 'sdss_spec'
+class BadassInput():
 
-
-# To avoid circular imports, we import
-# subclasses only when needed
-# Note: this is the order the registry
-# will look for available read functions
-# TODO: should search a specific input
-# parser directory and auto-import
-# anything found there?
-def import_custom_parsers():
-    import utils.input.sdss_input
-    import utils.input.ifu_input
-    import utils.input.muse_input
-
-
-
-# This registry business seems kung fu-y, but it essentially registers
-# any class that inherits from BadassInput. That way custom input data
-# parsers can be added easily and BadassInput will be able to find them.
-# Note: The class needs to be imported in import_custom_parsers above
-# so that python actually registers the subclass.
-# See input_sdss.py for an example to subclass BadassInput
-REGISTRY = {}
-
-class MetaRegistry(type):
-    def __new__(meta, name, bases, class_dict):
-        cls = type.__new__(meta, name, bases, class_dict)
-        if name in REGISTRY:
-            raise Exception('BadassInput subclass has already been defined: {name}')
-        REGISTRY[cls.__name__] = cls
-        return cls
-
-
-class BadassInput(metaclass=MetaRegistry):
-
-    @classmethod
-    def read_user(cls, input_data, options):
-        # Custom user data is provided via dict
-        # See validate_input below for expected values
-
-        if not isinstance(input_data, dict):
-            raise Exception('User input data must be a dict')
-
-        return cls(input_dict=input_data, options=options)
-
-
-    # TODO: needs to be a prodict?
-    def __init__(self, input_dict=None, options=None):
-
-        self.context = None # BadassContext
-        self.infile = None # pathlib.Path to original path of input file
+    def common_postinit(self, input_data, options):
+        self.validate_input()
         self.options = options # BadassOptions
 
-        self.ra = None
-        self.dec = None
-        self.z = None
+        # TODO: check for already existing output and overwrite option
+        self.outdir = pathlib.Path(self.options.io_options.output_dir or get_default_outdir(self.infile))
+        if not self.outdir.is_absolute():
+            self.outdir = self.infile.parent.joinpath(self.outdir)
+        self.outdir.mkdir(parents=True, exist_ok=True)
 
-        self.wave = None # the restframe wavelengths: wave = observed_wave / (1 + z)
-        self.spec = None # actual spectrum data to be fit
-        self.noise = None # noise = sqrt(1 / ivar)
-        self.ebv = None # TODO: set to default here? need here?
-        self.fwhm_res = None
-        self.velscale = None
+        self.log = BadassLogger(self)
 
-        # TODO: need?
-        # self.ivar = None
-        # self.velscale = None
-        # self.fit_mask = None
-        # self.mask = None
+        self.set_fit_region()
 
-        if input_dict:
-            # TODO: implement similar functionality to prepare_user_spec?
-            self.__dict__.update(input_dict)
+        if getattr(self, 'bad_pix', None) is None:
+            self.bad_pix = np.array([])
+
+        reg_mask = ((self.wave >= self.fit_reg.min) & (self.wave <= self.fit_reg.max))
+        self.spec = self.spec[reg_mask]
+        self.wave = self.wave[reg_mask]
+        self.noise = self.noise[reg_mask]
+        self.disp_res = self.disp_res[reg_mask]
+
+        nan_gal = np.where(~np.isfinite(self.spec))[0]
+        nan_noise = np.where(~np.isfinite(self.noise))[0]
+        inan = np.unique(np.concatenate([nan_gal,nan_noise]))
+        # Interpolate over nans and infs if in galaxy or noise
+        self.noise[inan] = np.nan
+        self.noise[inan] = 1.0 if all(np.isnan(self.noise)) else np.nanmedian(self.noise)
+
+        fit_mask_bad = []
+        if self.options.fit_options.mask_bad_pix:
+            fit_mask_bad.extend(self.bad_pix)
+        if self.options.fit_options.mask_emline:
+            fit_mask_bad.extend(emline_masker(self.wave,self.spec,self.noise))
+        for m in self.options.user_mask:
+            fit_mask_bad.append(np.where((self.wave >= m[0]) & (self.wave <= m[1]))[0])
+        if self.options.fit_options.mask_metal:
+            fit_mask_bad.extend(metal_masker(self.wave,self.spec,self.noise))
+
+        fit_mask_bad = np.sort(np.unique(fit_mask_bad))
+        self.fit_mask = np.setdiff1d(np.arange(0,len(self.wave),1,dtype=int),fit_mask_bad)
+
+        # TODO: galaxy extinction
+
+        self.fit_norm = np.round(np.nanmax(self.spec), 5)
+        self.spec = self.spec / self.fit_norm
+        self.noise = self.noise / self.fit_norm
+
+        pca_reconstruction(self) # TODO: test
 
 
+    def set_fit_region(self):
+        """
+        Determines the fitting region for an input spectrum and fit options.
+        Set self.fit_reg to None on error
+        """
+
+        # Fitting region initially the edges of wavelength vector
+        self.fit_reg = (self.wave[0], self.wave[-1])
+        self.log.info('Initial fitting region: ({mi}, {ma})'.format(mi=self.fit_reg[0], ma=self.fit_reg[1]))
+
+        # TODO: set default to 'auto' in options schema
+        user_fit_reg = self.options.fit_options.fit_reg
+        if isinstance(user_fit_reg, (tuple,list)):
+            if user_fit_reg[0] > user_fit_reg[1]:
+                self.log.error('Fitting boundaries overlap!')
+                self.fit_reg = None
+                return
+
+            if (user_fit_reg[0] > self.fit_reg[1]) or (user_fit_reg[1] < self.fit_reg[0]):
+                self.log.error('Fitting region not available!')
+                self.fit_reg = None
+                return
+
+            if (user_fit_reg[0] < self.fit_reg[0]) or (user_fit_reg[1] > self.fit_reg[1]):
+                self.log.warning("Input fitting region exceeds available wavelength range.  BADASS will adjust your fitting range automatically...")
+                self.log.warning("\t- Input fitting range: (%d, %d)" % (user_fit_reg[0], user_fit_reg[1]))
+                self.log.warning("\t- Available wavelength range: (%d, %d)" % (self.fit_reg[0], self.fit_reg[1]))
+
+            self.fit_reg = (np.max([user_fit_reg[0], self.fit_reg[0]]), np.min([user_fit_reg[1], self.fit_reg[1]]))
+
+        # The lower limit of the spectrum must be the lower limit of our stellar templates
+        # TODO: template function to let each template affect the fitting region?
+        if self.options.comp_options.fit_losvd:
+            min_losvd = constants.LOSVD_LIBRARIES[self.options.losvd_options.library].min_losvd
+            max_losvd = constants.LOSVD_LIBRARIES[self.options.losvd_options.library].max_losvd
+            if (self.fit_reg[0] < min_losvd) or (self.fit_reg[1] > max_losvd):
+                self.log.warning("Warning: Fitting LOSVD requires wavelenth range between {mi} Å and {ma} Å for stellar templates. BADASS will adjust your fitting range to fit the LOSVD...".format(mi=min_losvd, ma=max_losvd))
+                self.log.warning("\t- Available wavelength range: (%d, %d)" % (self.fit_reg[0], self.fit_reg[1]))
+            self.fit_reg = (np.max([min_losvd, self.fit_reg[0]]), np.min([max_losvd, self.fit_reg[1]]))
+
+        # allow for more explicit variable name: fit_reg.min and fit_reg.max
+        self.fit_reg = type('FitReg', (object,), dict(min=self.fit_reg[0], max=self.fit_reg[1]))
+        self.log.info("- New fitting region is ({mi}, {ma})".format(mi=self.fit_reg.min, ma=self.fit_reg.max))
+
+        if (self.fit_reg.max - self.fit_reg.min) < constants.MIN_FIT_REGION:
+            self.log.error('Fitting region too small! The fitting region must be at least {min_reg} A!'.format(min_reg=constants.MIN_FIT_REGION))
+            self.fit_reg = None
+            return
+
+        mask = ((self.wave >= self.fit_reg.min) & (self.wave <= self.fit_reg.max))
+        igood = np.where((self.spec[mask]>0) & (self.noise[mask]>0))[0]
+        good_frac = (len(igood)*1.0)/len(self.spec[mask])
+        if good_frac < self.options.fit_options.good_thresh:
+            self.log.error('Not enough good channels above threshold!')
+            self.fit_reg = None
+            return
+
+
+    # TODO: default reader?
     @classmethod
     def from_dict(cls, input_data):
         return cls(input_data)
@@ -85,19 +127,20 @@ class BadassInput(metaclass=MetaRegistry):
 
     @classmethod
     def from_format(cls, input_data, options):
-        import_custom_parsers()
-
         options = options if isinstance(options, dict) else options[0]
-        fmt = options.io_options.infmt
-        read_format_func = '{pre}{fmt}'.format(pre=INPUT_PARSER_PREFIX, fmt=fmt)
-        for childcls in REGISTRY.values():
-            if hasattr(childcls, read_format_func):
-                try:
-                    return getattr(childcls, read_format_func)(input_data, options)
-                except:
-                    raise Exception('Reading input data with format: {fmt} failed'.format(fmt=fmt))
+        fmt = options.io_options.infmt+'_reader'
 
-        raise Exception('Input data format not supported: {fmt}'.format(fmt=fmt))
+        try:
+            module = import_module('input.'+fmt)
+        except ImportError as e:
+            raise Exception('Could not find Reader Module: %s (%s)' % (fmt,e))
+
+        if not getattr(module, 'Reader', None):
+            raise Exception('No Reader specified in %s' % fmt)
+
+        reader = module.Reader(input_data, options)
+        reader.common_postinit(input_data, options)
+        return reader
 
 
     @classmethod
@@ -163,7 +206,9 @@ class BadassInput(metaclass=MetaRegistry):
     def validate_input(self):
         # Custom input parsers or input dict should provide these values
         # TODO: further validation for each value?
-        for attr in ['infile', 'options', 'ra', 'dec', 'z', 'wave', 'spec', 'noise', 'fwhm_res']:
+        # TODO: check fit_reg
+        # TODO: need infile?
+        for attr in ['infile', 'ra', 'dec', 'z', 'wave', 'spec', 'noise', 'disp_res']:
             if not hasattr(self, attr) or getattr(self, attr) is None:
                 raise Exception('BADASS input missing expected value: {attr}'.format(attr=attr))
 

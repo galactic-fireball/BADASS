@@ -1,7 +1,7 @@
 ################################# IO Options ################################
 io_options={
-    "infmt" : "sdss_spec",
-    "output_dir" : None, # same directory as input file
+    "infmt" : "sdss",
+    "output_dir" : 'sdss_test', # same directory as input file
     "dust_cache" : None,
     "overwrite" : False,
     "log_level" : "debug",

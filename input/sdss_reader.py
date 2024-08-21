@@ -1,23 +1,18 @@
+from astropy import constants as const
 from astropy.io import fits
+import astropy.units as u
 import numpy as np
 import pathlib
 
-from utils.input.input import BadassInput, SDSS_FMT
-from utils.utils import find_nearest
-import utils.constants as consts
+from input.input import BadassInput
+from utils.utils import dered
 
-class SDSSSpec(BadassInput):
+class SDSSReader(BadassInput):
 
-    @classmethod
-    def read_sdss_spec(cls, input_data, options):
-        return cls(input_data)
-
-
-    def __init__(self, input_data):
+    def __init__(self, input_data, options):
         if not isinstance(input_data, pathlib.Path):
             raise Exception('Reading SDSS spectra from data currently unsupported')
 
-        super().__init__()
         self.infile = input_data
         with fits.open(self.infile) as hdu:
             specobj = hdu[2].data
@@ -37,12 +32,17 @@ class SDSSSpec(BadassInput):
 
             # Unpack the spectra
             self.spec = t['flux']
-            self.wave = np.power(10, t['loglam']) / (1+self.z)
+            obs_wave = np.power(10, t['loglam'])
             self.noise = np.sqrt(1 / t['ivar'])
-            self.mask = t['and_mask'] # TODO: need?
+            self.bad_pix = np.where(t['and_mask'] != 0)[0] # TODO: need?
 
-            frac = self.wave[1]/self.wave[0] # Constant lambda fraction per pixel
-            dlam_gal = (frac - 1)*self.wave # Size of every pixel in Angstrom
+            frac = obs_wave[1]/obs_wave[0] # Constant lambda fraction per pixel
+            dlam_gal = (frac - 1)*obs_wave # Size of every pixel in Angstrom
             wdisp = t['wdisp'] # Intrinsic dispersion of every pixel, in pixels units
-            self.fwhm_res = 2.355*wdisp*dlam_gal # Resolution FWHM of every pixel, in angstroms
-            self.velscale = np.log(frac) * consts.c
+            self.disp_res = wdisp*dlam_gal # Resolution FWHM of every pixel, in angstroms
+            self.velscale = np.log(frac) * const.c.to(u.km/u.s).value
+
+            self.wave = dered(obs_wave, self.z)
+            self.disp_res = dered(self.disp_res, self.z)
+
+Reader = SDSSReader
