@@ -68,9 +68,12 @@ import gh_alternative as gh_alt # Gauss-Hermite alternative line profiles
 from sklearn.decomposition import PCA
 from astroML.datasets import sdss_corrected_spectra # SDSS templates for PCA analysis
 
+from prodict import Prodict
+
 from utils.options import BadassOptions
 from input.input import BadassInput
 from utils.utils import log_rebin
+from templates.common import initialize_templates
 
 # plt.style.use('dark_background') # For cool tron-style dark plots
 import matplotlib
@@ -119,59 +122,7 @@ def run_single_target(target):
     start_time = time.time()
 
     target.log.log_fit_information()
-
-    # TODO: add in classified templates
-    host_template = None
-    if target.options.comp_options.fit_host:# & (lam_gal[0]>1680.2):
-        host_template = generate_host_template(target.wave, target.options.host_options, target.disp_res, target.velscale)
-
-    stel_templates = None
-    if target.options.comp_options.fit_losvd:
-        stel_templates = prepare_stellar_templates(target.spec, target.wave, target.fit_reg, target.velscale, target.disp_res, target.options.losvd_options)
-
-    # For the Optical FeII, UV Iron, and Balmer templates, we disable the templates if the fitting region
-    # is entirely outside of the range of the templates.  This saves resources.
-
-    # Check conditions for and generate Optical FeII templates
-    # Veron-Cetty et al. (2004)
-
-    opt_feii_templates = None
-    if target.options.comp_options.fit_opt_feii and target.options.opt_feii_options.opt_template.type == 'VC04':
-        if (target.wave[-1] >= 3400.0) and (target.wave[0] <= 7200.0):
-            opt_feii_templates = initialize_opt_feii(target.wave, target.options.opt_feii_options, target.disp_res, target.velscale)
-        else:
-            target.log.warn('\n - Optical FeII template disabled because template is outside of fitting region.')
-            target.options.comp_options.fit_opt_feii = False
-            # write_log((),'update_opt_feii',run_dir)
-
-    # Kovacevic et al. (2010)
-    elif target.options.comp_options.fit_opt_feii and target.options.opt_feii_options.opt_template.type == 'K10':
-        if (target.wave[-1] >= 4400.0) & (target.wave[0] <= 5500.0):
-            opt_feii_templates = initialize_opt_feii(target.wave, target.options.opt_feii_options, target.disp_res, target.velscale)
-        else:
-            target.log.warn('\n - Optical FeII template disabled because template is outside of fitting region.')
-            target.options.comp_options.fit_opt_feii = False
-            # write_log((),'update_opt_feii',run_dir)
-        
-    # Generate UV Iron template - Vestergaard & Wilkes (2001)
-    uv_iron_template = None
-    if target.options.comp_options.fit_uv_iron:
-        if (target.wave[-1] >= 1074.0) & (target.wave[0] <= 3100.0):
-            uv_iron_template = initialize_uv_iron(target.wave, target.options.uv_iron_options, target.disp_res, target.velscale)
-        else:
-            target.log.warn('\n - UV Iron template disabled because template is outside of fitting region.')
-            target.options.comp_options.fit_uv_iron = False
-            # write_log((),'update_uv_iron',run_dir)
-
-    # Generate Balmer continuum
-    balmer_template = None
-    if target.options.comp_options.fit_balmer:
-        if target.wave[0] < 3500.0:
-            balmer_template = initialize_balmer(target.wave, target.disp_res, target.velscale)
-        else:
-            target.log.warn('\n - Balmer continuum disabled because template is outside of fitting region.')
-            target.options.comp_options.fit_balmer = False
-            # write_log((),'update_balmer',run_dir)
+    templates = initialize_templates(target)
 
     # TODO: need?
     # Set force_thresh to np.inf.  This will get overridden if the user does the line test
@@ -481,49 +432,25 @@ def run_single_target(target):
     # TODO: remove, used anywhere?
     outflow_test_options = False
 
+    # TODO: eventually larger BadassCtx class
+    mlctx = Prodict()
+    mlctx.target = target
+    mlctx.noise = copy.deepcopy(target.noise) # in case needs updating with reweighting
+    mlctx.line_list = line_list
+    mlctx.combined_line_list = combined_line_list
+    mlctx.soft_cons = soft_cons
+    mlctx.outflow_test_options = outflow_test_options
+    mlctx.templates = templates
+    mlctx.blob_pars = blob_pars
+
     # Peform the initial maximum likelihood fit (used for initial guesses for MCMC)
-    result_dict, comp_dict   = max_likelihood(param_dict,
-                                                line_list,
-                                                combined_line_list,
-                                                soft_cons,
-                                                target.wave,
-                                                target.spec,
-                                                target.noise,
-                                                target.z,
-                                                target.options.fit_options.cosmology,
-                                                target.options.comp_options,
-                                                target.options.losvd_options,
-                                                target.options.host_options,
-                                                target.options.power_options,
-                                                target.options.poly_options,
-                                                target.options.opt_feii_options,
-                                                target.options.uv_iron_options,
-                                                target.options.balmer_options,
-                                                outflow_test_options,
-                                                host_template,
-                                                opt_feii_templates,
-                                                uv_iron_template,
-                                                balmer_template,
-                                                stel_templates,
-                                                blob_pars,
-                                                target.disp_res,
-                                                target.fit_mask,
-                                                target.velscale,
-                                                target.options.fit_options.flux_norm,
-                                                target.fit_norm,
-                                                target.outdir,
-                                                fit_type='init',
-                                                fit_stat=target.options.fit_options.fit_stat,
-                                                output_model=False,
-                                                test_outflows=False,
-                                                n_basinhop=target.options.fit_options.n_basinhop,
-                                                reweighting=target.options.fit_options.reweighting,
-                                                max_like_niter=target.options.fit_options.max_like_niter,
-                                                force_best=force_best,
-                                                force_thresh=force_thresh,
-                                                full_verbose=target.options.output_options.verbose,
-                                                verbose=target.options.output_options.verbose)
-    
+    # TODO: put rest of parameters in mlctx
+    result_dict, comp_dict = max_likelihood(param_dict,mlctx,fit_type='init',fit_stat=target.options.fit_options.fit_stat,
+                                            output_model=False,test_outflows=False,n_basinhop=target.options.fit_options.n_basinhop,
+                                            reweighting=target.options.fit_options.reweighting,max_like_niter=target.options.fit_options.max_like_niter,
+                                            force_best=force_best,force_thresh=force_thresh,full_verbose=target.options.output_options.verbose,
+                                            verbose=target.options.output_options.verbose)
+
     if not target.options.mcmc_options.mcmc_fit:
         # If not performing MCMC fitting, terminate BADASS here and write 
         # parameters, uncertainties, and components to a fits file
@@ -6069,57 +5996,25 @@ def calc_max_like_fit_quality(param_dict,noise,n_free_pars,line_list,combined_li
 
 #### Maximum Likelihood Fitting ##################################################
 
-def max_likelihood(param_dict,
-                   line_list,
-                   combined_line_list,
-                   soft_cons,
-                   lam_gal,
-                   galaxy,
-                   noise,
-                   z,
-                   cosmology,
-                   comp_options,
-                   losvd_options,
-                   host_options,
-                   power_options,
-                   poly_options,
-                   opt_feii_options,
-                   uv_iron_options,
-                   balmer_options,
-                   outflow_test_options,
-                   host_template,
-                   opt_feii_templates,
-                   uv_iron_template,
-                   balmer_template,
-                   stel_templates,
-                   blob_pars,
-                   disp_res,
-                   fit_mask,
-                   velscale,
-                   flux_norm,
-                   fit_norm,
-                   run_dir,
-                   fit_type='init',
-                   fit_stat="ML",
-                   output_model=False,
-                   test_outflows=False,
-                   n_basinhop=25,
-                   reweighting=True,
-                   max_like_niter=10,
-                   force_best=False,
-                   force_thresh=np.inf,
-                   full_verbose=False,
-                   verbose=True):
-
+def max_likelihood(param_dict,mlctx,fit_type='init',fit_stat='ML',output_model=False,test_outflows=False,n_basinhop=25,
+                   reweighting=True,max_like_niter=10,force_best=False,force_thresh=np.inf,full_verbose=False,verbose=True):
     """
     This function performs an initial maximum likelihood estimation to acquire robust
     initial parameters.  It performs the monte carlo bootstrapping for both 
     testing outflows and fit for final initial parameters for emcee.
     """
-    param_names = [key for key in param_dict ]
-    params	  = [param_dict[key]['init'] for key in param_dict ]
-    bounds	  = [param_dict[key]['plim'] for key in param_dict ]
-    lb, ub = zip(*bounds) 
+
+    mlctx.fit_type = fit_type
+    mlctx.fit_stat = fit_stat
+    mlctx.output_model = output_model
+
+    H0 = mlctx.target.options.fit_options.cosmology.H0
+    Om0 = mlctx.target.options.fit_options.cosmology.Om0
+
+    mlctx.param_names = [key for key in param_dict ]
+    params = [param_dict[key]['init'] for key in param_dict ]
+    mlctx.bounds = [param_dict[key]['plim'] for key in param_dict ]
+    lb, ub = zip(*mlctx.bounds) 
     param_bounds = op.Bounds(lb,ub,keep_feasible=True)
     n_free_pars = len(params) # number of free parameters
     # Extract parameters with priors; only non-uniform priors 
@@ -6127,11 +6022,11 @@ def max_likelihood(param_dict,
     # for key in param_dict:
     #    print(key, param_dict[key])
 
-    prior_dict = {key:param_dict[key] for key in param_dict if ("prior" in param_dict[key])}
+    mlctx.prior_dict = {key:param_dict[key] for key in param_dict if ('prior' in param_dict[key])}
 
     def lambda_gen(con): 
-        return lambda p: ne.evaluate(con[0],local_dict = {param_names[i]:p[i] for i in range(len(p))}).item()-ne.evaluate(con[1],local_dict = {param_names[i]:p[i] for i in range(len(p))}).item()
-    cons = [{"type":"ineq","fun": lambda_gen(copy.deepcopy(con))} for con in soft_cons]
+        return lambda p: ne.evaluate(con[0],local_dict = {mlctx.param_names[i]:p[i] for i in range(len(p))}).item()-ne.evaluate(con[1],local_dict = {mlctx.param_names[i]:p[i] for i in range(len(p))}).item()
+    cons = [{"type":"ineq","fun": lambda_gen(copy.deepcopy(con))} for con in mlctx.soft_cons]
 
     #
     # Perform maximum likelihood estimation for initial guesses of MCMC fit
@@ -6147,7 +6042,7 @@ def max_likelihood(param_dict,
     # Perform global optimization using basin-hopping algorithm (superior to minimize(), but slower)
     # We will use minimize() for the monte carlo bootstrap iterations.
 
-    lowest_rmse = badass_test_suite.root_mean_squared_error(copy.deepcopy(galaxy),np.zeros(len(galaxy)))
+    lowest_rmse = badass_test_suite.root_mean_squared_error(copy.deepcopy(mlctx.target.spec),np.zeros(len(mlctx.target.spec)))
     if force_best:
         force_basinhop = copy.deepcopy(n_basinhop)
         n_basinhop = 250 # Set to arbitrarily high threshold 
@@ -6176,13 +6071,8 @@ def max_likelihood(param_dict,
             # if basinhop_count>n_basinhop:
             #     raise SystemExit(f"\n The global maximizer could not converge on a viable solution in {n_basinhop} steps.  Manually change the basinhopping step size to something reasonable.\n")
 
-            current_comps = fit_model(x,param_names,line_list,combined_line_list,lam_gal,galaxy,noise,
-                                      comp_options,losvd_options,host_options,power_options,poly_options,
-                                      opt_feii_options,uv_iron_options,balmer_options,outflow_test_options,
-                                      host_template,opt_feii_templates,uv_iron_template,balmer_template,
-                                      stel_templates,blob_pars,disp_res,fit_mask,velscale,run_dir,"init",
-                                      fit_stat,True)
-            rmse = badass_test_suite.root_mean_squared_error(copy.deepcopy(current_comps["DATA"]),copy.deepcopy(current_comps["MODEL"]))
+            current_comps = fit_model(x,mlctx,fit_type='init',output_model=True)
+            rmse = badass_test_suite.root_mean_squared_error(copy.deepcopy(current_comps['DATA']),copy.deepcopy(current_comps['MODEL']))
 
             # Define an acceptance threshold
             accept_thresh = 0.001
@@ -6221,94 +6111,26 @@ def max_likelihood(param_dict,
                     print(" Basinhop count: %d" % basinhop_count)
                     print("\n")
 
-                return False 
+                return False
+    else:
+        callback_ftn = None
 
-    if not force_best:
+    # TODO: include params in mlctx and use that as x0?
+    result = op.basinhopping(func=nll,x0=params,stepsize=1.0,interval=1,
+                             niter=2500, # Max # of iterations before stopping
+                             minimizer_kwargs = {'args':(mlctx,),'method':'SLSQP', 
+                                                 'bounds':param_bounds,'constraints':cons,'options':{'disp':False,}},
+                             disp=verbose,niter_success=n_basinhop, # Max # of successive search iterations
+                             callback=callback_ftn)
 
-        callback_ftn=None
-
-    result = op.basinhopping(func = nll, 
-                             x0 = params,
-                             stepsize=1.0,
-                             interval=1,
-                             niter = 2500, # Max # of iterations before stopping
-                             minimizer_kwargs = {'args':(
-                                                         param_names,
-                                                         prior_dict,
-                                                         line_list,
-                                                         combined_line_list,
-                                                         bounds,
-                                                         soft_cons,
-                                                         lam_gal,
-                                                         galaxy,
-                                                         noise,
-                                                         comp_options,
-                                                         losvd_options,
-                                                         host_options,
-                                                         power_options,
-                                                         poly_options,
-                                                         opt_feii_options,
-                                                         uv_iron_options,
-                                                         balmer_options,
-                                                         outflow_test_options,
-                                                         host_template,
-                                                         opt_feii_templates,
-                                                         uv_iron_template,
-                                                         balmer_template,
-                                                         stel_templates,
-                                                         blob_pars,
-                                                         disp_res,
-                                                         fit_mask,
-                                                         velscale,
-                                                         fit_type,
-                                                         fit_stat,
-                                                         output_model,
-                                                         run_dir
-                                                        ),
-                              'method':'SLSQP', 'bounds':param_bounds, 'constraints':cons, 
-                              # "method":"Nelder-Mead","bounds":param_bounds,
-                              "options":{"disp":False,}},# "adaptive":True, }},
-                               disp=verbose,
-                               niter_success=n_basinhop, # Max # of successive search iterations
-                               callback=callback_ftn,
-                               )
-    
     # Get elapsed time
     elap_time = (time.time() - start_time)
 
-    par_best	 = result['x']
-    fit_type	 = 'init'
-    output_model = True
+    par_best = result['x']
+    mlctx.fit_type = 'init'
+    mlctx.output_model = True
 
-    comp_dict = fit_model(par_best,
-                          param_names,
-                          line_list,
-                          combined_line_list,
-                          lam_gal,
-                          galaxy,
-                          noise,
-                          comp_options,
-                          losvd_options,
-                          host_options,
-                          power_options,
-                          poly_options,
-                          opt_feii_options,
-                          uv_iron_options,
-                          balmer_options,
-                          outflow_test_options,
-                          host_template,
-                          opt_feii_templates,
-                          uv_iron_template,
-                          balmer_template,
-                          stel_templates,
-                          blob_pars,
-                          disp_res,
-                          fit_mask,
-                          velscale,
-                          run_dir,
-                          fit_type,
-                          fit_stat,
-                          output_model)
+    comp_dict = fit_model(par_best,mlctx)
 
     #### Reweighting ###################################################################
 
@@ -6320,22 +6142,24 @@ def max_likelihood(param_dict,
         if verbose:
             print("\n Reweighting noise to achieve a reduced chi-squared ~ 1.")
         # Calculate current rchi2
-        cur_rchi2 = badass_test_suite.r_chi_squared(copy.deepcopy(comp_dict["DATA"]),copy.deepcopy(comp_dict["MODEL"]),noise,len(par_best))
+        cur_rchi2 = badass_test_suite.r_chi_squared(copy.deepcopy(comp_dict['DATA']),copy.deepcopy(comp_dict['MODEL']),mlctx.noise,len(par_best))
         if verbose:
             print("\tCurrent reduced chi-squared = %0.5f" % cur_rchi2)
         # Update noise
-        noise = noise*np.sqrt(cur_rchi2)
+        mlctx.noise = mlctx.noise*np.sqrt(cur_rchi2)
         # Calculate new rchi2
-        new_rchi2 = badass_test_suite.r_chi_squared(copy.deepcopy(comp_dict["DATA"]),copy.deepcopy(comp_dict["MODEL"]),noise,len(par_best))
+        new_rchi2 = badass_test_suite.r_chi_squared(copy.deepcopy(comp_dict['DATA']),copy.deepcopy(comp_dict['MODEL']),mlctx.noise,len(par_best))
         if verbose:
             print("\tNew reduced chi-squared = %0.5f" % new_rchi2)    
 
     #### Bootstrapping #################################################################
 
-    mcnoise = np.array(noise)
+    # TODO: different data structures here?
+    mcnoise = np.array(mlctx.noise)
     # Storage dictionaries for all calculated paramters at each iteration
-    mcpars  = {k:np.empty(max_like_niter+1) for k in param_names}
+    mcpars  = {k:np.empty(max_like_niter+1) for k in mlctx.param_names}
     # flux_dict
+    # TODO: make this list of comps common
     flux_names = [key+"_FLUX" for key in comp_dict if key not in ["DATA","WAVE","MODEL","NOISE","RESID","POWER","HOST_GALAXY","BALMER_CONT","APOLY","MPOLY"]]
     mcflux   = {k:np.empty(max_like_niter+1) for k in flux_names}
     # lum dict
@@ -6348,20 +6172,20 @@ def max_likelihood(param_dict,
     # integrated dispersion & velocity dicts
     # Since dispersion is calculated for all lines, we only need to calculate the integrated
     # dispersions and velocities for combined lines, and FWHM for all lines
-    line_names = [key+"_DISP" for key in combined_line_list]
+    line_names = [key+"_DISP" for key in mlctx.combined_line_list]
     mcdisp   = {k:np.empty(max_like_niter+1) for k in line_names}
-    line_names = [key+"_FWHM" for key in {**line_list, **combined_line_list}]
+    line_names = [key+"_FWHM" for key in {**mlctx.line_list, **mlctx.combined_line_list}]
     mcfwhm   = {k:np.empty(max_like_niter+1) for k in line_names}
-    line_names = [key+"_VOFF" for key in combined_line_list]
+    line_names = [key+"_VOFF" for key in mlctx.combined_line_list]
     mcvint   = {k:np.empty(max_like_niter+1) for k in line_names}
-    line_names = [key+"_W80" for key in {**line_list, **combined_line_list}]
+    line_names = [key+"_W80" for key in {**mlctx.line_list, **mlctx.combined_line_list}]
     mcw80    = {k:np.empty(max_like_niter+1) for k in line_names}
     # fit quality dictionaries (R_SQUARED, RCHI_SQUARED, NPIX, SNR)
     mcR2       = np.empty(max_like_niter+1)
     mcRCHI2 = np.empty(max_like_niter+1)
-    line_names = [key+"_NPIX" for key in {**line_list, **combined_line_list}]
+    line_names = [key+"_NPIX" for key in {**mlctx.line_list, **mlctx.combined_line_list}]
     mcnpix   = {k:np.empty(max_like_niter+1) for k in line_names}
-    line_names = [key+"_SNR" for key in {**line_list, **combined_line_list}]
+    line_names = [key+"_SNR" for key in {**mlctx.line_list, **mlctx.combined_line_list}]
     mcsnr     = {k:np.empty(max_like_niter+1) for k in line_names}
     # model component dictionary
     mccomps = {k:np.empty((max_like_niter+1,len(comp_dict[k]))) for k in comp_dict}
@@ -6369,22 +6193,22 @@ def max_likelihood(param_dict,
     mcLL       = np.empty(max_like_niter+1)
     # Monochromatic continuum luminosities array
     clum = []
-    if (lam_gal[0]<1350) & (lam_gal[-1]>1350):
+    if (mlctx.target.wave[0]<1350) & (mlctx.target.wave[-1]>1350):
         clum.append("L_CONT_AGN_1350")
         clum.append("L_CONT_HOST_1350")
         clum.append("L_CONT_TOT_1350")
-    if (lam_gal[0]<3000) & (lam_gal[-1]>3000):
+    if (mlctx.target.wave[0]<3000) & (mlctx.target.wave[-1]>3000):
         clum.append("L_CONT_AGN_3000")
         clum.append("L_CONT_HOST_3000")
         clum.append("L_CONT_TOT_3000")
-    if (lam_gal[0]<4000) & (lam_gal[-1]>4000):
+    if (mlctx.target.wave[0]<4000) & (mlctx.target.wave[-1]>4000):
         clum.append("HOST_FRAC_4000")
         clum.append("AGN_FRAC_4000")
-    if (lam_gal[0]<5100) & (lam_gal[-1]>5100):
+    if (mlctx.target.wave[0]<5100) & (mlctx.target.wave[-1]>5100):
         clum.append("L_CONT_AGN_5100")
         clum.append("L_CONT_HOST_5100")
         clum.append("L_CONT_TOT_5100")
-    if (lam_gal[0]<7000) & (lam_gal[-1]>7000):
+    if (mlctx.target.wave[0]<7000) & (mlctx.target.wave[-1]>7000):
         clum.append("HOST_FRAC_7000")
         clum.append("AGN_FRAC_7000")
     mccont = {k:np.empty(max_like_niter+1) for k in clum}
@@ -6393,25 +6217,26 @@ def max_likelihood(param_dict,
     # Subsample comp dict
     # comp_dict_subsamp, _line_list, _combined_line_list, velscale_subsamp = subsample_comps(lam_gal,par_best,param_names,comp_dict,comp_options,line_list,combined_line_list,velscale)
     # Calculate fluxes 
-    flux_dict = calc_max_like_flux(comp_dict, flux_norm, fit_norm, z)
+    flux_dict = calc_max_like_flux(comp_dict, mlctx.target.options.fit_options.flux_norm, mlctx.target.fit_norm, mlctx.target.z)
     # Calculate luminosities
-    lum_dict = calc_max_like_lum(flux_dict, z, H0=cosmology["H0"], Om0=cosmology["Om0"])
+    lum_dict = calc_max_like_lum(flux_dict, mlctx.target.z, H0=H0, Om0=Om0)
 
     # Calculate equivalent widths
-    eqwidth_dict = calc_max_like_eqwidth(comp_dict, {**line_list, **combined_line_list}, velscale, z)
+    eqwidth_dict = calc_max_like_eqwidth(comp_dict, {**mlctx.line_list, **mlctx.combined_line_list}, mlctx.target.velscale, mlctx.target.z)
 
     # Calculate continuum luminosities
-    clum_dict = calc_max_like_cont_lum(clum, comp_dict, z, blob_pars, flux_norm, fit_norm, H0=cosmology["H0"], Om0=cosmology["Om0"])
+    clum_dict = calc_max_like_cont_lum(clum, comp_dict, mlctx.target.z, mlctx.blob_pars, mlctx.target.options.fit_options.flux_norm, mlctx.target.fit_norm, H0=H0, Om0=Om0)
 
     # Calculate integrated line dispersions
-    disp_dict, fwhm_dict, vint_dict, w80_dict = calc_max_like_dispersions(lam_gal, comp_dict, {**line_list, **combined_line_list}, combined_line_list, blob_pars, velscale)
+    disp_dict, fwhm_dict, vint_dict, w80_dict = calc_max_like_dispersions(mlctx.target.wave, comp_dict, {**mlctx.line_list, **mlctx.combined_line_list}, mlctx.combined_line_list, mlctx.blob_pars, mlctx.target.velscale)
 
     # Calculate fit quality parameters
-    r2, rchi2, npix_dict, snr_dict = calc_max_like_fit_quality({p:par_best[i] for i,p in enumerate(param_names)},noise,n_free_pars,line_list,combined_line_list,comp_dict,fit_mask,fit_type)
+    r2, rchi2, npix_dict, snr_dict = calc_max_like_fit_quality({p:par_best[i] for i,p in enumerate(mlctx.param_names)},mlctx.noise,n_free_pars,mlctx.line_list,mlctx.combined_line_list,comp_dict,mlctx.target.fit_mask,mlctx.fit_type)
 
+    # TODO: different data structure?
     # Add first iteration to arrays
     # Add to mcpars dict
-    for i,key in enumerate(param_names):
+    for i,key in enumerate(mlctx.param_names):
         mcpars[key][0] = result['x'][i]
     # Add to mcflux dict
     for key in flux_dict:
@@ -6444,7 +6269,7 @@ def max_likelihood(param_dict,
     for key in comp_dict:
         mccomps[key][0,:] = comp_dict[key]
     # Add log-likelihood to mcLL
-    mcLL[0] = result["fun"]
+    mcLL[0] = result['fun']
     # Add continuum luminosities
     for key in clum_dict:
         mccont[key][0] = clum_dict[key]
@@ -6455,115 +6280,45 @@ def max_likelihood(param_dict,
 
         for n in range(1,max_like_niter+1,1):
             # Generate a simulated galaxy spectrum with noise added at each pixel
-            mcgal  = np.random.normal(galaxy,mcnoise)
+            mcgal = np.random.normal(mlctx.target.spec,mcnoise)
             # Get rid of any infs or nan if there are none; this will cause scipy.optimize to fail
             mcgal[~np.isfinite(mcgal)] = np.nanmedian(mcgal)
-            fit_type	 = 'init'
-            output_model = False
+            mlctx.fit_type = 'init'
+            mlctx.output_model = False
 
-            # if (cons is not None):
-            if 1:
+            nll = lambda *args: -lnprob(*args)
+            resultmc = op.minimize(fun=nll,x0=result['x'],args=(mlctx,),method='SLSQP', 
+                                   bounds=param_bounds,constraints=cons,options={'maxiter':1000,'disp': False})
+            mcLL[n] = resultmc['fun'] # add best fit function values to mcLL
 
-                # nll = lambda *args: -lnlike(*args)
-                nll = lambda *args: -lnprob(*args)
-                resultmc = op.minimize(fun = nll, 
-                                       x0 = result['x'],
-                                       args=(param_names,
-                                             prior_dict,
-                                             line_list,
-                                             combined_line_list,
-                                             bounds,
-                                             soft_cons,
-                                             lam_gal,
-                                             mcgal,
-                                             noise,
-                                             comp_options,
-                                             losvd_options,
-                                             host_options,
-                                             power_options,
-                                             poly_options,
-                                             opt_feii_options,
-                                             uv_iron_options,
-                                             balmer_options,
-                                             outflow_test_options,
-                                             host_template,
-                                             opt_feii_templates,
-                                             uv_iron_template,
-                                             balmer_template,
-                                             stel_templates,
-                                             blob_pars,
-                                             disp_res,
-                                             fit_mask,
-                                             velscale,
-                                             fit_type,
-                                             fit_stat,
-                                             output_model,
-                                             run_dir
-                                             ),
-                                       method='SLSQP', 
-                                       # method='Nelder-Mead',
-                                       # method="Powell",
-                                       bounds = param_bounds, 
-                                       constraints=cons,
-                                       options={'maxiter':1000,'disp': False})
-            mcLL[n] = resultmc["fun"] # add best fit function values to mcLL
-
+            # TODO: log debugging
             # Used for checking MC outputs
             # print("\n MC iteration: %d:" % n)
             # for p,pn in enumerate(param_names):
             #    print(pn,resultmc["x"][p])
 
-
             # Get best-fit model components to calculate fluxes and equivalent widths
-            output_model = True
-            comp_dict = fit_model(resultmc["x"],
-                                  param_names,
-                                  line_list,
-                                  combined_line_list,
-                                  lam_gal,
-                                  galaxy,
-                                  noise,
-                                  comp_options,
-                                  losvd_options,
-                                  host_options,
-                                  power_options,
-                                  poly_options,
-                                  opt_feii_options,
-                                  uv_iron_options,
-                                  balmer_options,
-                                  outflow_test_options,
-                                  host_template,
-                                  opt_feii_templates,
-                                  uv_iron_template,
-                                  balmer_template,
-                                  stel_templates,
-                                  blob_pars,
-                                  disp_res,
-                                  fit_mask,
-                                  velscale,
-                                  run_dir,
-                                  fit_type,
-                                  fit_stat,
-                                  output_model)
+            mlctx.output_model = True
+            comp_dict = fit_model(resultmc['x'],mlctx)
 
             # Subsample comp dict
             # comp_dict_subsamp, _line_list, _combined_line_list, velscale_subsamp = subsample_comps(lam_gal,resultmc["x"],param_names,comp_dict,comp_options,line_list,combined_line_list,velscale)
             # Calculate fluxes 
-            flux_dict = calc_max_like_flux(comp_dict, flux_norm, fit_norm, z)
+            flux_dict = calc_max_like_flux(comp_dict, mlctx.target.options.fit_options.flux_norm, mlctx.target.fit_norm, mlctx.target.z)
             # Calculate luminosities
-            lum_dict = calc_max_like_lum(flux_dict, z, H0=cosmology["H0"], Om0=cosmology["Om0"])
+            lum_dict = calc_max_like_lum(flux_dict, mlctx.target.z, H0=H0, Om0=Om0)
             # Calculate equivalent widths
-            eqwidth_dict = calc_max_like_eqwidth(comp_dict, {**line_list, **combined_line_list}, velscale, z)
+            eqwidth_dict = calc_max_like_eqwidth(comp_dict, {**mlctx.line_list, **mlctx.combined_line_list}, mlctx.target.velscale, mlctx.target.z)
             # Calculate continuum luminosities
-            clum_dict = calc_max_like_cont_lum(clum, comp_dict, z, blob_pars, flux_norm, fit_norm, H0=cosmology["H0"], Om0=cosmology["Om0"])
+            clum_dict = calc_max_like_cont_lum(clum, comp_dict, mlctx.target.z, mlctx.blob_pars, mlctx.target.options.fit_options.flux_norm, mlctx.target.fit_norm, H0=H0, Om0=Om0)
             # Calculate integrated line dispersions
-            disp_dict, fwhm_dict, vint_dict, w80_dict = calc_max_like_dispersions(lam_gal, comp_dict, {**line_list, **combined_line_list}, combined_line_list, blob_pars, velscale)
+            disp_dict, fwhm_dict, vint_dict, w80_dict = calc_max_like_dispersions(mlctx.target.wave, comp_dict, {**mlctx.line_list, **mlctx.combined_line_list}, mlctx.combined_line_list, mlctx.blob_pars, mlctx.target.velscale)
             # Calculate fit quality parameters
-            r2, rchi2, npix_dict, snr_dict = calc_max_like_fit_quality({p:par_best[i] for i,p in enumerate(param_names)},noise,n_free_pars,line_list,combined_line_list,comp_dict,fit_mask,fit_type)
+            r2, rchi2, npix_dict, snr_dict = calc_max_like_fit_quality({p:par_best[i] for i,p in enumerate(mlctx.param_names)},mlctx.noise,n_free_pars,mlctx.line_list,mlctx.combined_line_list,comp_dict,mlctx.target.fit_mask,mlctx.fit_type)
 
             # Add to mc storage dictionaries
             # Add to mcpars dict
-            for i,key in enumerate(param_names):
+            for i,key in enumerate(mlctx.param_names):
                 mcpars[key][n] = resultmc['x'][i]
             # Add to mcflux dict
             for key in flux_dict:
@@ -6602,25 +6357,26 @@ def max_likelihood(param_dict,
             if verbose:
                 print('	   Completed %d of %d iterations.' % (n,max_like_niter) )
 
+    # TODO: make loops
     # Iterate through every parameter to determine if the fit is "good" (more than 1-sigma away from bounds)
     # if not, then add 1 to that parameter flag value			
     pdict		   = {} # parameter dictionary for all fitted parameters (free parameters, fluxes, luminosities, and equivalent widths)
     best_param_dict = {} # For getting the best fit model components
     # Add parameter names to pdict
-    for i,key in enumerate(param_names):
+    for i,key in enumerate(mlctx.param_names):
         param_flags = 0
         mc_med = mcpars[key][0]#np.nanmedian(mcpars[key])
         mc_std = np.nanstd(mcpars[key])
         # if ~np.isfinite(mc_med): mc_med = 0
         # if ~np.isfinite(mc_std): mc_std = 0
-        if (mc_med-mc_std <= bounds[i][0]):
+        if (mc_med-mc_std <= mlctx.bounds[i][0]):
             param_flags += 1
-        if (mc_med+mc_std >= bounds[i][1]):
+        if (mc_med+mc_std >= mlctx.bounds[i][1]):
             param_flags += 1
         if (mc_std==0):
             param_flags += 1
-        pdict[param_names[i]]		   = {'med':mc_med,'std':mc_std,'flag':param_flags}
-        best_param_dict[param_names[i]] = {'med':mc_med,'std':mc_std,'flag':param_flags}
+        pdict[mlctx.param_names[i]] = {'med':mc_med,'std':mc_std,'flag':param_flags}
+        best_param_dict[mlctx.param_names[i]] = {'med':mc_med,'std':mc_std,'flag':param_flags}
     # Add fluxes to pdict
     for key in mcflux:
         param_flags = 0
@@ -6628,12 +6384,12 @@ def max_likelihood(param_dict,
         mc_std = np.nanstd(mcflux[key])
         if ~np.isfinite(mc_med): mc_med = 0
         if ~np.isfinite(mc_std): mc_std = 0
-        if (key[:-5] in line_list):
-            if (line_list[key[:-5]]["line_type"]=="abs") & (mc_med+mc_std >= -18.0):
+        if (key[:-5] in mlctx.line_list):
+            if (mlctx.line_list[key[:-5]]['line_type']=='abs') & (mc_med+mc_std >= -18.0):
                 param_flags += 1
-            elif (line_list[key[:-5]]["line_type"]!="abs") & (mc_med-mc_std <= -18.0):
+            elif (mlctx.line_list[key[:-5]]['line_type']!='abs') & (mc_med-mc_std <= -18.0):
                 param_flags += 1
-        elif ((key[:-5] not in line_list) & (mc_med-mc_std <= -18.0)) or (mc_std==0):
+        elif ((key[:-5] not in mlctx.line_list) & (mc_med-mc_std <= -18.0)) or (mc_std==0):
             param_flags += 1
         pdict[key] = {'med':mc_med,'std':mc_std,'flag':param_flags}
     # Add luminosities to pdict
@@ -6643,12 +6399,12 @@ def max_likelihood(param_dict,
         mc_std = np.nanstd(mclum[key])
         if ~np.isfinite(mc_med): mc_med = 0
         if ~np.isfinite(mc_std): mc_std = 0
-        if (key[:-4] in line_list):
-            if (line_list[key[:-4]]["line_type"]=="abs") & (mc_med+mc_std >= 0.0):
+        if (key[:-4] in mlctx.line_list):
+            if (mlctx.line_list[key[:-4]]['line_type']=='abs') & (mc_med+mc_std >= 0.0):
                 param_flags += 1
-            elif (line_list[key[:-4]]["line_type"]!="abs") & (mc_med-mc_std <= 0.0):
+            elif (mlctx.line_list[key[:-4]]['line_type']!='abs') & (mc_med-mc_std <= 0.0):
                 param_flags += 1
-        elif ((key[:-4] not in line_list) & (mc_med-mc_std <= 0.0)) or (mc_std==0):
+        elif ((key[:-4] not in mlctx.line_list) & (mc_med-mc_std <= 0.0)) or (mc_std==0):
             param_flags += 1
         pdict[key] = {'med':mc_med,'std':mc_std,'flag':param_flags}
     # Add equivalent widths to pdict
@@ -6659,12 +6415,12 @@ def max_likelihood(param_dict,
             mc_std = np.nanstd(mceqw[key])
             if ~np.isfinite(mc_med): mc_med = 0
             if ~np.isfinite(mc_std): mc_std = 0
-            if (key[:-3] in line_list):
-                if (line_list[key[:-3]]["line_type"]=="abs") & (mc_med+mc_std >= 0.0):
+            if (key[:-3] in mlctx.line_list):
+                if (mlctx.line_list[key[:-3]]["line_type"]=="abs") & (mc_med+mc_std >= 0.0):
                     param_flags += 1
-                elif (line_list[key[:-3]]["line_type"]!="abs") & (mc_med-mc_std <= 0.0):
+                elif (mlctx.line_list[key[:-3]]["line_type"]!="abs") & (mc_med-mc_std <= 0.0):
                     param_flags += 1
-            elif ((key[:-3] not in line_list) & (mc_med-mc_std <= 0.0)) or (mc_std==0):
+            elif ((key[:-3] not in mlctx.line_list) & (mc_med-mc_std <= 0.0)) or (mc_std==0):
                 param_flags += 1
             pdict[key] = {'med':mc_med,'std':mc_std,'flag':param_flags}
     # Add dispersions to pdict
@@ -6719,11 +6475,11 @@ def max_likelihood(param_dict,
     # Add R-squared values to pdict
     mc_med = mcR2[0]#np.nanmedian(mcR2)
     mc_std = np.nanstd(mcR2)
-    pdict["R_SQUARED"] = {'med':mc_med,'std':mc_std,'flag':0}
-#   Add RCHI2 values to pdict
+    pdict['R_SQUARED'] = {'med':mc_med,'std':mc_std,'flag':0}
+    # Add RCHI2 values to pdict
     mc_med = mcRCHI2[0]#np.nanmedian(mcRCHI2)
     mc_std = np.nanstd(mcRCHI2)
-    pdict["RCHI_SQUARED"] = {'med':mc_med,'std':mc_std,'flag':0}
+    pdict['RCHI_SQUARED'] = {'med':mc_med,'std':mc_std,'flag':0}
 
     # Add continuum luminosities to pdict
     for key in mccont:
@@ -6740,14 +6496,13 @@ def max_likelihood(param_dict,
     # Add log-likelihood function values
     mc_med = mcLL[0]#np.nanmedian(mcLL)
     mc_std = np.nanstd(mcLL)
-    pdict["LOG_LIKE"] = {'med':mc_med,'std':mc_std,'flag':0}
+    pdict['LOG_LIKE'] = {'med':mc_med,'std':mc_std,'flag':0}
 
-    #
     # Add tied parameters explicitly to final parameter dictionary
-    pdict = max_like_add_tied_parameters(pdict,line_list)
+    pdict = max_like_add_tied_parameters(pdict,mlctx.line_list)
 
     # Add dispersion resolution (in km/s) for each line to pdict
-    all_lines = {**line_list,**combined_line_list}
+    all_lines = {**mlctx.line_list,**mlctx.combined_line_list}
     for line in all_lines:
         disp_res = all_lines[line]["disp_res_kms"]
         pdict[line+"_DISP_RES"]  = {"med":disp_res,"std":np.nan,"flag":np.nan}
@@ -6770,8 +6525,8 @@ def max_likelihood(param_dict,
     pdict_rescaled = copy.deepcopy(pdict)
     for p in pdict_rescaled:
         if p[-4:]=="_AMP":
-            pdict_rescaled[p]["med"] = pdict_rescaled[p]["med"]*fit_norm
-            pdict_rescaled[p]["std"] = pdict_rescaled[p]["std"]*fit_norm
+            pdict_rescaled[p]["med"] = pdict_rescaled[p]["med"]*mlctx.target.fit_norm
+            pdict_rescaled[p]["std"] = pdict_rescaled[p]["std"]*mlctx.target.fit_norm
 
     #
     # Calculate some fit quality parameters which will be added to the dictionary
@@ -6780,46 +6535,19 @@ def max_likelihood(param_dict,
     # fit_quality_dict = fit_quality_pars(best_param_dict,n_free_pars,line_list,combined_line_list,comp_dict,fit_mask,fit_type="max_like",fit_stat=fit_stat)
     # pdict = {**pdict,**fit_quality_dict}
 
-    if (test_outflows==True):
+    if test_outflows:
         return pdict, mccomps, mcLL, lowest_rmse
 
     # Get best-fit components for maximum likelihood plot
-    output_model = True
-    comp_dict = fit_model([best_param_dict[key]['med'] for key in best_param_dict],best_param_dict.keys(),
-                          line_list,
-                          combined_line_list,
-                          lam_gal,
-                          galaxy,
-                          noise,
-                          comp_options,
-                          losvd_options,
-                          host_options,
-                          power_options,
-                          poly_options,
-                          opt_feii_options,
-                          uv_iron_options,
-                          balmer_options,
-                          outflow_test_options,
-                          host_template,
-                          opt_feii_templates,
-                          uv_iron_template,
-                          balmer_template,
-                          stel_templates,
-                          blob_pars,
-                          disp_res,
-                          fit_mask,
-                          velscale,
-                          run_dir,
-                          fit_type,
-                          fit_stat,
-                          output_model)
+    mlctx.output_model = True
+    mlctx.param_names = best_param_dict.keys()
+    comp_dict = fit_model([best_param_dict[key]['med'] for key in best_param_dict],mlctx)
 
-    
     # Plot results of maximum likelihood fit
-    sigma_resid, sigma_noise = max_like_plot(lam_gal,copy.deepcopy(comp_dict),line_list,
-                [best_param_dict[key]['med'] for key in best_param_dict],
-                 best_param_dict.keys(),fit_mask,fit_norm,run_dir)
-    # 
+    sigma_resid, sigma_noise = max_like_plot(mlctx.target.wave,copy.deepcopy(comp_dict),mlctx.line_list,
+                                             [best_param_dict[key]['med'] for key in best_param_dict],
+                                             best_param_dict.keys(),mlctx.target.fit_mask,mlctx.target.fit_norm,mlctx.target.outdir)
+
     if verbose:
         print('\n Maximum Likelihood Best-fit Parameters:')
         print('--------------------------------------------------------------------------------------')
@@ -6851,9 +6579,8 @@ def max_likelihood(param_dict,
         print('--------------------------------------------------------------------------------------')
 
     # Write to log 
-    write_log((pdict_rescaled,sigma_noise,sigma_resid),'max_like_fit',run_dir)
+    write_log((pdict_rescaled,sigma_noise,sigma_resid),'max_like_fit',mlctx.target.outdir)
 
-    #
     return pdict, comp_dict
 
 
@@ -7140,137 +6867,40 @@ def gh_penalty_ftn(line,params,param_names):
 #### Likelihood function #########################################################
 
 # Maximum Likelihood (initial fitting), Prior, and log Probability functions
-def lnlike(params,
-           param_names,
-           line_list,
-           combined_line_list,
-           soft_cons,
-           lam_gal,
-           galaxy,
-           noise,
-           comp_options,
-           losvd_options,
-           host_options,
-           power_options,
-           poly_options,
-           opt_feii_options,
-           uv_iron_options,
-           balmer_options,
-           outflow_test_options,
-           host_template,
-           opt_feii_templates,
-           uv_iron_template,
-           balmer_template,
-           stel_templates,
-           blob_pars,
-           disp_res,
-           fit_mask,
-           velscale,
-           fit_type,
-           fit_stat,
-           output_model,
-           run_dir,
-           ):
+def lnlike(params,ctx):
     """
     Log-likelihood function.
     """
 
-    
+    res = fit_model(params, ctx)
 
     # Create model
-    if (fit_type=='final') and (output_model==False):
-        model, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob = fit_model(params,
-                                                                                  param_names,
-                                                                                  line_list,
-                                                                                  combined_line_list,
-                                                                                  lam_gal,
-                                                                                  galaxy,
-                                                                                  noise,
-                                                                                  comp_options,
-                                                                                  losvd_options,
-                                                                                  host_options,
-                                                                                  power_options,
-                                                                                  poly_options,
-                                                                                  opt_feii_options,
-                                                                                  uv_iron_options,
-                                                                                  balmer_options,
-                                                                                  outflow_test_options,
-                                                                                  host_template,
-                                                                                  opt_feii_templates,
-                                                                                  uv_iron_template,
-                                                                                  balmer_template,
-                                                                                  stel_templates,
-                                                                                  blob_pars,
-                                                                                  disp_res,
-                                                                                  fit_mask,
-                                                                                  velscale,
-                                                                                  run_dir,
-                                                                                  fit_type,
-                                                                                  fit_stat,
-                                                                                  output_model)
-        # Normalization factor
-        # norm_factor = np.nanmedian(galaxy[fit_mask])
-
-        if fit_stat=="ML":
+    if (ctx.fit_type == 'final') and (not ctx.output_model):
+        model, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob = res
+        if ctx.fit_stat == 'ML':
             # Calculate log-likelihood
-            l = -0.5*(galaxy[fit_mask]-model[fit_mask])**2/(noise[fit_mask])**2 + np.log(2*np.pi*(noise[fit_mask])**2)
+            l = -0.5*(ctx.target.spec[ctx.target.fit_mask]-model[ctx.target.fit_mask])**2/(ctx.noise[ctx.target.fit_mask])**2 + np.log(2*np.pi*(ctx.noise[ctx.target.fit_mask])**2)
             l = np.sum(l,axis=0)
-        elif fit_stat=="OLS":
+        elif ctx.fit_stat == 'OLS':
             # Since emcee looks for the maximum, but Least Squares requires a minimum
             # we multiply by negative.
-            l = (galaxy[fit_mask]-model[fit_mask])**2
+            l = (ctx.target.spec[ctx.target.fit_mask]-model[ctx.target.fit_mask])**2
             l = -np.sum(l,axis=0)
 
         return l, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob
 
-    else:
-        # The maximum likelihood routine [by default] minimizes the negative likelihood
-        # Thus for fit_stat="OLS", the SSR must be multiplied by -1 to minimize it. 
+    # The maximum likelihood routine [by default] minimizes the negative likelihood
+    # Thus for fit_stat="OLS", the SSR must be multiplied by -1 to minimize it. 
 
-        model, comp_dict = fit_model(params,
-                                     param_names,
-                                     line_list,
-                                     combined_line_list,
-                                     lam_gal,
-                                     galaxy,
-                                     noise,
-                                     comp_options,
-                                     losvd_options,
-                                     host_options,
-                                     power_options,
-                                     poly_options,
-                                     opt_feii_options,
-                                     uv_iron_options,
-                                     balmer_options,
-                                     outflow_test_options,
-                                     host_template,
-                                     opt_feii_templates,
-                                     uv_iron_template,
-                                     balmer_template,
-                                     stel_templates,
-                                     blob_pars,
-                                     disp_res,
-                                     fit_mask,
-                                     velscale,
-                                     run_dir,
-                                     fit_type,
-                                     fit_stat,
-                                     output_model)
-        # Normalization factor
-        # norm_factor = np.nanmedian(galaxy[fit_mask])
-        # norm_factor = np.nanmax(galaxy[fit_mask])
-        # norm_factor = 1
-
-        if fit_stat=="ML":
-            # Calculate log-likelihood
-            l = -0.5*(galaxy[fit_mask]-model[fit_mask])**2/(noise[fit_mask])**2 + np.log(2*np.pi*(noise[fit_mask])**2)
-            l = np.sum(l,axis=0)
-            # print("Log-Likelihood = %0.4f" % (l))
-        elif fit_stat=="OLS":
-            l = (galaxy[fit_mask]-model[fit_mask])**2
-            l = -np.sum(l,axis=0)
-        #
-        return l 
+    model, comp_dict = res
+    if ctx.fit_stat == 'ML':
+        # Calculate log-likelihood
+        l = -0.5*(ctx.target.spec[ctx.target.fit_mask]-model[ctx.target.fit_mask])**2/(ctx.noise[ctx.target.fit_mask])**2 + np.log(2*np.pi*(ctx.noise[ctx.target.fit_mask])**2)
+        l = np.sum(l,axis=0)
+    elif ctx.fit_stat == 'OLS':
+        l = (ctx.target.spec[ctx.target.fit_mask]-model[ctx.target.fit_mask])**2
+        l = -np.sum(l,axis=0)
+    return l 
 
 ##################################################################################
 
@@ -7343,174 +6973,70 @@ def lnprior_flat(x,**kwargs):
     else:
         return -np.inf
 
-def lnprior(params,param_names,bounds,soft_cons,comp_options,prior_dict,fit_type):
+def lnprior(params,ctx):
     """
     Log-prior function.
     """
 
-    # Create refereence dictionary for numexpr
-    pdict = {}
-    for k in range(0,len(param_names),1):
-            pdict[param_names[k]] = params[k]
-
+    # Create reference dictionary for numexpr
+    pdict = dict(zip(ctx.param_names, params))
 
     # Loop through parameters
     lp_arr = []
-
-    for i in range(len(params)):
-        # if prior_types[i]=="gaussian":
-        # 	mu, sigma = bounds[i]
-        # 	lp_arr.append(-0.5 * ((params[i] - mu) / sigma)**2 - 0.5 * np.log(sigma**2 * 2 * np.pi))
-        # elif prior_types[i]=="uniform":
-        lower, upper = bounds[i]
+    for i, param in enumerate(params):
+        lower, upper = ctx.bounds[i]
         assert upper > lower
-        if lower <= params[i] <= upper:
-            # lp_arr.append(-1 * np.log(upper - lower))
+        if lower <= param <= upper:
             lp_arr.append(0.0)
         else:
             lp_arr.append(-np.inf)
 
     # Loop through soft constraints
-    for i in range(len(soft_cons)):
-        # print(soft_cons[i],(ne.evaluate(soft_cons[i][0],local_dict = pdict).item()-ne.evaluate(soft_cons[i][1],local_dict = pdict).item()),(ne.evaluate(soft_cons[i][0],local_dict = pdict).item()-ne.evaluate(soft_cons[i][1],local_dict = pdict).item())>=0)
-        if (ne.evaluate(soft_cons[i][0],local_dict = pdict).item()-ne.evaluate(soft_cons[i][1],local_dict = pdict).item() >= 0):
+    for soft_con in ctx.soft_cons:
+        if (ne.evaluate(soft_con[0],local_dict=pdict).item()-ne.evaluate(soft_con[1],local_dict=pdict).item() >= 0):
             lp_arr.append(0.0)
         else:
             lp_arr.append(-np.inf)
 
     # Loop through parameters with priors on them 
     prior_map = {'gaussian': lnprior_gaussian, 'halfnorm': lnprior_halfnorm, 'jeffreys': lnprior_jeffreys, 'flat': lnprior_flat}
-    p = [prior_map[prior_dict[key]["prior"]["type"]](pdict[key],**prior_dict[key]) for key in prior_dict]
-    # lp_arr += p
-    # print(np.sum(lp_arr))
-    # If initial fit using maximum likelihood, do not return uniform priors (-inf), otherwise
-    # scipy.optimize.minimize() fails.
-    if fit_type=="init":
+    p = [prior_map[ctx.prior_dict[key]['prior']['type']](pdict[key],**ctx.prior_dict[key]) for key in ctx.prior_dict]
+
+    # If initial fit using maximum likelihood, do not return uniform priors (-inf), otherwise scipy.optimize.minimize() fails.
+    if ctx.fit_type == 'init':
         lp_arr += p
-        # return np.nansum(p)
         return np.sum(lp_arr)
-    elif fit_type=="final":
+    elif ctx.fit_type == 'final':
         lp_arr += p
         return np.sum(lp_arr)
 
 ##################################################################################
 
-def lnprob(params,
-           param_names,
-           prior_dict,
-           line_list,
-           combined_line_list,
-           bounds,
-           soft_cons,
-           lam_gal,
-           galaxy,
-           noise,
-           comp_options,
-           losvd_options,
-           host_options,
-           power_options,
-           poly_options,
-           opt_feii_options,
-           uv_iron_options,
-           balmer_options,
-           outflow_test_options,
-           host_template,
-           opt_feii_templates,
-           uv_iron_template,
-           balmer_template,
-           stel_templates,
-           blob_pars,
-           disp_res,
-           fit_mask,
-           velscale,
-           fit_type,
-           fit_stat,
-           output_model,
-           run_dir
-           ):
+def lnprob(params,ctx):
     """
     Log-probability function.
     """
-    # lnprob (params,args)
-    # MCMC fitting
-    if (fit_type=='final'):
+
+    output_model = ctx.output_model
+    if ctx.fit_type == 'final':
         output_model = False
-        ll, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob	= lnlike(params,
-                                                                             param_names,
-                                                                             line_list,
-                                                                             combined_line_list,
-                                                                             soft_cons,
-                                                                             lam_gal,
-                                                                             galaxy,
-                                                                             noise,
-                                                                             comp_options,
-                                                                             losvd_options,
-                                                                             host_options,
-                                                                             power_options,
-                                                                             poly_options,
-                                                                             opt_feii_options,
-                                                                             uv_iron_options,
-                                                                             balmer_options,
-                                                                             outflow_test_options,
-                                                                             host_template,
-                                                                             opt_feii_templates,
-                                                                             uv_iron_template,
-                                                                             balmer_template,
-                                                                             stel_templates,
-                                                                             blob_pars,
-                                                                             disp_res,
-                                                                             fit_mask,
-                                                                             velscale,
-                                                                             fit_type,
-                                                                             fit_stat,
-                                                                             output_model,
-                                                                             run_dir,
-                                                                             )
 
-        lp = lnprior(params,param_names,bounds,soft_cons,comp_options,prior_dict,fit_type)
+    res = lnlike(params,ctx)
 
+    # MCMC fitting
+    if ctx.fit_type=='final':
+        ll, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob = res
+        lp = lnprior(params,ctx)
         if not np.isfinite(lp):
             return -np.inf, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob, ll
         elif (np.isfinite(lp)==True):
             return lp + ll, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob, ll
 
     # Maximum Likelihood, etc. fitting
-    elif (fit_type=='init'):
-        ll = lnlike(params,
-                param_names,
-                line_list,
-                combined_line_list,
-                soft_cons,
-                lam_gal,
-                galaxy,
-                noise,
-                comp_options,
-                losvd_options,
-                host_options,
-                power_options,
-                poly_options,
-                opt_feii_options,
-                uv_iron_options,
-                balmer_options,
-                outflow_test_options,
-                host_template,
-                opt_feii_templates,
-                uv_iron_template,
-                balmer_template,
-                stel_templates,
-                blob_pars,
-                disp_res,
-                fit_mask,
-                velscale,
-                fit_type,
-                fit_stat,
-                output_model,
-                run_dir,
-                )
-
-        if fit_stat in ["ML"]:
-            lp = lnprior(params,param_names,bounds,soft_cons,comp_options,prior_dict,fit_type)
-
+    elif ctx.fit_type=='init':
+        ll = res
+        if ctx.fit_stat in ['ML']:
+            lp = lnprior(params,ctx)
             if ~np.isfinite(lp):
                 return -np.inf
             elif np.isfinite(lp):
@@ -7518,9 +7044,6 @@ def lnprob(params,
         else:
             return ll
 
-
-
-####################################################################################
 
 def line_constructor(lam_gal,free_dict,comp_dict,comp_options,line,line_list,velscale):
     """
@@ -7810,362 +7333,129 @@ def calculate_w80(lam_gal, full_profile, disp_res, velscale, center ):
     #
     return w80
 
-##################################################################################
 
-# The fit_model() function controls the model for both the initial and MCMC fits.
-
-##################################################################################
-
-def fit_model(params,
-              param_names,
-              line_list,
-              combined_line_list,
-              lam_gal,
-              galaxy,
-              noise,
-              comp_options,
-              losvd_options,
-              host_options,
-              power_options,
-              poly_options,
-              opt_feii_options,
-              uv_iron_options,
-              balmer_options,
-              outflow_test_options,
-              host_template,
-              opt_feii_templates,
-              uv_iron_template,
-              balmer_template,
-              stel_templates,
-              blob_pars,
-              disp_res,
-              fit_mask,
-              velscale,
-              run_dir,
-              fit_type,
-              fit_stat,
-              output_model):
+# The fit_model function controls the model for both the initial and MCMC fits.
+def fit_model(params, ctx, galaxy=None, fit_type=None, output_model=None):
     """
     Constructs galaxy model.
     """
+    if galaxy == None:
+        galaxy = ctx.target.spec
+    if fit_type == None:
+        fit_type = ctx.fit_type
+    if output_model == None:
+        output_model = ctx.output_model
 
-    # Construct dictionary of parameter names and their respective parameter values
-    # param_names  = [param_dict[key]['name'] for key in param_dict ]
-    # params	   = [param_dict[key]['init'] for key in param_dict ]
-    keys = param_names
+    # TODO: need to be passed separately?
+    keys = ctx.param_names
     values = params
     p = dict(zip(keys, values))
-    c = 299792.458 # speed of light
+
+    target = ctx.target
     host_model = np.copy(galaxy)
     # Initialize empty dict to store model components
     comp_dict  = {} # used for fitting/likelihood calculation; sampled identically to the data
 
-    ############################# Power-law Component ######################################################
 
-    if (comp_options['fit_power']==True) & (power_options['type']=='simple'):
-
-        # Create a template model for the power-law continuum
-        # power = simple_power_law(lam_gal,p['POWER_AMP'],p['POWER_SLOPE'],p['POWER_BREAK']) # 
-        power = simple_power_law(lam_gal,p['POWER_AMP'],p['POWER_SLOPE']) # 
-
-        host_model = (host_model) - (power) # Subtract off continuum from galaxy, since we only want template weights to be fit
-        comp_dict['POWER'] = power
-
-    elif (comp_options['fit_power']==True) & (power_options['type']=='broken'):
-        # Create a template model for the power-law continuum
-        # power = simple_power_law(lam_gal,p['POWER_AMP'],p['POWER_SLOPE'],p['POWER_BREAK']) # 
-        power = broken_power_law(lam_gal,p['POWER_AMP'],p['POWER_BREAK'],
+    # Power-law Component
+    # TODO: Create a template model for the power-law continuum
+    if target.options.comp_options.fit_power:
+        if target.options.power_options.type == 'simple':
+            power = simple_power_law(target.wave,p['POWER_AMP'],p['POWER_SLOPE'])
+        elif target.options.plot_options.type == 'broken':
+            power = broken_power_law(target.wave,p['POWER_AMP'],p['POWER_BREAK'],
                                          p['POWER_SLOPE_1'],p['POWER_SLOPE_2'],
                                          p['POWER_CURVATURE'])
 
-        host_model = (host_model) - (power) # Subtract off continuum from galaxy, since we only want template weights to be fit
+        # Subtract off continuum from galaxy, since we only want template weights to be fit
+        host_model = (host_model) - (power)
         comp_dict['POWER'] = power
 
-    ########################################################################################################
 
-    ############################# Polynomial Components ####################################################
+    # Polynomial Components
+    # TODO: create a template
+    poly_options = target.options.poly_options
+    if target.options.comp_options.fit_poly:
+        if poly_options.apoly.bool:
+            nw = np.linspace(-1,1,len(target.wave))
+            coeff = np.empty(poly_options.apoly.order+1)
+            for n in range(1,len(coeff)):
+                coeff[n] = p['APOLY_COEFF_%d' % n]
+            coeff[0] = 0.0
+            apoly = np.polynomial.legendre.legval(nw, coeff)
+            host_model = host_model - apoly
+            comp_dict['APOLY'] = apoly
 
-    if (comp_options["fit_poly"]==True) & (poly_options["apoly"]["bool"]==True) & (poly_options["apoly"]["order"]>=0):
-        #
-        nw = np.linspace(-1,1,len(lam_gal))
-        coeff = np.empty(poly_options['apoly']['order']+1)
-        for n in range(1,poly_options['apoly']['order']+1):
-            coeff[n] = p["APOLY_COEFF_%d" % n]
-        coeff[0] = 0.0
-        apoly = np.polynomial.legendre.legval(nw, coeff)
-        # if np.any(apoly)<0:
-        #    apoly += (-1*np.nanmin(apoly))
-        host_model = host_model - apoly
-        comp_dict["APOLY"] = apoly
-        #
-    if (comp_options["fit_poly"]==True) & (poly_options["mpoly"]["bool"]==True) & (poly_options["mpoly"]["order"]>=0):
-        #
-        nw = np.linspace(-1,1,len(lam_gal))
-        coeff = np.empty(poly_options['mpoly']['order']+1)
-        for n in range(1,poly_options['mpoly']['order']+1):
-            coeff[n] = p["MPOLY_COEFF_%d" % n]
-        mpoly = np.polynomial.legendre.legval(nw, coeff)
-        comp_dict["MPOLY"] = mpoly
-        # if np.any(mpoly)<0:
-        #    mpoly += -np.nanmin(mpoly)
-        host_model = host_model * mpoly
-        #
-
-    ########################################################################################################
-
-    ############################# Optical FeII Component ###################################################
-
-    if (opt_feii_templates is not None):
-
-        if (opt_feii_options['opt_template']['type']=='VC04'):
-            
-            br_opt_feii_template, na_opt_feii_template = VC04_opt_feii_template(p, lam_gal, opt_feii_templates, opt_feii_options, velscale)
-                         
-            host_model = (host_model) - (na_opt_feii_template) - (br_opt_feii_template)
-            comp_dict['NA_OPT_FEII_TEMPLATE'] = na_opt_feii_template # Add to component dictionary
-            comp_dict['BR_OPT_FEII_TEMPLATE'] = br_opt_feii_template # Add to component dictionary
-
-        elif (opt_feii_options['opt_template']['type']=='K10'):
-            
-            f_template, s_template, g_template, z_template = K10_opt_feii_template(p, lam_gal, opt_feii_templates, opt_feii_options, velscale)
-
-            host_model = (host_model) - (f_template) - (s_template) - (g_template) - (z_template)
-            comp_dict['F_OPT_FEII_TEMPLATE'] = f_template
-            comp_dict['S_OPT_FEII_TEMPLATE'] = s_template
-            comp_dict['G_OPT_FEII_TEMPLATE'] = g_template
-            comp_dict['Z_OPT_FEII_TEMPLATE'] = z_template
-
-    ########################################################################################################
+        if poly_options.mpoly.bool:
+            nw = np.linspace(-1,1,len(target.wave))
+            coeff = np.empty(poly_options.mpoly.order+1)
+            for n in range(1,len(coeff)):
+                coeff[n] = p['MPOLY_COEFF_%d' % n]
+            mpoly = np.polynomial.legendre.legval(nw, coeff)
+            comp_dict['MPOLY'] = mpoly
+            host_model = host_model * mpoly
 
 
-    ############################# UV Iron Component ##########################################################
+    # Template Components
+    # TODO: host and losvd template components were processed after emission line components,
+    #       now they will be before; does this affect anything?
+    for template in ctx.templates.values():
+        comp_dict, host_model = template.add_components(p, comp_dict, host_model)
 
-    if (uv_iron_template is not None):
 
-        uv_iron_template = VW01_uv_iron_template(lam_gal, p, uv_iron_template, uv_iron_options, velscale, run_dir)
-        host_model = (host_model) - (uv_iron_template)
-        comp_dict['UV_IRON_TEMPLATE'] = uv_iron_template
-
-    ########################################################################################################
-
-    ############################# Balmer Continuum Component ###############################################
-
-    if (balmer_template is not None):
-        # Unpack Balmer template
-        lam_balmer, spec_high_balmer, velscale_balmer = balmer_template
-        # Parse Balmer options
-        if (balmer_options['R_const']['bool']==False): 
-            balmer_ratio = p['BALMER_RATIO']
-        elif (balmer_options['R_const']['bool']==True): 
-            balmer_ratio = balmer_options['R_const']['R_val']
-        if (balmer_options['balmer_amp_const']['bool']==False): 
-            balmer_amp = p['BALMER_AMP']
-        elif (balmer_options['balmer_amp_const']['bool']==True): 
-            balmer_amp = balmer_options['balmer_amp_const']['balmer_amp_val']
-        if (balmer_options['balmer_disp_const']['bool']==False): 
-            balmer_disp = p['BALMER_DISP']
-        elif (balmer_options['balmer_disp_const']['bool']==True): 
-            balmer_disp = balmer_options['balmer_disp_const']['balmer_disp_val']
-        if (balmer_options['balmer_voff_const']['bool']==False): 
-            balmer_voff = p['BALMER_VOFF']
-        elif (balmer_options['balmer_voff_const']['bool']==True): 
-            balmer_voff = balmer_options['balmer_voff_const']['balmer_voff_val']
-        if (balmer_options['Teff_const']['bool']==False): 
-            balmer_Teff = p['BALMER_TEFF']
-        elif (balmer_options['Teff_const']['bool']==True): 
-            balmer_Teff = balmer_options['Teff_const']['Teff_val']
-        if (balmer_options['tau_const']['bool']==False): 
-            balmer_tau = p['BALMER_TAU']
-        elif (balmer_options['tau_const']['bool']==True): 
-            balmer_tau = balmer_options['tau_const']['tau_val']
-
-        balmer_cont = generate_balmer_continuum(lam_gal,lam_balmer, spec_high_balmer, velscale_balmer,
-                      balmer_ratio, balmer_amp, balmer_disp, balmer_voff, balmer_Teff, balmer_tau)
-
-        host_model = (host_model) - (balmer_cont)
-        comp_dict['BALMER_CONT'] = balmer_cont
-
-    ########################################################################################################
-
-    ############################# Emission Line Components #################################################
-
+    # Emission Line Components
     # Iteratively generate lines from the line list using the line_constructor()
-    for line in line_list:
-        comp_dict = line_constructor(lam_gal,p,comp_dict,comp_options,line,line_list,velscale)
+    for line in ctx.line_list:
+        comp_dict = line_constructor(target.wave,p,comp_dict,target.options.comp_options,line,ctx.line_list,target.velscale)
         host_model = host_model - comp_dict[line]
 
-    ########################################################################################################
-
-    ############################# Host-galaxy Component ######################################################
-
-    if (comp_options["fit_host"]==True):
-        #
-        if (host_options["vel_const"]["bool"]==True) & (host_options["disp_const"]["bool"]==True):
-            # If both velocity and dispersion are constant, the host template(s) are pre-convolved
-            # and the only thing left to do is to scale (or perform nnls for multiple templates)
-            conv_host = host_template
-            #
-            if np.shape(conv_host)[1]==1:
-                # conv_host = conv_host/np.nanmedian(conv_host) * p["HOST_TEMP_AMP"]
-                conv_host = conv_host * p["HOST_TEMP_AMP"]
-                host_galaxy = conv_host.reshape(-1)
-            elif np.shape(conv_host)[1]>1:
-                host_model[~np.isfinite(host_model)] = 0
-                conv_host[~np.isfinite(conv_host)]	= 0
-                # host_norm = np.nanmedian(host_model)
-                # if (host_norm/host_norm!=1):
-                # 	host_norm = 1
-                weights	 = nnls(conv_host,host_model)#/host_norm) # scipy.optimize Non-negative Least Squares
-                host_galaxy = (np.sum(weights*conv_host,axis=1)) #* host_norm
-            #
-        elif (host_options["vel_const"]["bool"]==False) | (host_options["disp_const"]["bool"]==False):
-            # If templates velocity OR dispersion are not constant, we need to perform 
-            # the convolution.
-            ssp_fft, npad, vsyst = host_template
-            if host_options["vel_const"]["bool"]==False:
-                host_vel = p["HOST_TEMP_VEL"]
-            elif host_options["vel_const"]["bool"]==True:
-                host_vel = host_options["vel_const"]["val"]
-            #
-            if host_options["disp_const"]["bool"]==False:
-                host_disp = p["HOST_TEMP_DISP"]
-            elif host_options["disp_const"]["bool"]==True:
-                host_disp = host_options["disp_const"]["val"]
-
-            #
-            conv_host	= convolve_gauss_hermite(ssp_fft,npad,float(velscale),\
-                           [host_vel, host_disp],np.shape(lam_gal)[0],velscale_ratio=1,sigma_diff=0,vsyst=vsyst)
-            #
-            if np.shape(conv_host)[1]==1:
-                # conv_host = conv_host/np.nanmedian(conv_host) * p["HOST_TEMP_AMP"]
-                conv_host = conv_host * p["HOST_TEMP_AMP"]
-                host_galaxy = conv_host.reshape(-1)
-            # elif np.shape(conv_host)[1]>1:
-            host_model[~np.isfinite(host_model)] = 0
-            conv_host[~np.isfinite(conv_host)]	= 0
-                # host_norm = np.nanmedian(host_model)
-                # if (host_norm/host_norm!=1):
-                # 	host_norm = 1
-            weights	 = nnls(conv_host,host_model)#/host_norm) # scipy.optimize Non-negative Least Squares
-            host_galaxy = (np.sum(weights*conv_host,axis=1))# * host_norm
-
-        host_model = (host_model) - (host_galaxy) # Subtract off continuum from galaxy, since we only want template weights to be fit
-        comp_dict['HOST_GALAXY'] = host_galaxy
-
-    ########################################################################################################   
-
-    ############################# LOSVD Component ####################################################
-
-    if (comp_options["fit_losvd"]==True):
-        #
-        if (losvd_options["vel_const"]["bool"]==True) & (losvd_options["disp_const"]["bool"]==True):
-            # If both velocity and dispersion are constant, the host template(s) are pre-convolved
-            # and the only thing left to do is to scale (or perform nnls for multiple templates)
-            conv_temp = stel_templates
-            # print(np.shape(conv_temp))
-            # print(np.shape(host_model))
-            #
-            host_model[~np.isfinite(host_model)] = 0
-            conv_temp[~np.isfinite(conv_temp)]	= 0
-            # host_norm = np.nanmedian(host_model)
-            # if (host_norm/host_norm!=1) or (host_norm<1):
-                # host_norm = 1
-            weights	 = nnls(conv_temp,host_model)#/host_norm) # scipy.optimize Non-negative Least Squares
-            host_galaxy = (np.sum(weights*conv_temp,axis=1)) #* host_norm
-            # Final scaling to ensure the host galaxy isn't negative anywhere
-            if np.any(host_galaxy<0):
-                host_galaxy+= -np.min(host_galaxy)
-
-
-        elif (losvd_options["vel_const"]["bool"]==False) | (losvd_options["disp_const"]["bool"]==False):
-            # If templates velocity OR dispersion are not constant, we need to perform 
-            # the convolution.
-            temp_fft, npad, vsyst = stel_templates
-            if losvd_options["vel_const"]["bool"]==False:
-                stel_vel = p["STEL_VEL"]
-            elif losvd_options["vel_const"]["bool"]==True:
-                stel_vel = losvd_options["vel_const"]["val"]
-            #
-            if losvd_options["disp_const"]["bool"]==False:
-                stel_disp = p["STEL_DISP"]
-            elif losvd_options["disp_const"]["bool"]==True:
-                stel_disp = losvd_options["disp_const"]["val"]
-
-            #
-            conv_temp	= convolve_gauss_hermite(temp_fft,npad,float(velscale),\
-                           [stel_vel, stel_disp],np.shape(lam_gal)[0],velscale_ratio=1,sigma_diff=0,vsyst=vsyst)
-            #
-
-            host_model[~np.isfinite(host_model)] = 0
-            conv_temp[~np.isfinite(conv_temp)]	= 0
-            # host_norm = np.nanmedian(host_model)
-            # if (host_norm/host_norm!=1) or (host_norm<1):
-            # 	host_norm = 1
-            weights	 = nnls(conv_temp,host_model)#/host_norm) # scipy.optimize Non-negative Least Squares
-            host_galaxy = (np.sum(weights*conv_temp,axis=1)) #* host_norm
-            #
-            if np.any(host_galaxy<0):
-                host_galaxy+= -np.min(host_galaxy)
-
-        host_model = (host_model) - (host_galaxy) # Subtract off continuum from galaxy, since we only want template weights to be fit
-        comp_dict['HOST_GALAXY'] = host_galaxy
-
-     ########################################################################################################
 
     # The final model
     gmodel = np.sum((comp_dict[d] for d in comp_dict),axis=0)
 
-    #########################################################################################################
-
     # Add combined lines to comp_dict
-    for comb_line in combined_line_list:
-        comp_dict[comb_line] = np.zeros(len(lam_gal))
-        for indiv_line in combined_line_list[comb_line]["lines"]:
+    for comb_line in ctx.combined_line_list:
+        comp_dict[comb_line] = np.zeros(len(target.wave))
+        for indiv_line in ctx.combined_line_list[comb_line]['lines']:
             comp_dict[comb_line]+=comp_dict[indiv_line]
 
-    line_list = {**line_list, **combined_line_list}
+    line_list = {**ctx.line_list, **ctx.combined_line_list}
 
-    #########################################################################################################
-
-    # Add last components to comp_dict for plotting purposes 
+    # Add last components to comp_dict for plotting purposes
     # Add galaxy, sigma, model, and residuals to comp_dict
-    comp_dict["DATA"]  = galaxy		  
-    comp_dict["WAVE"]  = lam_gal 	  
-    comp_dict["NOISE"] = noise		  
-    comp_dict["MODEL"] = gmodel		  
-    comp_dict["RESID"] = galaxy-gmodel
+    # TODO: does this need to be done every fit_model call?
+    comp_dict['DATA']  = target.spec
+    comp_dict['WAVE']  = target.wave
+    comp_dict['NOISE'] = ctx.noise
+    comp_dict['MODEL'] = gmodel
+    comp_dict['RESID'] = target.spec-gmodel
 
-    ########################## Fluxes & Equivalent Widths ###################################################
+    # Fluxes & Equivalent Widths
     # Equivalent widths of emission lines are stored in a dictionary and returned to emcee as metadata blob.
     # Velocity interpolation function
+    if (fit_type == 'final') and (not output_model):
+        fluxes, eqwidths, cont_fluxes, int_vel_disp = calc_mcmc_blob(p, target.wave, comp_dict, target.options.comp_options, ctx.line_list, ctx.combined_line_list, ctx.blob_pars, target.fit_mask, ctx.fit_stat, target.velscale)
 
-    
-    if (fit_type=='final') and (output_model==False):
+    # TODO: store in target or ctx
+    if fit_type == 'init': # Max likelihood fitting
+        if output_model:
+            return comp_dict
+        else:
+            return gmodel, comp_dict
 
-
-        fluxes, eqwidths, cont_fluxes, int_vel_disp = calc_mcmc_blob(p, lam_gal, comp_dict, comp_options, line_list, combined_line_list, blob_pars, fit_mask, fit_stat, velscale)
-
-        
-    ########################################################################################################
-
-    if (fit_type=='init') and (output_model==False): # For max. likelihood fitting
-        return gmodel, comp_dict
-    if (fit_type=='init') and (output_model==True): # For max. likelihood fitting
-        return comp_dict
-    elif (fit_type=='line_test'):
-        return comp_dict
-    elif (fit_type=='final') and (output_model==False): # For emcee
-        return gmodel, fluxes, eqwidths, cont_fluxes, int_vel_disp
-    elif (fit_type=='final') and (output_model==True): # output all models for best-fit model
+    if fit_type == 'line_test':
         return comp_dict
 
-########################################################################################################
+    if fit_type == 'final': # emcee
+        if output_model:
+            return comp_dict
+        else:
+            return gmodel, fluxes, eqwidths, cont_fluxes, int_vel_disp
 
 
 # This function generates blob parameters for the MCMC routine,
 # including continuum luminosities, fluxes, equivalent widths, 
 # widths, and fit quality parameters (R-squared, reduced chi-squared)
-
 def calc_mcmc_blob(p, lam_gal, comp_dict, comp_options, line_list, combined_line_list, blob_pars, fit_mask, fit_stat, velscale):
 
     _noise = comp_dict["NOISE"]
@@ -8615,75 +7905,6 @@ def initialize_opt_feii(lam_gal, opt_feii_options, disp_res, velscale):
         # Return a list of arrays which will be unpacked during the fitting process
         return opt_feii_templates
 
-#### Optical FeII Template #########################################################
-
-def VC04_opt_feii_template(p, lam_gal, opt_feii_templates, opt_feii_options, velscale):
-
-    # Unpack opt_feii_templates
-    # Parse FeII options
-    #
-    if (opt_feii_options['opt_amp_const']['bool']==False): # if amp not constant
-        na_opt_feii_amp = p['NA_OPT_FEII_AMP']
-        br_opt_feii_amp = p['BR_OPT_FEII_AMP']
-    elif (opt_feii_options['opt_amp_const']['bool']==True): # if amp constant
-        na_opt_feii_amp = opt_feii_options['opt_amp_const']['na_opt_feii_val']
-        br_opt_feii_amp = opt_feii_options['opt_amp_const']['br_opt_feii_val']
-    #
-    if (opt_feii_options['opt_disp_const']['bool']==False): # if amp not constant
-        na_opt_feii_disp = p['NA_OPT_FEII_DISP']
-        br_opt_feii_disp = p['BR_OPT_FEII_DISP']
-    elif (opt_feii_options['opt_disp_const']['bool']==True): # if amp constant
-        na_opt_feii_disp = opt_feii_options['opt_disp_const']['na_opt_feii_val']
-        br_opt_feii_disp = opt_feii_options['opt_disp_const']['br_opt_feii_val']
-    if na_opt_feii_disp<=0.01: na_opt_feii_disp = 0.01
-    if br_opt_feii_disp<=0.01: br_opt_feii_disp = 0.01
-    #
-    if (opt_feii_options['opt_voff_const']['bool']==False): # if amp not constant
-        na_opt_feii_voff = p['NA_OPT_FEII_VOFF']
-        br_opt_feii_voff = p['BR_OPT_FEII_VOFF']
-    elif (opt_feii_options['opt_voff_const']['bool']==True): # if amp constant
-        na_opt_feii_voff = opt_feii_options['opt_voff_const']['na_opt_feii_val']
-        br_opt_feii_voff = opt_feii_options['opt_voff_const']['br_opt_feii_val']
-    #
-    if (opt_feii_options["opt_disp_const"]["bool"]==True) & (opt_feii_options["opt_voff_const"]["bool"]==True):
-        br_conv_temp, na_conv_temp = opt_feii_templates
-        # Templates are already convolved so just normalize and multiplfy by amplitude 
-        # br_opt_feii_template = br_conv_temp/np.max(br_conv_temp) * br_opt_feii_amp
-        # na_opt_feii_template = na_conv_temp/np.max(na_conv_temp) * na_opt_feii_amp
-        br_opt_feii_template = br_conv_temp * br_opt_feii_amp
-        na_opt_feii_template = na_conv_temp * na_opt_feii_amp
-
-        br_opt_feii_template = br_opt_feii_template.reshape(-1)
-        na_opt_feii_template = na_opt_feii_template.reshape(-1)
-        # Set fitting region outside of template to zero to prevent convolution loops
-        br_opt_feii_template[(lam_gal < 3400) & (lam_gal > 7200)] = 0
-        na_opt_feii_template[(lam_gal < 3400) & (lam_gal > 7200)] = 0
-        #
-    elif (opt_feii_options["opt_disp_const"]["bool"]==False) | (opt_feii_options["opt_voff_const"]["bool"]==False):
-        br_opt_feii_fft, na_opt_feii_fft, npad, vsyst = opt_feii_templates
-
-        br_conv_temp = convolve_gauss_hermite(br_opt_feii_fft, npad, float(velscale),
-                                              [br_opt_feii_voff, br_opt_feii_disp], lam_gal.shape[0], 
-                                               velscale_ratio=1, sigma_diff=0, vsyst=vsyst)
-        #
-        na_conv_temp = convolve_gauss_hermite(na_opt_feii_fft, npad, float(velscale),
-                                              [na_opt_feii_voff, na_opt_feii_disp], lam_gal.shape[0], 
-                                               velscale_ratio=1, sigma_diff=0, vsyst=vsyst)
-        # Re-normalize to 1
-        # br_conv_temp = br_conv_temp/np.max(br_conv_temp)
-        # na_conv_temp = na_conv_temp/np.max(na_conv_temp)
-        # Multiplyy by amplitude
-        br_opt_feii_template = br_opt_feii_amp * br_conv_temp
-        na_opt_feii_template = na_opt_feii_amp * na_conv_temp
-        # Reshape
-        br_opt_feii_template = br_opt_feii_template.reshape(-1)
-        na_opt_feii_template = na_opt_feii_template.reshape(-1)
-        # Set fitting region outside of template to zero to prevent convolution loops
-        br_opt_feii_template[(lam_gal < 3400) & (lam_gal > 7200)] = 0
-        na_opt_feii_template[(lam_gal < 3400) & (lam_gal > 7200)] = 0
-
-    return br_opt_feii_template, na_opt_feii_template
-
 ####################################################################################
 
 
@@ -8767,331 +7988,6 @@ def get_disp_res(disp_res_ftn,line_center,line_voff):
 
 
 ####################################################################################
-
-def K10_opt_feii_template(p, lam_gal, opt_feii_templates, opt_feii_options, velscale):
-    """
-    Constructs an Kovacevic et al. 2010 FeII template using a series of Gaussians and ensures
-    no lines are created at the edges of the fitting region.
-    """
-    
-    # Parse FeII options
-    if (opt_feii_options['opt_amp_const']['bool']==False): # if amp not constant
-        f_feii_amp  = p['OPT_FEII_F_AMP']
-        s_feii_amp  = p['OPT_FEII_S_AMP']
-        g_feii_amp  = p['OPT_FEII_G_AMP']
-        z_feii_amp  = p['OPT_FEII_Z_AMP']
-    elif (opt_feii_options['opt_amp_const']['bool']==True): # if amp constant
-        f_feii_amp  = opt_feii_options['opt_amp_const']['f_feii_val']
-        s_feii_amp  = opt_feii_options['opt_amp_const']['s_feii_val']
-        g_feii_amp  = opt_feii_options['opt_amp_const']['g_feii_val']
-        z_feii_amp  = opt_feii_options['opt_amp_const']['z_feii_val']
-    #
-    if (opt_feii_options['opt_disp_const']['bool']==False): # if disp not constant
-        opt_feii_disp = p['OPT_FEII_DISP']
-    elif (opt_feii_options['opt_disp_const']['bool']==True): # if disp constant
-        opt_feii_disp = opt_feii_options['opt_disp_const']['opt_feii_val']
-    if opt_feii_disp<= 0.01: opt_feii_disp = 0.01
-    #
-    if (opt_feii_options['opt_voff_const']['bool']==False): # if voff not constant
-        opt_feii_voff = p['OPT_FEII_VOFF']
-    elif (opt_feii_options['opt_voff_const']['bool']==True): # if voff constant
-        opt_feii_voff = opt_feii_options['opt_voff_const']['opt_feii_val']
-    #
-    if (opt_feii_options['opt_temp_const']['bool']==False): # if temp not constant
-        opt_feii_temp = p['OPT_FEII_TEMP']
-    elif (opt_feii_options['opt_temp_const']['bool']==True): # if temp constant
-        opt_feii_temp = opt_feii_options['opt_temp_const']['opt_feii_val']
-
-    if (opt_feii_options["opt_disp_const"]["bool"]==True) & (opt_feii_options["opt_voff_const"]["bool"]==True):
-        #
-        # Unpack tables for each template
-        f_conv_temp, f_feii_center, f_feii_gf, f_feii_e2  = (opt_feii_templates[0], opt_feii_templates[1], opt_feii_templates[2], opt_feii_templates[3])
-        s_conv_temp, s_feii_center, s_feii_gf, s_feii_e2  = (opt_feii_templates[4], opt_feii_templates[5], opt_feii_templates[6], opt_feii_templates[7])
-        g_conv_temp, g_feii_center, g_feii_gf, g_feii_e2  = (opt_feii_templates[8], opt_feii_templates[9], opt_feii_templates[10], opt_feii_templates[11])
-        z_conv_temp, z_feii_rel_int					   = (opt_feii_templates[12], opt_feii_templates[13])
-        # F-template
-        # Normalize amplitudes to 1
-        f_norm = np.array([np.max(f_conv_temp[:,i]) for i in range(np.shape(f_conv_temp)[1])])
-        f_norm[f_norm<1.e-6] = 1.0
-        f_conv_temp = f_conv_temp/f_norm
-        # Calculate temperature dependent relative intensities 
-        f_feii_rel_int = calculate_k10_rel_int("F",f_feii_center, f_feii_gf, f_feii_e2, f_feii_amp, opt_feii_temp)
-        # Multiply by relative intensities
-        f_conv_temp = f_conv_temp * f_feii_rel_int
-        # Sum templates along rows
-        f_template = np.sum(f_conv_temp, axis=1)
-        f_template[(lam_gal <4472) & (lam_gal >5147)] = 0
-
-        # S-template
-        # Normalize amplitudes to 1
-        s_norm = np.array([np.max(s_conv_temp[:,i]) for i in range(np.shape(s_conv_temp)[1])])
-        s_norm[s_norm<1.e-6] = 1.0
-        s_conv_temp = s_conv_temp/s_norm
-        # Calculate temperature dependent relative intensities 
-        s_feii_rel_int = calculate_k10_rel_int("S",s_feii_center, s_feii_gf, s_feii_e2, s_feii_amp, opt_feii_temp)
-        # Multiply by relative intensities
-        s_conv_temp = s_conv_temp * s_feii_rel_int
-        # Sum templates along rows
-        s_template = np.sum(s_conv_temp, axis=1)
-        s_template[(lam_gal <4731) & (lam_gal >5285)] = 0
-
-        # G-template
-        # Normalize amplitudes to 1
-        g_norm = np.array([np.max(g_conv_temp[:,i]) for i in range(np.shape(g_conv_temp)[1])])
-        g_norm[g_norm<1.e-6] = 1.0
-        g_conv_temp = g_conv_temp/g_norm
-        # Calculate temperature dependent relative intensities 
-        g_feii_rel_int = calculate_k10_rel_int("G",g_feii_center, g_feii_gf, g_feii_e2, g_feii_amp, opt_feii_temp)
-        # Multiply by relative intensities
-        g_conv_temp = g_conv_temp * g_feii_rel_int
-        # Sum templates along rows
-        g_template = np.sum(g_conv_temp, axis=1)
-        g_template[(lam_gal <4472) & (lam_gal >5147)] = 0
-
-        # Z template
-        # Normalize amplitudes to 1
-        z_norm = np.array([np.max(z_conv_temp[:,i]) for i in range(np.shape(z_conv_temp)[1])])
-        z_norm[z_norm<1.e-6] = 1.0
-        z_conv_temp = z_conv_temp/z_norm
-        # Multiply by relative intensities
-        z_conv_temp = z_conv_temp * z_feii_rel_int
-        # Sum templates along rows
-        z_template = np.sum(z_conv_temp, axis=1)
-        # Multiply by FeII amplitude
-        z_template = z_template * z_feii_amp
-        z_template[(lam_gal <4418) & (lam_gal >5428)] = 0
-        #
-
-    elif (opt_feii_options["opt_disp_const"]["bool"]==False) | (opt_feii_options["opt_voff_const"]["bool"]==False):
-        #
-        # Unpack tables for each template
-        f_feii_fft, f_feii_center, f_feii_gf, f_feii_e2  = (opt_feii_templates[0], opt_feii_templates[1], opt_feii_templates[2], opt_feii_templates[3])
-        s_feii_fft, s_feii_center, s_feii_gf, s_feii_e2  = (opt_feii_templates[4], opt_feii_templates[5], opt_feii_templates[6], opt_feii_templates[7])
-        g_feii_fft, g_feii_center, g_feii_gf, g_feii_e2  = (opt_feii_templates[8], opt_feii_templates[9], opt_feii_templates[10], opt_feii_templates[11])
-        z_feii_fft, z_feii_rel_int					   = (opt_feii_templates[12], opt_feii_templates[13])
-        npad											 = opt_feii_templates[14]
-        vsyst											= opt_feii_templates[15]
-        # F-template
-        # Perform the convolution
-        f_conv_temp = convolve_gauss_hermite(f_feii_fft, npad, float(velscale),\
-                                          [opt_feii_voff, opt_feii_disp], lam_gal.shape[0], 
-                                           velscale_ratio=1, sigma_diff=0, vsyst=vsyst)
-        # Normalize amplitudes to 1
-        f_norm = np.array([np.max(f_conv_temp[:,i]) for i in range(np.shape(f_conv_temp)[1])])
-        f_norm[f_norm<1.e-6] = 1.0
-        f_conv_temp = f_conv_temp/f_norm
-        # Calculate temperature dependent relative intensities 
-        f_feii_rel_int = calculate_k10_rel_int("F",f_feii_center, f_feii_gf, f_feii_e2, f_feii_amp, opt_feii_temp)
-        # Multiply by relative intensities
-        f_conv_temp = f_conv_temp * f_feii_rel_int
-        # Sum templates along rows
-        f_template = np.sum(f_conv_temp, axis=1)
-        f_template[(lam_gal <4472) & (lam_gal >5147)] = 0
-
-        # S-template
-        # Perform the convolution
-        s_conv_temp = convolve_gauss_hermite(s_feii_fft, npad, float(velscale),\
-                                          [opt_feii_voff, opt_feii_disp], lam_gal.shape[0], 
-                                           velscale_ratio=1, sigma_diff=0, vsyst=vsyst)
-        # Normalize amplitudes to 1
-        s_norm = np.array([np.max(s_conv_temp[:,i]) for i in range(np.shape(s_conv_temp)[1])])
-        s_norm[s_norm<1.e-6] = 1.0
-        s_conv_temp = s_conv_temp/s_norm
-        # Calculate temperature dependent relative intensities 
-        s_feii_rel_int = calculate_k10_rel_int("S",s_feii_center, s_feii_gf, s_feii_e2, s_feii_amp, opt_feii_temp)
-        # Multiply by relative intensities
-        s_conv_temp = s_conv_temp * s_feii_rel_int
-        # Sum templates along rows
-        s_template = np.sum(s_conv_temp, axis=1)
-        s_template[(lam_gal <4731) & (lam_gal >5285)] = 0
-
-        # G-template
-        # Perform the convolution
-        g_conv_temp = convolve_gauss_hermite(g_feii_fft, npad, float(velscale),\
-                                          [opt_feii_voff, opt_feii_disp], lam_gal.shape[0], 
-                                           velscale_ratio=1, sigma_diff=0, vsyst=vsyst)
-        # Normalize amplitudes to 1
-        g_norm = np.array([np.max(g_conv_temp[:,i]) for i in range(np.shape(g_conv_temp)[1])])
-        g_norm[g_norm<1.e-6] = 1.0
-        g_conv_temp = g_conv_temp/g_norm
-        # Calculate temperature dependent relative intensities 
-        g_feii_rel_int = calculate_k10_rel_int("G",g_feii_center, g_feii_gf, g_feii_e2, g_feii_amp, opt_feii_temp)
-        # Multiply by relative intensities
-        g_conv_temp = g_conv_temp * g_feii_rel_int
-        # Sum templates along rows
-        g_template = np.sum(g_conv_temp, axis=1)
-        g_template[(lam_gal <4472) & (lam_gal >5147)] = 0
-
-        # Z template
-        # Perform the convolution
-        z_conv_temp = convolve_gauss_hermite(z_feii_fft, npad, float(velscale),\
-                                          [opt_feii_voff, opt_feii_disp], lam_gal.shape[0], 
-                                           velscale_ratio=1, sigma_diff=0, vsyst=vsyst)
-        # Normalize amplitudes to 1
-        z_norm = np.array([np.max(z_conv_temp[:,i]) for i in range(np.shape(z_conv_temp)[1])])
-        z_norm[z_norm<1.e-6] = 1.0
-        z_conv_temp = z_conv_temp/z_norm
-        # Multiply by relative intensities
-        z_conv_temp = z_conv_temp * z_feii_rel_int
-        # Sum templates along rows
-        z_template = np.sum(z_conv_temp, axis=1)
-        # Multiply by FeII amplitude
-        z_template = z_template * z_feii_amp
-        z_template[(lam_gal <4418) & (lam_gal >5428)] = 0
-
-
-    return f_template,s_template,g_template,z_template
-    
-def calculate_k10_rel_int(transition,center,gf,e2,I2,temp):
-    """
-    Calculate relative intensities for the S, F, and G FeII line groups
-    from Kovacevic et al. 2010 template as a fucntion a temperature.
-    """
-    c = 2.99792458e+8  # speed of light; m/s
-    h = 6.62607004e-34 # Planck's constant; m2 kg s-1
-    k = 1.38064852e-23 # Boltzmann constant; m2 kg s-2 K-1
-    if (transition=='F'):
-        # For the F transition, we normalize to the values of 4549.474 
-        rel_int = I2*(4549.474/center)**3 * (gf/1.10e-02) * np.exp(-1.0/(k*temp) * (e2 - 8.896255e-19))
-        return rel_int
-    elif (transition=='S'):
-        # For the S transition, we normalize to the values of 5018.440
-        rel_int = I2*(5018.440/center)**3 * (gf/3.98e-02) * np.exp(-1.0/(k*temp) * (e2 - 8.589111e-19))
-        return rel_int
-    elif (transition=='G'):
-        # For the G transition, we normalize to the values of 5316.615
-        rel_int = I2*(5316.615/center)**3 * (gf/1.17e-02) * np.exp(-1.0/(k*temp) * (e2 - 8.786549e-19))
-        return rel_int
-
-
-##################################################################################
-
-##################################################################################
-
-def VW01_uv_iron_template(lam_gal, pdict, uv_iron_template, uv_iron_options, velscale, run_dir):
-    """
-    Generates the UV Iron model from Vestergaard & Wilkes (2001).
-
-    If the UV iron FWHM and/or VOFF are free to vary, perform the convolution of optical FeII template with Gauss-Hermite kernel using 
-    PPXF framework.
-    """
-    
-    #  Unpack opt_feii_templates (uv_iron_fft, npad, vsyst)
-    uv_iron_fft, npad, vsyst = uv_iron_template
-
-    # Parse FeII options
-    if (uv_iron_options['uv_amp_const']['bool']==False): # if amp not constant
-        uv_iron_amp = pdict['UV_IRON_AMP']
-    elif (uv_iron_options['uv_amp_const']['bool']==True): # if amp constant
-        uv_iron_amp = uv_iron_options['uv_amp_const']['uv_iron_val']
-    #
-    if (uv_iron_options['uv_disp_const']['bool']==False): # if amp not constant
-        uv_iron_disp = pdict['UV_IRON_DISP']
-    elif (uv_iron_options['uv_disp_const']['bool']==True): # if amp constant
-        uv_iron_disp = uv_iron_options['uv_disp_const']['uv_iron_val']
-    if uv_iron_disp <= 0.01: uv_iron_disp = 0.01
-    #
-    if (uv_iron_options['uv_voff_const']['bool']==False): # if amp not constant
-        uv_iron_voff = pdict['UV_IRON_VOFF']
-    elif (uv_iron_options['uv_voff_const']['bool']==True): # if amp constant
-        uv_iron_voff = uv_iron_options['uv_voff_const']['uv_iron_val']
-
-    # Convolve the UV iron FFT template and return the inverse Fourier transform.
-    conv_temp = convolve_gauss_hermite(uv_iron_fft, npad, velscale,
-                                          [uv_iron_voff, uv_iron_disp], lam_gal.shape[0], 
-                                           velscale_ratio=1, sigma_diff=0, vsyst=vsyst)
-
-    # Reshape
-    conv_temp = conv_temp.reshape(-1)
-    # Re-normalize to 1
-    conv_temp = conv_temp/np.max(conv_temp)
-    # Multiplyy by amplitude
-    template = uv_iron_amp * conv_temp
-    # Reshape
-    # template = template.reshape(-1)
-    #
-    # Set fitting region outside of template to zero to prevent convolution loops
-    template[(lam_gal < 1074) & (lam_gal > 3090)] = 0
-    #
-    # If the summation results in 0.0, it means that features were too close 
-    # to the edges of the fitting region (usua lly because the region is too 
-    # small), then simply return an array of zeros.
-    if (isinstance(template,int)) or (isinstance(template,float)):
-        template=np.zeros(len(lam_gal))
-    elif np.isnan(np.sum(template)):
-        template=np.zeros(len(lam_gal))
-
-    return template
-
-##################################################################################
-
-##################################################################################
-
-def generate_balmer_continuum(lam_gal,lam_balmer, spec_high_balmer,velscale, 
-                              balmer_ratio, balmer_amp, balmer_disp, balmer_voff, balmer_Teff, balmer_tau):
-    # We need to generate a new grid for the Balmer continuum that matches
-    # that we made for the higher-order lines
-    def blackbody(lam, balmer_Teff):
-        c = 2.99792458e+18 # speed of light [A/s]
-        h = 6.626196e-11 # Planck's constant [g*A2/s2 * s]
-        k = 1.380649 # Boltzmann Constant [g*A2/s2 1/K]
-        Blam = ((2.0*h*c**2.0)/lam**5.0)*(1.0/(np.exp((h*c)/(lam*k*balmer_Teff))-1.0))
-        return Blam
-    # Construct Balmer continuum from lam_balmer
-    lam_edge = 3646.0 # Balmer edge wavelength [A]
-    Blam = blackbody(lam_balmer, balmer_Teff) # blackbody function [erg/s]
-    cont = Blam * (1.0-1.0/np.exp(balmer_tau*(lam_balmer/lam_edge)**3.0))
-    # Normalize at 3000 Å
-    cont = cont / np.max(cont)
-    # Set Balmer continuum to zero after Balmer edge
-    cont[find_nearest(lam_balmer,lam_edge)[1]:] = 0.0
-    # Normalize higher-order lines at Balmer edge
-    # Unsure of how Calderone et al. (2017) (QSFit) did this normalization, so we added
-    # fudge factor of 1.36 to match the QSFit implementation of the Balmer continuum.
-    # spec_high_balmer = spec_high_balmer/spec_high_balmer[find_nearest(lam_balmer,lam_edge+10)[1]] * balmer_ratio #* 1.36
-    if (np.sum(spec_high_balmer)>0):
-        spec_high_balmer = spec_high_balmer/np.max(spec_high_balmer) * balmer_ratio #* 1.36
-
-    # Sum the two components
-    full_balmer = spec_high_balmer + cont
-    # Pre-compute the FFT and vsyst
-    balmer_fft, balmer_npad = template_rfft(full_balmer)
-    c = 299792.458 # speed of light in km/s
-    vsyst = np.log(lam_balmer[0]/lam_gal[0])*c
-    if balmer_disp<= 0.01: balmer_disp = 0.01
-    # Broaden the higher-order Balmer lines
-    conv_temp = convolve_gauss_hermite(balmer_fft, balmer_npad, float(velscale),\
-                                       [balmer_voff, balmer_disp], lam_gal.shape[0], 
-                                       velscale_ratio=1, sigma_diff=0, vsyst=vsyst)
-    conv_temp = conv_temp/conv_temp[find_nearest(lam_gal,lam_edge)[1]] * balmer_ratio
-    conv_temp = conv_temp.reshape(-1)
-    # Normalize the full continuum to 1
-    # norm_balmer =  conv_temp[find_nearest(lam_gal,3000.0)[1]]
-    # conv_temp = conv_temp/norm_balmer * balmer_amp
-    conv_temp = conv_temp/np.max(conv_temp) * balmer_amp
-
-    # Plot for testing purposes
-    if 0:
-        # Plot
-        fig = plt.figure(figsize=(14,5))
-        ax1 = fig.add_subplot(1,1,1)
-        ax1.set_title('Balmer Continuum')
-    #	 ax1.plot(lam_balmer, cont/np.max(cont), color='xkcd:cerulean')
-    #	 ax1.plot(lam_balmer, spec_high_balmer/np.max(spec_high_balmer), color='xkcd:bright red')
-        ax1.plot(lam_gal, conv_temp, color='xkcd:bright red',linewidth=0.75)
-        ax1.axvline(lam_edge,linestyle='--',color='xkcd:red',linewidth=1.0)
-        ax1.axvline(3000,linestyle='--',color='xkcd:black',linewidth=0.5)
-    
-        ax1.axhline(1.0,linestyle='--',color='xkcd:black',linewidth=0.5)
-    #	 ax1.axhline(0.6,linestyle='--',color='xkcd:black',linewidth=0.5)
-        ax1.set_ylim(0.0,)
-    #	 ax1.set_xlim(1000,4500)
-        fontsize = 16
-        ax1.set_xlabel(r"Wavelength ($\lambda$)",fontsize=fontsize)
-
-    return conv_temp
-
-##################################################################################
 
 #### Simple Power-Law Template ###################################################
 

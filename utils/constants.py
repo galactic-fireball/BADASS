@@ -40,4 +40,4 @@ LOSVD_LIBRARIES = prodict.Prodict.from_dict({
 })
 
 
-BADASS_DATA_DIR = pathlib.Path(__file__).parent.parent.joinpath('badass_data_files')
+BADASS_DATA_DIR = pathlib.Path(__file__).parent.parent.joinpath('badass_data')
