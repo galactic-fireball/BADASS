@@ -105,6 +105,7 @@ user_lines = {
     "NA_OIII_5007_2" :{"center":5008.240,"amp":"free","disp":"free","voff":"free","line_type":"na","ncomp":2,"parent":"NA_OIII_5007"},
 
     "BR_H_BETA"      :{"center":4862.691,"amp":"free","disp":"free","voff":"free","line_type":"br","ncomp":1,},
+    "BR_OIII_5007"   :{"center":5008.240,"amp":"free","disp":"free","voff":"free","line_type":"br","ncomp":1,},
 }
 user_constraints = [
     ("NA_OIII_5007_AMP","NA_OIII_5007_2_AMP"),

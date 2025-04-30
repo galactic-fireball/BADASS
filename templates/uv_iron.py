@@ -90,7 +90,7 @@ class UVIronTemplate(BadassTemplate):
             # Narrow FeII VOFF
             params['UV_IRON_VOFF'] = {
                                         'init':0.0,
-                                        'plim':(-2000.0,2000.0),
+                                        'plim':(-1000.0,1000.0),
                                      }
 
 

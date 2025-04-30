@@ -11,7 +11,7 @@ class SDSSReader(BadassInput):
 
     def __init__(self, input_data, options):
         if not isinstance(input_data, pathlib.Path):
-            raise Exception('Reading SDSS spectra from data currently unsupported')
+            raise Exception('Reading SDSS spectra from data currently unsupported') # TODO
 
         self.infile = input_data
         with fits.open(self.infile) as hdu:
@@ -30,7 +30,6 @@ class SDSSReader(BadassInput):
 
             t = hdu[1].data
 
-            # Unpack the spectra
             self.spec = t['flux']
             obs_wave = np.power(10, t['loglam'])
             self.noise = np.sqrt(1 / t['ivar'])

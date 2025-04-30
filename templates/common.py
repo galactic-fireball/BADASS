@@ -225,6 +225,7 @@ class BadassTemplate:
         return comp_dict, host_model
 
 
+# TODO: template initialize_parameter values in config file
 
 def initialize_templates(ctx):
     # TODO: eventually make templates a list that BADASS
