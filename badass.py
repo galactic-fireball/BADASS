@@ -101,16 +101,18 @@ __status__	   = "Release"
 # TODO: all 'if verbose' checks to logger
 # TODO: all init/plim values to config file
 # TODO: ability to resume from line test and ml results
+# TODO: ability to resume mid run (save status at certain checkpoints?)
 # TODO: ability to multiprocess mcmc runs?
 # TODO: line type classes? or just a general line class?
 # TODO: organize imports
 # TODO: remove any whitespace at ends of lines
+# TODO: use rng seed to be able to reproduce fits
+
 
 def run_BADASS(inputs, **kwargs):
     # utils.options.BadassOptions.get_options_dep(kwargs)
     opts = BadassOptions.get_options(kwargs['options_file'])
     targets = BadassInput.get_inputs(inputs, opts)
-    # breakpoint()
 
     # TODO: multiprocess
     for target in targets:
@@ -388,34 +390,8 @@ def run_single_target(target):
         target.log.output_free_pars(line_list, param_dict, soft_cons)
     target.log.output_line_list(line_list, soft_cons)
 
-    # Construct blob-pars
-    blob_pars = get_blob_pars(target.wave, line_list, combined_line_list, target.velscale)
-
-####################################################################################################################################################################################
-
-    # TODO: in logger
-    # Write restart file
-    # if write_options:
-
-    #     dump_options(fit_options,
-    #         comp_options,
-    #         mcmc_options,
-    #         pca_options,
-    #         line_list,
-    #         soft_cons,
-    #         user_mask,
-    #         combined_lines,
-    #         losvd_options,
-    #         host_options,
-    #         power_options,
-    #         poly_options,
-    #         opt_feii_options,
-    #         uv_iron_options,
-    #         balmer_options,
-    #         plot_options,
-    #         output_options,
-    #         run_dir,
-    #         )
+    blob_pars = get_blob_pars(target, combined_line_list)
+    target.log.output_options()
 
     ####################################################################################################################################################################################
 
@@ -742,9 +718,8 @@ def run_single_target(target):
     sys.stdout.flush()
     return
 
-##################################################################################
 
-def get_blob_pars(lam_gal, line_list, combined_line_list, velscale):
+def get_blob_pars(target, combined_line_list):
     """
     The blob-parameter dictionary is a dictionary for any non-free "blob" parameters for values that need 
     to be calculated during the fit.  For MCMC, these equate to non-fitted parameters like fluxes, equivalent widths, 
@@ -759,27 +734,20 @@ def get_blob_pars(lam_gal, line_list, combined_line_list, velscale):
 
     # Values of velocity scale corresponding to wavelengths; this is used to calculate
     # integrated dispersions and velocity offsets for combined lines.
-    interp_ftn = interp1d(lam_gal,np.arange(len(lam_gal))*velscale,kind='linear',bounds_error=False)
+    interp_ftn = interp1d(target.wave, np.arange(len(target.wave))*target.velscale, kind='linear', bounds_error=False)
     
-    for line in combined_line_list:
-        blob_pars[line+"_LINE_VEL"] = interp_ftn(combined_line_list[line]["center"])
+    for line_name, line_dict in combined_line_list.items():
+        blob_pars[line_name+'_LINE_VEL'] = interp_ftn(line_dict['center'])
 
     # Indices for continuum wavelengths
-    if (lam_gal[0]<1350) & (lam_gal[-1]>1350):
-        blob_pars["INDEX_1350"] = find_nearest(lam_gal,1350.)[1]
-    if (lam_gal[0]<3000) & (lam_gal[-1]>3000):
-        blob_pars["INDEX_3000"] = find_nearest(lam_gal,3000.)[1]
-    if (lam_gal[0]<4000) & (lam_gal[-1]>4000):
-        blob_pars["INDEX_4000"] = find_nearest(lam_gal,4000.)[1]
-    if (lam_gal[0]<5100) & (lam_gal[-1]>5100):
-        blob_pars["INDEX_5100"] = find_nearest(lam_gal,5100.)[1]
-    if (lam_gal[0]<7000) & (lam_gal[-1]>7000): 
-        blob_pars["INDEX_7000"] = find_nearest(lam_gal,7000.)[1]
+    # TODO: config file
+    # TODO: unit agnostic
+    for wave in [1350, 3000, 4000, 5100, 7000]:
+        if (target.wave[0] < wave) & (target.wave[-1] > wave):
+            blob_pars['INDEX_%d'%wave] = find_nearest(target.wave,float(wave))[1]
 
     return blob_pars
 
-
-##################################################################################
 
 def initialize_walkers(init_params,param_names,bounds,soft_cons,nwalkers,ndim):
     """

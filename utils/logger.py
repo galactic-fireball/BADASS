@@ -1,6 +1,7 @@
 import logging
 import numpy as np
 import sys
+import toml
 
 # TODO: create error file with warning +
 #           check err_level option
@@ -337,4 +338,10 @@ class BadassLogger:
             self.logger.info('{0:>30}{1:<0}{2:<0}'.format(con[0],' > ',con[1]))
         self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
         self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
+
+
+    def output_options(self):
+        file_path = self.log_dir.joinpath('fit_options.toml')
+        with open(file_path, 'w') as opt_out:
+            toml.dump(self.ctx.options.to_dict(), opt_out)
 
