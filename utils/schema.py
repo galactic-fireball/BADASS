@@ -201,12 +201,11 @@ DEFAULT_TEST_OPTIONS = {
         'default': [],
     },
     'metrics': {
-        'type': 'list',
-        'default': ['BADASS'],
-    },
-    'thresholds': {
-        'type': 'list',
-        'default': [0.95],
+        'type': 'dict',
+        'default': {'BADASS':0.95},
+        # TODO: get allowed from config or elsewhere?
+        'keysrules': {'type': 'string', 'allowed': ['BADASS','SSR_RATIO','ANOVA','F_RATIO','CHI2_RATIO','AON'],},
+        'valuesrules': {'type': ['integer', 'float'],}
     },
     'conv_mode': {
         'type': 'string',

@@ -452,7 +452,14 @@ def calculate_aon(test,line_list,mccomps,noise):
 
 ##################################################################################
 
+def thresholds_met(test_options, cur_metrics, fit_results):
+	pass_list = [cur_metrics[metric] >= thresh for metric, thresh in test_options.metrics.items() if metric in cur_metrics]
+	if 'AON' in test_options.metrics: pass_list.append(fit_results['aon'] >= test_options.metrics['AON']) # special case
+	mode_func = {'any':np.any, 'all':np.all}[test_options.conv_mode]
+	return mode_func(pass_list)
 
+
+# TODO: remove
 def check_test_stats(target,current,verbose=False):
 	"""
 	Function for checking thresholds of line

@@ -142,247 +142,12 @@ def run_single_target(target):
     # Set force_thresh to np.inf. This will get overridden if the user does the line test
     force_thresh = badass_test_suite.root_mean_squared_error(copy.deepcopy(target.spec),np.full_like(target.spec,np.nanmedian(target.spec)))
 
-    #### Line Testing ################################################################################################################################################################################
-
-    # Line testing is meant to be performed prior to max. like and MCMC to allow for a better line list determination (number of multiple components).
-
-    # TODO: classify
-    if (target.options.fit_options.test_lines) and (target.options.test_options.test_mode == 'line'):
-        breakpoint()
-
-        if not target.options.user_lines:
-            raise ValueError('The input user line list is None or empty. There are no lines to test. You cannot use the default line list to test for lines, as they must be explicitly defined by user lines. See examples for details...')
-
-        # Initialize free parameters (all components, lines, etc.)
-        param_dict, line_list, combined_line_list, soft_cons, ncomp_dict = initialize_pars(lam_gal,galaxy,noise,fit_reg,disp_res,fit_mask,velscale,
-                                     comp_options,narrow_options,broad_options,absorp_options,
-                                     user_lines,user_constraints,combined_lines,losvd_options,host_options,power_options,poly_options,
-                                     opt_feii_options,uv_iron_options,balmer_options,
-                                     run_dir,fit_type='init',fit_stat=fit_stat,
-                                     fit_opt_feii=fit_opt_feii,fit_uv_iron=fit_uv_iron,fit_balmer=fit_balmer,
-                                     fit_losvd=fit_losvd,fit_host=fit_host,fit_power=fit_power,fit_poly=fit_poly,
-                                     fit_narrow=fit_narrow,fit_broad=fit_broad,fit_absorp=fit_absorp,
-                                     tie_line_disp=tie_line_disp,tie_line_voff=tie_line_voff,verbose=verbose)
-
-        blob_pars = get_blob_pars(lam_gal, line_list, combined_line_list, velscale)
-
-        # If ranges not specified, then use the whole fitting region by default
-        # if (test_options["ranges"] is None) or (len(test_options["ranges"])==0):
-        #     test_options["ranges"] = [fit_reg for i in range(len(test_options["lines"]))]
-        test_options["ranges"] = [fit_reg for i in range(len(test_options["lines"]))]
-
-        # If test_options["lines"] is a single string
-        parent_lines = ncomp_dict["NCOMP_1"]
-        if isinstance(test_options["lines"],str):
-            if (test_options["lines"] in parent_lines) and ((line_list[test_options["lines"]]["center"]>=test_options["ranges"][0]) & (line_list[test_options["lines"]]["center"]<=test_options["ranges"][1])):
-                test_options["lines"] = [test_options["lines"]]
-                test_options["ranges"] = [test_options["ranges"]]
-
-            else:
-                raise ValueError("\n The line to be tested is not a parent line in the line list or is not within the input test range!\n")
-
-        # If test_options["lines"] is a list; iterate through the list; items in list can be lists or strings
-        if isinstance(test_options["lines"],(list,tuple)):
-            valid_lines  = []
-            valid_ranges = []
-            
-            for i,line in enumerate(test_options["lines"]):
-                if isinstance(line,str):
-                    if (line in parent_lines) and ((line_list[line]["center"]>=test_options["ranges"][i][0]) & (line_list[line]["center"]<=test_options["ranges"][i][1])):
-                        valid_lines.append([line])
-                        valid_ranges.append(test_options["ranges"][i])
-                    else:
-                        if verbose:
-                            print("\n The %s to be tested is not a parent line in the line list or is not within the input test range!\n" % (line))
-
-                if isinstance(line,(list,tuple)): # for groups of lines being tested together
-                    # 
-                    if (np.all([True if l in parent_lines else False for l in line])) & (np.any([True if ((line_list[l]["center"]>=test_options["ranges"][i][0]) & (line_list[l]["center"]<=test_options["ranges"][i][1])) else False for l in line])):
-                        valid_lines.append(line)
-                        valid_ranges.append(test_options["ranges"][i])
-                    else:
-                        if verbose:
-                            print("\n The %s to be tested is not a parent line in the line list or is not within the input test range!\n" % (line))
-
-
-            if len(valid_ranges)>=1:
-                test_options["lines"] = valid_lines
-                test_options["ranges"] = valid_ranges
-            else:
-                raise ValueError("\n There are no valid lines or ranges to be tested!\n")
-
-        if verbose:
-            print("\n Performing line testing for %s" % (test_options["lines"]))
-            print("----------------------------------------------------------------------------------------------------")
-
-
-
-
-        user_lines, force_thresh = line_test(param_dict,
-                               line_list,
-                               combined_line_list,
-                               soft_cons,
-                               ncomp_dict,
-                               lam_gal,
-                               galaxy,
-                               noise,
-                               z,
-                               cosmology,
-                               fit_reg,
-                               user_lines,
-                               user_constraints,
-                               combined_lines,
-                               test_options,
-                               comp_options,
-                               narrow_options,
-                               broad_options,
-                               absorp_options,
-                               losvd_options,
-                               host_options,
-                               power_options,
-                               poly_options,
-                               opt_feii_options,
-                               uv_iron_options,
-                               balmer_options,
-                               outflow_test_options,
-                               host_template,
-                               opt_feii_templates,
-                               uv_iron_template,
-                               balmer_template,
-                               stel_templates,
-                               blob_pars,
-                               disp_res,
-                               fit_mask,
-                               velscale,
-                               flux_norm,
-                               fit_norm,
-                               run_dir,
-                               fit_type='init',
-                               fit_stat=fit_stat,
-                               output_model=False,
-                               test_outflows=False,
-                               n_basinhop=n_basinhop,
-                               reweighting=reweighting,
-                               max_like_niter=max_like_niter,
-                               verbose=verbose,
-                               binnum=binnum,
-                               spaxelx=spaxelx,
-                               spaxely=spaxely)
-        # Exit BADASS
-        print(' - Line testing complete for %s! \n' % fits_file.parent.name)
-        print("----------------------------------------------------------------------------------------------------")
-
-        if test_options["continue_fit"]:
-            pass
-        else:
-            return
-
-    # TODO: classify
-    elif (target.options.fit_options.test_lines) and (test_options["test_mode"]=="config"):
-        
-        #
-        if (user_lines is None) or (len(user_lines)==0):
-            raise ValueError("\n The input user line list is None or empty.  There are no lines to test.  You cannot use the default line list to test for lines, as they must be explicitly defined by user lines.  See examples for details...\n")
-
-        # Initialize free parameters (all components, lines, etc.)
-        param_dict, line_list, combined_line_list, soft_cons, ncomp_dict = initialize_pars(lam_gal,galaxy,noise,fit_reg,disp_res,fit_mask,velscale,
-                                     comp_options,narrow_options,broad_options,absorp_options,
-                                     user_lines,user_constraints,combined_lines,losvd_options,host_options,power_options,poly_options,
-                                     opt_feii_options,uv_iron_options,balmer_options,
-                                     run_dir,fit_type='init',fit_stat=fit_stat,
-                                     fit_opt_feii=fit_opt_feii,fit_uv_iron=fit_uv_iron,fit_balmer=fit_balmer,
-                                     fit_losvd=fit_losvd,fit_host=fit_host,fit_power=fit_power,fit_poly=fit_poly,
-                                     fit_narrow=fit_narrow,fit_broad=fit_broad,fit_absorp=fit_absorp,
-                                     tie_line_disp=tie_line_disp,tie_line_voff=tie_line_voff,verbose=verbose)
-
-        blob_pars = get_blob_pars(lam_gal, line_list, combined_line_list, velscale)
-
-        # If ranges not specified, then use the whole fitting region by default
-        # if (test_options["ranges"] is None):
-            # test_options["ranges"] = [fit_reg for i in range(len(test_options["lines"]))]
-        test_options["ranges"] = [fit_reg for i in range(len(test_options["lines"]))]
-
-        # If test_options["lines"] is a single string
-        if len(test_options["lines"])<2: 
-            raise ValueError("\n The number of configurations to test must be more than 1! \n")
-
-        # Check to see that each line in each configuration is in the line list
-        for config in test_options["lines"]:
-            if not np.all([True if line in line_list else False for line in config]):
-                raise ValueError("\n A line in a configuration is not defined in the input line list! \n")
-
-        if verbose:
-            print("\n Performing configuration testing for %d configurations..." % len(test_options["lines"]))
-            print("----------------------------------------------------------------------------------------------------")
-
-
-
-
-        user_lines, force_thresh = config_test(param_dict,
-                               line_list,
-                               combined_line_list,
-                               soft_cons,
-                               ncomp_dict,
-                               lam_gal,
-                               galaxy,
-                               noise,
-                               z,
-                               cosmology,
-                               fit_reg,
-                               user_lines,
-                               user_constraints,
-                               combined_lines,
-                               test_options,
-                               comp_options,
-                               narrow_options,
-                               broad_options,
-                               absorp_options,
-                               losvd_options,
-                               host_options,
-                               power_options,
-                               poly_options,
-                               opt_feii_options,
-                               uv_iron_options,
-                               balmer_options,
-                               outflow_test_options,
-                               host_template,
-                               opt_feii_templates,
-                               uv_iron_template,
-                               balmer_template,
-                               stel_templates,
-                               blob_pars,
-                               disp_res,
-                               fit_mask,
-                               velscale,
-                               flux_norm,
-                               fit_norm,
-                               run_dir,
-                               fit_type='init',
-                               fit_stat=fit_stat,
-                               output_model=False,
-                               test_outflows=False,
-                               n_basinhop=n_basinhop,
-                               reweighting=reweighting,
-                               max_like_niter=max_like_niter,
-                               verbose=verbose,
-                               binnum=binnum,
-                               spaxelx=spaxelx,
-                               spaxely=spaxely)
-        # Exit BADASS
-        print(' - Configuration testing complete for %s! \n' % fits_file.parent.name)
-        print("----------------------------------------------------------------------------------------------------")
-
-        if test_options["continue_fit"]:
-            pass
-        else:
-            return
-
-####################################################################################################################################################################################
-
     # Initialize free parameters (all components, lines, etc.)
     target.log.info('\n Initializing parameters...')
     target.log.info('----------------------------------------------------------------------------------------------------')
 
+    # TODO: results in BadassContext
+    # TODO: don't need to do this before line/config testing
     param_dict, line_list, combined_line_list, soft_cons, ncomp_dict = initialize_pars(target)
 
     # Output all free parameters of fit prior to fitting (useful for diagnostics)
@@ -393,7 +158,156 @@ def run_single_target(target):
     blob_pars = get_blob_pars(target, combined_line_list)
     target.log.output_options()
 
-    ####################################################################################################################################################################################
+
+    #### Line Testing ################################################################################################################################################################################
+
+    # Line testing is meant to be performed prior to max. like and MCMC to allow for a better line list determination (number of multiple components).
+
+    # TODO: move to separate function
+    if (target.options.fit_options.test_lines) and (target.options.test_options.test_mode == 'line'):
+
+        # TODO: update once new line list specifications are in place
+        test_options = target.options.test_options
+        if isinstance(test_options.lines[0], str): test_options.lines = [line for line in test_options.lines]
+
+        if not target.options.user_lines:
+            raise ValueError('The input user line list is None or empty. There are no lines to test. You cannot use the default line list to test for lines, as they must be explicitly defined by user lines. See examples for details...')
+
+        if target.options.output_options.verbose:
+            print('Performing line testing for %s' % (test_options.lines))
+
+        # TODO: validate lines to test are in line list and within the fitting region
+
+        # TODO: eventually larger BadassCtx class
+        mlctx = Prodict()
+        mlctx.target = target
+        mlctx.noise = copy.deepcopy(target.noise) # in case needs updating with reweighting
+        mlctx.outflow_test_options = False
+        mlctx.templates = target.templates
+        mlctx.blob_pars = blob_pars
+
+        all_test_fits = []
+        all_test_metrics = []
+
+        # TODO: deepcopy's needed?
+        for i, test_lines in enumerate(test_options.lines):
+            # test_set = [(label, [test_lines], {full_line_list}), ...]
+            test_set = []
+            full_line_list = {}
+            max_ncomp = 0
+
+            for label, line_dict in line_list.items():
+                if (label not in test_lines) and (line_dict.get('parent') not in test_lines):
+                    # add any line that's not a test line or a test line child to line list
+                    full_line_list[label] = line_dict
+                else:
+                    # get the max ncomps for all test lines
+                    max_ncomp = max(max_ncomp, line_dict.get('ncomp', -1))
+
+            # first test contains none of the test lines
+            test_set.append(('NULL_TEST', [], copy.deepcopy(full_line_list)))
+
+            # add subsequent tests, adding a component to each test line as specified
+            for ncomp in range(1, max_ncomp+1):
+                for label, line_dict in line_list.items():
+                    if ((label in test_lines) or (line_dict.get('parent') in test_lines)) and line_dict.get('ncomp', 1) == ncomp:
+                        full_line_list[label] = line_dict
+                test_set.append(('NCOMP_%d'%ncomp, test_lines, copy.deepcopy(full_line_list)))
+
+            test_fit_results, test_metrics = run_test_set(target, test_set, mlctx, test_title=str(i))
+            all_test_fits.append(test_fit_results)
+            all_test_metrics.append(test_metrics)
+
+        res_dir = target.outdir.joinpath('line_test_results')
+        res_dir.mkdir(parents=True, exist_ok=True)
+        with open(res_dir.joinpath('fit_results.pkl'), 'wb') as f: pickle.dump(all_test_fits, f)
+        with open(res_dir.joinpath('test_results.pkl'), 'wb') as f: pickle.dump(all_test_metrics, f)
+
+        # recreate line list based on results
+        force_thresh = np.inf
+        new_line_list = {}
+
+        all_test_lines = [line for line in test_lines for test_lines in test_options.lines]
+        for label, line_dict in line_list.items():
+            if (label not in all_test_lines) and (line_dict.get('parent') not in all_test_lines):
+                new_line_list[label] = line_dict
+
+        for test_fit, test_metrics in zip(all_test_fits,all_test_metrics):
+            # look in reverse to find test with most ncomps that passed
+            for label_A, label_B, metrics in test_metrics[::-1]:
+                if test_fit_results[label_B]['pass']:
+                    force_thresh = np.min([force_thresh, test_fit_results[label_B]['rmse']])
+                    new_line_list.update(test_fit_results[label_B]['line_list'])
+                    break
+
+        line_list = new_line_list
+
+        if not test_options.continue_fit:
+            return
+
+        # TODO: fix to limit number of times initialize_pars needs to be called
+        param_dict, line_list, combined_line_list, soft_cons, ncomp_dict = initialize_pars(target, user_lines=line_list)
+
+    # TODO: move to separate function
+    elif (target.options.fit_options.test_lines) and (target.options.test_options.test_mode == 'config'):
+        test_options = target.options.test_options
+
+        if not target.options.user_lines:
+            raise ValueError('The input user line list is None or empty.  There are no lines to test.  You cannot use the default line list to test for lines, as they must be explicitly defined by user lines.  See examples for details...')
+
+        if len(test_options.lines) < 2: 
+            raise ValueError('The number of configurations to test must be more than 1!')
+
+        # Check to see that each line in each configuration is in the line list
+        for config in test_options.lines:
+            if not np.all([True if line in line_list else False for line in config]):
+                raise ValueError('A line in a configuration is not defined in the input line list!')
+
+        if target.options.output_options.verbose:
+            print('Performing configuration testing for %d configurations...' % len(test_options.lines))
+            print('----------------------------------------------------------------------------------------------------')
+
+        # TODO: eventually larger BadassCtx class
+        mlctx = Prodict()
+        mlctx.target = target
+        mlctx.noise = copy.deepcopy(target.noise) # in case needs updating with reweighting
+        mlctx.outflow_test_options = False
+        mlctx.templates = target.templates
+        mlctx.blob_pars = blob_pars
+
+        # test_set = [(label, [test_lines], {full_line_list}), ...]
+        test_set = []
+
+        for i, test_config in enumerate(test_options.lines):
+            # For each config, we want *only* the lines specified
+            test_line_list = {line_name:line_dict for line_name,line_dict in line_list.items() if line_name in test_config}
+            test_set.append(('CONFIG_%d'%(i+1), test_config, test_line_list))
+
+        test_fit_results, test_metrics = run_test_set(target, test_set, mlctx)
+
+        res_dir = target.outdir.joinpath('config_test_results')
+        res_dir.mkdir(parents=True, exist_ok=True)
+        with open(res_dir.joinpath('fit_results.pkl'), 'wb') as f: pickle.dump(test_fit_results, f)
+        with open(res_dir.joinpath('test_results.pkl'), 'wb') as f: pickle.dump(test_metrics, f)
+
+        force_thresh = np.inf
+        line_list = test_set[0][2] # default line_list to first config
+        # look in reverse to find last test config that passed
+        for label_A, label_B, metrics in test_metrics[::-1]:
+            if test_fit_results[label_B]['pass']:
+                line_list = test_fit_results[label_B]['line_list']
+                force_thresh = test_fit_results[label_B]['rmse']
+                break
+
+        if not test_options.continue_fit:
+            return
+
+        # TODO: fix to limit number of times initialize_pars needs to be called
+        param_dict, line_list, combined_line_list, soft_cons, ncomp_dict = initialize_pars(target, user_lines=line_list)
+
+
+    # Max Likelihood Fitting
+    # TODO: move all to separate function
 
     if (force_thresh/force_thresh==1):
         force_best=True
@@ -701,12 +615,6 @@ def run_single_target(target):
     # Make interactive HTML plot 
     if plot_HTML:
         plotly_best_fit(fits_file.parent.name,line_list,fit_mask,run_dir)
-
-    if verbose:
-        print('\n Cleaning up...')
-        print('----------------------------------------------------------------------------------------------------')
-    # Delete redundant files to cut down on space
-    cleanup(run_dir)
     
     # Total time
     elap_time = (time.time() - start_time)
@@ -1781,7 +1689,7 @@ def prepare_ifu_spec(fits_file,fit_reg,mask_bad_pix,mask_emline,user_mask,mask_m
 prepare_ifu_plot = prepare_plot
 
 
-def initialize_pars(target, remove_lines=False):
+def initialize_pars(target, user_lines=None, remove_lines=False):
     """
     Initializes all free parameters for the fit based on user input and options.
     """
@@ -1842,7 +1750,7 @@ def initialize_pars(target, remove_lines=False):
 
 
     # Emission Lines
-    line_list = target.options.user_lines if target.options.user_lines else line_list_default()
+    line_list = user_lines if user_lines else target.options.user_lines if target.options.user_lines else line_list_default()
     check_line_comp_options(target, line_list)
     # Add the FWHM resolution and central pixel locations for each line so we don't have to 
     # find them during the fit.
@@ -2708,7 +2616,8 @@ def check_hard_cons(target, line_list, param_keys, ncomp_dict, remove_lines=Fals
                         print('Hard-constraint %s not found in parameter list or could not be parsed; converting to free parameter.\n' % value)
                     line_dict[hpar] = 'free'
                     for n, ndict in ncomp_dict.items():
-                        ndict[line_name][hpar] = 'free'
+                        if line_name in ndict:
+                            ndict[line_name][hpar] = 'free'
 
 
 def check_soft_cons(soft_cons,line_par_input,verbose=True):
@@ -2733,2003 +2642,242 @@ def check_soft_cons(soft_cons,line_par_input,verbose=True):
     return out_cons
 
 
-def line_test(param_dict,
-              line_list,
-              combined_line_list,
-              soft_cons,
-              ncomp_dict,
-              lam_gal,
-              galaxy,
-              noise,
-              z,
-              cosmology,
-              fit_reg,
-              user_lines,
-              user_constraints,
-              combined_lines,
-              test_options,
-              comp_options,
-              narrow_options,
-              broad_options,
-              absorp_options,
-              losvd_options,
-              host_options,
-              power_options,
-              poly_options,
-              opt_feii_options,
-              uv_iron_options,
-              balmer_options,
-              outflow_test_options,
-              host_template,
-              opt_feii_templates,
-              uv_iron_template,
-              balmer_template,
-              stel_templates,
-              blob_pars,
-              disp_res,
-              fit_mask,
-              velscale,
-              flux_norm,
-              fit_norm,
-              run_dir,
-              fit_type='init',
-              fit_stat="ML",
-              output_model=False,
-              test_outflows=False,
-              n_basinhop=25,
-              reweighting=True,
-              max_like_niter=10,
-              verbose=True,
-              binnum=None,
-              spaxelx=None,
-              spaxely=None):
-    """
-    Performs component (or line) testing based on user input wavelength range.
-    """
 
-    # print("\n")
-    # for opt in test_options:
-    #    print(opt,test_options[opt])
+# TODO: do something with:
+# Calculate R-Squared statistic of best fit
+# r2 = badass_test_suite.r_squared(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
+# Calculate rCHI2 statistic of best fit
+# rchi2 = badass_test_suite.r_chi_squared(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]),copy.deepcopy(mccomps["NOISE"][0]),len(_param_dict))
+# Calculate RMSE statistic of best fit
+# rmse = lowest_rmse#badass_test_suite.root_mean_squared_error(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
+# Calculate MAE statistic of best fit
+# mae = badass_test_suite.mean_abs_error(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
 
-    # Make a copy of the original line list for reference
-    orig_line_list = copy.deepcopy(line_list)
-    
-     # dict to store test results of ALL tests
-    test_results = {"TEST":[],
-                    "RANGE":[],
-                    "NCOMP_A":[],
-                    "NCOMP_B":[],
-                    # "AIC_RATIO":[],
-                    "ANOVA":[],
-                    "AON":[],
-                    "BADASS":[],
-                    # "BIC_RATIO":[],
-                    "CHI2_RATIO":[],
-                    "F_RATIO":[],
-                    # "R_SQUARED_RATIO":[],
-                    "SSR_RATIO":[],
-                    "TARGET_RMSE":[],
-                    }
+def run_test_set(target, test_set, mlctx, test_title=None):
 
-    # Determine ALL fits that will need to take place
-    for i,line in enumerate(test_options["lines"]):
-        #
-        max_ncomp = np.max([line_list[l]["ncomp"] for l in line_list if ( (l in line) or (("parent" in line_list[l]) and (line_list[l]["parent"] in line)))])# the maximum ncomp to test
-        # print(i,line,max_ncomp)
-        #   
-        fit_res_dict = {}
-        if i not in fit_res_dict:
-            fit_res_dict[i] = {}
-        #
-        for n in range(0,max_ncomp):
-            test_results["TEST"].append(line)
-            test_range = test_options["ranges"][i]
-            test_results["RANGE"].append(test_range)
-            test_results["NCOMP_A"].append(n)
-            test_results["NCOMP_B"].append(n+1)
+    # test_set = [(label, [test_lines], {full_line_list}), ...]
 
-            # Loop through tests, constructing a line list for each test and only testing the necessary components.
-            # Each test must begin with the parent line against a no-line model (continuum only).
-            # dict to store fitted results for each fit per-line
-            #
-            fit_A_ncomp = n
-            fit_B_ncomp = n+1
-            print("\n Performing test of NCOMP %d versus NCOMP %d for %s...\n" % (fit_A_ncomp,fit_B_ncomp,line))
-            
-            # Check if A has been fit, if not, fit. Then check if B has been fit, if not, fit.
-            if "NCOMP_%d" % (fit_A_ncomp) not in fit_res_dict[i]: 
-                print("\t","Fitting NCOMP %d" % (fit_A_ncomp))
-                # No line case: 
-                if fit_A_ncomp==0: 
+    # TODO: all test_labels are unique
+    # {label: {fit_results}), ...}
+    test_fit_results = {}
 
-                    user_line_list = {}
-                    user_line_list.update(ncomp_dict["NCOMP_1"])
-                    for member in line:
-                        user_line_list.pop(member,None)
+    # [(label1, label2, {metrics}), ...]
+    test_metrics = []
 
-                    # for u in user_line_list:
-                    #    user_line_list[u]["ncomp"]=1
+    for test_label, test_lines, full_line_list in test_set:
 
-                # for u in user_line_list:
-                #    print(u)
-                #    for hpar in user_line_list[u]:
-                #       print("\t",hpar,"=",user_line_list[u][hpar])
+        param_dict, line_list, combined_line_list, soft_cons, ncomp_dict = initialize_pars(target, user_lines=full_line_list)
 
-                # Generate parameters without lines
-                _param_dict, _line_list, _combined_line_list, _soft_cons, _ncomp_dict = initialize_pars(lam_gal,galaxy,noise,fit_reg,disp_res,fit_mask,velscale,
-                                     comp_options,narrow_options,broad_options,absorp_options,
-                                     user_line_list,user_constraints,combined_lines,losvd_options,host_options,power_options,poly_options,
-                                     opt_feii_options,uv_iron_options,balmer_options,
-                                     run_dir,fit_type='init',fit_stat=fit_stat,
-                                     fit_opt_feii=comp_options["fit_opt_feii"],fit_uv_iron=comp_options["fit_uv_iron"],fit_balmer=comp_options["fit_balmer"],
-                                     fit_losvd=comp_options["fit_losvd"],fit_host=comp_options["fit_host"],fit_power=comp_options["fit_power"],fit_poly=comp_options["fit_poly"],
-                                     fit_narrow=comp_options["fit_narrow"],fit_broad=comp_options["fit_broad"],fit_absorp=comp_options["fit_absorp"],
-                                     tie_line_disp=comp_options["tie_line_disp"],tie_line_voff=comp_options["tie_line_voff"],remove_lines=False,verbose=False)
+        # TODO: put rest of parameters in mlctx
+        # TODO: fix
+        mlctx.line_list = full_line_list
+        mlctx.combined_line_list = combined_line_list
+        mlctx.soft_cons = soft_cons
+        mcpars, mccomps, mcLL, lowest_rmse = max_likelihood(param_dict,mlctx,fit_type='init',fit_stat=target.options.fit_options.fit_stat,
+                                                output_model=False,test_outflows=True,n_basinhop=target.options.fit_options.n_basinhop,
+                                                reweighting=target.options.fit_options.reweighting,max_like_niter=0,
+                                                full_verbose=target.options.output_options.verbose,
+                                                verbose=target.options.output_options.verbose)
 
+        # Calculate degrees of freedom of fit; nu = n - m (n number of observations minus m degrees of freedom (free fitted parameters))
+        dof = len(target.wave)-len(param_dict)
+        if dof <= 0:
+            if target.options.output_options.verbose:
+                print('WARNING: Degrees-of-Freedom in fit is <= 0.  One should increase the test range and/or decrease the number of free parameters of the model appropriately')
+            dof = 1
 
-                if test_options["full_verbose"]:
-                    print("-------------------------------------------------------")
-                    print("\n")
-                    # Print out fitted parameters
-                    for p in _param_dict:
-                        print(p)
-                        for hpar in _param_dict[p]:
-                            print("\t",hpar,"=",_param_dict[p][hpar])
-                    print("\n")
-                    # Print out line list
-                    for l in _line_list:
-                        print(l)
-                        for hpar in _line_list[l]:
-                            print("\t",hpar,"=",_line_list[l][hpar])
-                    print("\n")
-                    # Print out combined lines
-                    for l in _combined_line_list:
-                        print(l)
-                        for hpar in _combined_line_list[l]:
-                            print("\t",hpar,"=",_combined_line_list[l][hpar])
-                    print("\n")
-                    # Print out soft cons
-                    for s in _soft_cons:
-                        print(s)
-
-                mcpars, mccomps, mcLL, lowest_rmse = max_likelihood(_param_dict,
-                                                       _line_list,
-                                                       _combined_line_list,
-                                                       _soft_cons,
-                                                       lam_gal,
-                                                       galaxy,
-                                                       noise,
-                                                       z,
-                                                       cosmology,
-                                                       comp_options,
-                                                       losvd_options,
-                                                       host_options,
-                                                       power_options,
-                                                       poly_options,
-                                                       opt_feii_options,
-                                                       uv_iron_options,
-                                                       balmer_options,
-                                                       outflow_test_options,
-                                                       host_template,
-                                                       opt_feii_templates,
-                                                       uv_iron_template,
-                                                       balmer_template,
-                                                       stel_templates,
-                                                       blob_pars,
-                                                       disp_res,
-                                                       fit_mask,
-                                                       velscale,
-                                                       flux_norm,
-                                                       fit_norm,
-                                                       run_dir,
-                                                       fit_type='init',
-                                                       fit_stat=fit_stat,
-                                                       output_model=False,
-                                                       test_outflows=True,
-                                                       n_basinhop=n_basinhop,
-                                                       reweighting=reweighting,
-                                                       max_like_niter=0,
-                                                       full_verbose=test_options["full_verbose"],
-                                                       verbose=test_options["full_verbose"])
-
-                if test_options["full_verbose"]:
-                    
-                    print("\n")
-                    # Calculate R-Squared statistic of best fit
-                    r2 = badass_test_suite.r_squared(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
-                    print(" R-Squared = %0.4f" % r2)
-
-
-                    print("\n")
-                    # Calculate rCHI2 statistic of best fit
-                    rchi2 = badass_test_suite.r_chi_squared(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]),copy.deepcopy(mccomps["NOISE"][0]),len(_param_dict))
-                    print(" reduced Chi-Squared = %0.4f" % rchi2)
-
-                    print("\n")
-                    # Calculate RMSE statistic of best fit
-                    rmse = lowest_rmse#badass_test_suite.root_mean_squared_error(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
-                    print(" Root Mean Squared Error = %0.4f" % rmse)
-
-                    print("\n")
-                    # Calculate MAE statistic of best fit
-                    mae = badass_test_suite.mean_abs_error(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
-                    print(" Mean Absolute Error = %0.4f" % mae)
-
-                    print("\n")
-
-                    print("-------------------------------------------------------")
-                
-                # Plot for testing
-                # fig = plt.figure(figsize=(10,6))
-                # ax1 = fig.add_subplot(2,1,1)
-                # ax2 = fig.add_subplot(2,1,2)
-                # ax1.step(mccomps["WAVE"][0],mccomps["DATA"][0],color="xkcd:white",label="Data")
-                # ax1.step(mccomps["WAVE"][0],mccomps["MODEL"][0],color="xkcd:bright red",label="Model")
-                # ax2.step(mccomps["WAVE"][0],mccomps["RESID"][0],color="xkcd:radioactive green",label="Residuals")
-                # ax1.axhline(0.0,linestyle="--",color="xkcd:white",)
-                # ax2.axhline(0.0,linestyle="--",color="xkcd:white",)
-                # for comp in [c for c in mccomps if c not in ["WAVE","DATA","MODEL","NOISE","RESID"]]:
-                #    ax1.step(mccomps["WAVE"][0],mccomps[comp][0],label="%s" % (comp))
-                # ax1.legend()
-                # ax2.legend()
-                # plt.suptitle("%s test: NCOMP %d" % (line,fit_A_ncomp))
-                # plt.tight_layout() 
-                # sys.exit()
-                #
-
-                # Calculate degrees of freedom of fit; nu = n - m (n number of observations minus m degrees of freedom (free fitted parameters))
-                dof = len(lam_gal)-len(_param_dict)
-                if dof<=0: 
-                    if verbose:
-                        print("\n WARNING: Degrees-of-Freedom in fit is <= 0.  One should increase the test range and/or decrease the number of free parameters of the model appropriately.\n")
-                    dof = 1
-                # Add data to fit_res_dict
-                npar = len(_param_dict)
-                fit_res_dict[i]["NCOMP_%d" % (fit_A_ncomp)] = {"mcpars":copy.deepcopy(mcpars),"mccomps":copy.deepcopy(mccomps),"mcLL":copy.deepcopy(mcLL),"line_list":copy.deepcopy(user_line_list),"dof":copy.deepcopy(dof),"npar":copy.deepcopy(npar)}
-
-                # sys.exit()
-
-            # Check B.
-            if "NCOMP_%d" % (fit_B_ncomp) not in fit_res_dict[i]: 
-
-                remove_lines=False
-                print("\t","Fitting NCOMP %d" % (fit_B_ncomp))
-                user_line_list = {}
-                for n in np.arange(1,fit_B_ncomp+1):
-                    # print(n)
-                    # user_line_list.update(ncomp_dict["NCOMP_%d" % n])
-                    for l in ncomp_dict["NCOMP_%d" % n]:
-                        if n==1:
-                            user_line_list[l] = line_list[l]
-                        elif n>1:
-                            if ("parent" in line_list[l]) and (line_list[l]["parent"] in line):
-                                user_line_list[l] = line_list[l]
-
-                # for u in user_line_list:
-                #    print(u)
-                #    for hpar in user_line_list[u]:
-                #       print("\t",hpar,"=",user_line_list[u][hpar])
-
-                # print("\n")
-                # sys.exit()
-
-                # for u in user_line_list:
-                #    user_line_list[u]["ncomp"]=1
-
-                # Generate parameters without lines
-                _param_dict, _line_list, _combined_line_list, _soft_cons, _ncomp_dict = initialize_pars(lam_gal,galaxy,noise,fit_reg,disp_res,fit_mask,velscale,
-                                     comp_options,narrow_options,broad_options,absorp_options,
-                                     user_line_list,user_constraints,combined_lines,losvd_options,host_options,power_options,poly_options,
-                                     opt_feii_options,uv_iron_options,balmer_options,
-                                     run_dir,fit_type='init',fit_stat=fit_stat,
-                                     fit_opt_feii=comp_options["fit_opt_feii"],fit_uv_iron=comp_options["fit_uv_iron"],fit_balmer=comp_options["fit_balmer"],
-                                     fit_losvd=comp_options["fit_losvd"],fit_host=comp_options["fit_host"],fit_power=comp_options["fit_power"],fit_poly=comp_options["fit_poly"],
-                                     fit_narrow=comp_options["fit_narrow"],fit_broad=comp_options["fit_broad"],fit_absorp=comp_options["fit_absorp"],
-                                     tie_line_disp=comp_options["tie_line_disp"],tie_line_voff=comp_options["tie_line_voff"],remove_lines=remove_lines,verbose=False)
-
-                # slice data (galaxy,lam_gal,noise) to size of test range
-                if test_options["force_best"]:
-                    # force_thresh is the threshold that needs to be achieved (along with n_basinhop)
-                    # for the complex model if force_best=True.  For now, the threshold is the RMSE of 
-                    # the previous fit, and the complex model must achieive an RMSE lower than that of 
-                    # the simpler model
-                    force_thresh = lowest_rmse#badass_test_suite.root_mean_squared_error(copy.deepcopy(fit_res_dict[i]["NCOMP_%d" % (fit_A_ncomp)]["mccomps"]["DATA"][0]),copy.deepcopy(fit_res_dict[i]["NCOMP_%d" % (fit_A_ncomp)]["mccomps"]["MODEL"][0]))
-                    # print(force_thresh)
-                else: force_thresh=np.inf
-
-
-                if test_options["full_verbose"]:
-                    print("-------------------------------------------------------")
-                    for p in _param_dict:
-                        print(p)
-                        for hpar in _param_dict[p]:
-                            print("\t",hpar,"=",_param_dict[p][hpar])
-                    print("\n")
-                    for l in _line_list:
-                        print(l)
-                        for hpar in _line_list[l]:
-                            print("\t",hpar,"=",_line_list[l][hpar])
-                    print("\n")
-                    for l in _combined_line_list:
-                        print(l)
-                        for hpar in _combined_line_list[l]:
-                            print("\t",hpar,"=",_combined_line_list[l][hpar])
-                    print("\n")
-                    for s in _soft_cons:
-                        print(s)
-
-                mcpars, mccomps, mcLL, lowest_rmse = max_likelihood(_param_dict,
-                                                       _line_list,
-                                                       _combined_line_list,
-                                                       _soft_cons,
-                                                       lam_gal,
-                                                       galaxy,
-                                                       noise,
-                                                       z,
-                                                       cosmology,
-                                                       comp_options,
-                                                       losvd_options,
-                                                       host_options,
-                                                       power_options,
-                                                       poly_options,
-                                                       opt_feii_options,
-                                                       uv_iron_options,
-                                                       balmer_options,
-                                                       outflow_test_options,
-                                                       host_template,
-                                                       opt_feii_templates,
-                                                       uv_iron_template,
-                                                       balmer_template,
-                                                       stel_templates,
-                                                       blob_pars,
-                                                       disp_res,
-                                                       fit_mask,
-                                                       velscale,
-                                                       flux_norm,
-                                                       fit_norm,
-                                                       run_dir,
-                                                       fit_type='init',
-                                                       fit_stat=fit_stat,
-                                                       output_model=False,
-                                                       test_outflows=True,
-                                                       n_basinhop=n_basinhop,
-                                                       reweighting=reweighting,
-                                                       max_like_niter=0,
-                                                       force_best=test_options["force_best"],
-                                                       force_thresh=force_thresh,
-                                                       full_verbose=test_options["full_verbose"],
-                                                       verbose=test_options["full_verbose"])
-
-                if test_options["full_verbose"]:
-                    
-                    print("\n")
-                    # Calculate R-Squared statistic of best fit
-                    r2 = badass_test_suite.r_squared(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
-                    print(" R-Squared = %0.4f" % r2)
-
-
-                    print("\n")
-                    # Calculate rCHI2 statistic of best fit
-                    rchi2 = badass_test_suite.r_chi_squared(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]),copy.deepcopy(mccomps["NOISE"][0]),len(_param_dict))
-                    print(" reduced Chi-Squared = %0.4f" % rchi2)
-
-                    print("\n")
-                    # Calculate RMSE statistic of best fit
-                    rmse = lowest_rmse#badass_test_suite.root_mean_squared_error(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
-                    print(" Root Mean Squared Error = %0.4f" % rmse)
-
-                    print("\n")
-                    # Calculate MAE statistic of best fit
-                    mae = badass_test_suite.mean_abs_error(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
-                    print(" Mean Absolute Error = %0.4f" % mae)
-
-                    print("\n")
-                    print("-------------------------------------------------------")
-                
-                # Plot for testing
-                # fig = plt.figure(figsize=(10,6))
-                # ax1 = fig.add_subplot(2,1,1)
-                # ax2 = fig.add_subplot(2,1,2)
-                # ax1.step(mccomps["WAVE"][0],mccomps["DATA"][0],color="xkcd:white",label="Data")
-                # ax1.step(mccomps["WAVE"][0],mccomps["MODEL"][0],color="xkcd:bright red",label="Model")
-                # ax2.step(mccomps["WAVE"][0],mccomps["RESID"][0],color="xkcd:radioactive green",label="Residuals")
-                # ax1.axhline(0.0,linestyle="--",color="xkcd:white",)
-                # ax2.axhline(0.0,linestyle="--",color="xkcd:white",)
-                # for comp in [c for c in mccomps if c not in ["WAVE","DATA","MODEL","NOISE","RESID"]]:
-                #    ax1.step(mccomps["WAVE"][0],mccomps[comp][0],label="%s" % (comp))
-                # ax1.legend()
-                # ax2.legend()
-                # plt.suptitle("%s test: NCOMP %d" % (line,fit_B_ncomp))
-                # plt.tight_layout()
-                #
-                # sys.exit(0)
-                #
-                # Calculate degrees of freedom of fit; nu = n - m (n number of observations minus m degrees of freedom (free fitted parameters))
-                dof = len(lam_gal)-len(_param_dict)
-                if dof<=0: 
-                    if verbose:
-                        print("\n WARNING: Degrees-of-Freedom in fit is <= 0.  One should increase the test range and/or decrease the number of free parameters of the model appropriately.\n")
-                    dof = 1
-                # Add data to fit_res_dict
-                npar = len(_param_dict)
-                fit_res_dict[i]["NCOMP_%d" % (fit_B_ncomp)] = {"mcpars":copy.deepcopy(mcpars),"mccomps":copy.deepcopy(mccomps),"mcLL":copy.deepcopy(mcLL),"line_list":copy.deepcopy(user_line_list),"dof":copy.deepcopy(dof),"npar":copy.deepcopy(npar)}
-
-        
-
-            # Now that both A and B have been fit, we can generate statistics from badass_test_suite functions
-            # We evaluate over the entire test range for each line
-            # storage arrays for residuals in [OIII] test region
-            resid_A = fit_res_dict[i]["NCOMP_%d" % (fit_A_ncomp)]["mccomps"]['RESID'][0,:][fit_mask]
-            resid_B = fit_res_dict[i]["NCOMP_%d" % (fit_B_ncomp)]["mccomps"]['RESID'][0,:][fit_mask]
-
-            # Plot for testing
-            # fig = plt.figure(figsize=(10,3))
-            # ax1 = fig.add_subplot(1,1,1)
-            # ax1.step(mccomps["WAVE"][0],resid_A,label="Resid A: NCOMP %d" % fit_A_ncomp)
-            # ax1.step(mccomps["WAVE"][0],resid_B,label="Resid B: NCOMP %d" % fit_B_ncomp)
-            # ax1.axhline(0.0,linestyle="--",color="xkcd:white",)
-            # ax1.legend()
-            # plt.suptitle("%s test: NCOMP %d versus NCOMP %d Residuals" % (line,fit_A_ncomp,fit_B_ncomp))
-            # plt.tight_layout()
-            # sys.exit(0)
-
-            # Begin adding statistics to test_results
-
-            # Record the target threshold (RMSE) of the complex fit; this will be used to ensure the final maximum likelihood fit 
-            # is at least as good as this
-            targ_thresh = lowest_rmse#badass_test_suite.root_mean_squared_error(copy.deepcopy(fit_res_dict[i]["NCOMP_%d" % (fit_B_ncomp)]["mccomps"]["DATA"][0]),copy.deepcopy(fit_res_dict[i]["NCOMP_%d" % (fit_B_ncomp)]["mccomps"]["MODEL"][0]))
-            test_results["TARGET_RMSE"].append(targ_thresh)
-            # Perform Bayesian A/B test
-            # delta degrees of freedom between the two models A and B (dof A > dof B)
-            ddof = np.abs(fit_res_dict[i]["NCOMP_%d" % (fit_A_ncomp)]["dof"] - fit_res_dict[i]["NCOMP_%d" % (fit_B_ncomp)]["dof"])
-            pval, pval_upp, pval_low, conf, conf_upp, conf_low, dist, disp, signif, overlap = badass_test_suite.bayesian_AB_test(resid_B, resid_A, 
-                                            lam_gal[fit_mask], noise[fit_mask], galaxy[fit_mask], np.arange(len(resid_A)), ddof, run_dir, plot=False)
-            test_results["BADASS"].append(conf)
-            # Calculate sum-of-square of residuals and its uncertainty
-            ssr_ratio, ssr_A, ssr_B = badass_test_suite.ssr_test(resid_B,resid_A,run_dir)
-            test_results["SSR_RATIO"].append(ssr_ratio)
-            # Perform ANOVA model comparison(for normally distributed model residuals)
-            k_A, k_B = fit_res_dict[i]["NCOMP_%d" % (fit_A_ncomp)]["npar"],fit_res_dict[i]["NCOMP_%d" % (fit_B_ncomp)]["npar"]# number of parameters for each model
-            f_stat, f_pval, f_conf = badass_test_suite.anova_test(resid_B,resid_A,k_A,k_B,run_dir)
-            test_results["ANOVA"].append(f_conf)
-            # F-ratio
-            f_ratio = badass_test_suite.f_ratio(resid_B,resid_A)
-            test_results["F_RATIO"].append(f_ratio)
-            # Chi2 Metrics
-            # Chi-squared is evaluated in the region of the line for the two models
-            # The ratio of chi squared for the outflow to the no-outflow model indicates
-            # how much the model improved over the other.
-            mccomps_A, mccomps_B = fit_res_dict[i]["NCOMP_%d" % (fit_A_ncomp)]["mccomps"],fit_res_dict[i]["NCOMP_%d" % (fit_B_ncomp)]["mccomps"]
-            chi2_B, chi2_A, chi2_ratio = badass_test_suite.chi2_metric(np.arange(len(resid_A)), mccomps_B, mccomps_A)
-            test_results["CHI2_RATIO"].append(chi2_ratio)
-            # # Bayesian Information Criterion (BIC) ratio
-            # bic_A, bic_B, bic_ratio = badass_test_suite.calculate_BIC(mccomps_A, mccomps_B, k_A, k_B)
-            # test_results["BIC_RATIO"].append(bic_ratio)
-            # # Akaike Information Criterion (AIC) ratio
-            # aic_A, aic_B, aic_ratio = badass_test_suite.calculate_AIC(mccomps_A, mccomps_B, k_A, k_B)
-            # test_results["AIC_RATIO"].append(aic_ratio)
-            # R-squared ratio 
-            # rsquared_A, rsquared_B, rsquared_ratio = badass_test_suite.calculate_rsquared_ratio(mccomps_A, mccomps_B)
-            # test_results["R_SQUARED_RATIO"].append(rsquared_ratio)
-            # sys.exit()
-
-            # For amplitude-over-noise statistic, we need to extract the AON for the NCOMP B measurement for the lines being tested;
-            # if any  (at least one) line being tested has a AON over the user-specified threshold (ex. 3-sigma), then the line is kept
-            # in the new line list; otheriwse it is removed
-            if reweighting:
-                rchi2 = badass_test_suite.r_chi_squared(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]),copy.deepcopy(mccomps["NOISE"][0]),len(_param_dict))
-                aon = badass_test_suite.calculate_aon(line,_line_list,mccomps_B,copy.deepcopy(noise)*np.sqrt(rchi2))
-            else:
-                aon = badass_test_suite.calculate_aon(line,_line_list,mccomps_B,copy.deepcopy(noise))
-            test_results["AON"].append(aon)
-
-
-
-            # Plot tests
-            if test_options["plot_tests"]:
-                # Make comparison plots of outflow and no-outflow models
-                line_test_plot(i,line,fit_A_ncomp,fit_B_ncomp,
-                                fit_res_dict[i]["NCOMP_%d" % (fit_B_ncomp)]["mccomps"],fit_res_dict[i]["NCOMP_%d" % (fit_A_ncomp)]["mccomps"],
-                                fit_res_dict[i]["NCOMP_%d" % (fit_B_ncomp)]["line_list"],fit_res_dict[i]["NCOMP_%d" % (fit_A_ncomp)]["line_list"],
-                                fit_res_dict[i]["NCOMP_%d" % (fit_B_ncomp)]["mcpars"],fit_res_dict[i]["NCOMP_%d" % (fit_A_ncomp)]["mcpars"],
-                                flux_norm, fit_norm,
-                                run_dir)
-
-            # Check parameters if auto_stop=True; this automatically stops the testing of a line
-            if (test_options["auto_stop"]) and (n<=max_ncomp):
-
-                current_metrics = {}
-                target_metrics = {}
-                for  m,metric in enumerate(test_options["metrics"]):
-                    if metric not in ["AON"]:
-                        target_metrics[metric] = test_options["thresholds"][m]
-                        current_metrics[metric]  = test_results[metric][-1]
-
-
-                checked_metrics = badass_test_suite.check_test_stats(target_metrics,current_metrics,verbose)
-                # print(target_metrics)
-                # print(current_metrics)
-                # print(checked_metrics)
-                if test_options["conv_mode"]=="any":
-                    if np.any(checked_metrics):
-                        if verbose:
-                            print("\n Target metric (any) achieved for %s line test . \n" % (line))
-                        break
-
-                if test_options["conv_mode"]=="all":
-                    if np.all(checked_metrics):
-                        if verbose:
-                            print("\n All target metrics achieved for %s line test. \n" % (line))
-                        break
-                if (n==max_ncomp) and (np.any(checked_metrics)==False):
-                    if verbose:
-                        print("\n Reached end of testing for %s and have not reached thresholds.\n" % (line))
-
-    # Testing should've concluded at this stage; so now we need to check the results and determine the best line list
-    new_line_list = {}
-    rmse_thresholds = []
-    # for line in line_list:
-    #    print(line)
-    # sys.exit()
-
-    # Get lines that are not being tested and are not associated and add them to the new line list.
-    all_tested_lines = np.unique([line for group in test_options["lines"] for line in group])
-    for line in orig_line_list:
-        if (line in all_tested_lines) or (("parent" in orig_line_list[line]) and (orig_line_list[line]["parent"] in all_tested_lines)):
-            pass
+        if target.options.fit_options.reweighting:
+            rchi2 = badass_test_suite.r_chi_squared(mccomps['DATA'][0], mccomps['MODEL'][0], mccomps['NOISE'][0], len(param_dict))
+            aon = badass_test_suite.calculate_aon(test_lines, full_line_list, mccomps, target.noise*np.sqrt(rchi2))
         else:
-            new_line_list[line] = orig_line_list[line]
-    # Now we check the test_results
-    for test in test_options["lines"]:
-        res = {} # results by tested line
-        for key in test_results:
-            res[key] = []
-        for i,t in enumerate(test_results["TEST"]):
-            if t==test:
-                for key in test_results:
-                    res[key].append(test_results[key][i])
+            aon = badass_test_suite.calculate_aon(test_lines, full_line_list, mccomps, target.noise)
 
-        for i in range(len(res["TEST"])):
-            current_metrics = {}
-            target_metrics = {}
-            for  m,metric in enumerate(test_options["metrics"]):
-                if metric not in ["AON"]:
-                    current_metrics[metric] = res[metric][i]
-                    target_metrics[metric] = test_options["thresholds"][m]
-    
-            checked_metrics = badass_test_suite.check_test_stats(target_metrics,current_metrics)
+        fit_results = {'mcpars':mcpars,'mccomps':mccomps,'mcLL':mcLL,'line_list':full_line_list,'dof':dof,'npar':len(param_dict),'rmse':lowest_rmse, 'aon':aon}
+        test_fit_results[test_label] = fit_results
 
-            if test_options["conv_mode"]=="any":
-                if np.any(checked_metrics) and (i==0):
-                    rmse_thresholds.append(np.inf)
-                    break
-                elif np.any(checked_metrics) and (i>0) and (i<=len(res["TEST"])-1):
-                    max_ncomp = res["NCOMP_B"][i]
-    #            print(max_ncomp)
-                    for line in orig_line_list:
-                        if (line in test) or ((orig_line_list[line]["ncomp"]<max_ncomp) and (("parent" in orig_line_list[line]) and (orig_line_list[line]["parent"] in test))):
-                            new_line_list[line] = orig_line_list[line]
-                            rmse_thresholds.append(res["TARGET_RMSE"][i-1])
-                    break
-                # if reached the end and no convergence is met, use max number of components
-                elif (i==len(res["TEST"])-1):
-                    max_ncomp = res["NCOMP_B"][i]
-                    for line in orig_line_list:
-                        if (line in test) or ((orig_line_list[line]["ncomp"]<=max_ncomp) and (("parent" in orig_line_list[line]) and (orig_line_list[line]["parent"] in test))):
-                            new_line_list[line] = orig_line_list[line]
-                            rmse_thresholds.append(res["TARGET_RMSE"][i])
-                    break
-            elif test_options["conv_mode"]=="all":
-                if np.all(checked_metrics) and (i==0):
-                    rmse_thresholds.append(np.inf)
-                    break
-                elif np.all(checked_metrics) and (i>0) and (i<=len(res["TEST"])-1):
-                    max_ncomp = res["NCOMP_B"][i]
-    #            print(max_ncomp)
-                    for line in orig_line_list:
-                        if (line in test) or ((orig_line_list[line]["ncomp"]<max_ncomp) and (("parent" in orig_line_list[line]) and (orig_line_list[line]["parent"] in test))):
-                            new_line_list[line] = orig_line_list[line]
-                            rmse_thresholds.append(res["TARGET_RMSE"][i-1])
-                    break
-                # if reached the end and no convergence is met, use max number of components
-                elif (i==len(res["TEST"])-1):
-                    max_ncomp = res["NCOMP_B"][i]
-                    for line in orig_line_list:
-                        if (line in test) or ((orig_line_list[line]["ncomp"]<=max_ncomp) and (("parent" in orig_line_list[line]) and (orig_line_list[line]["parent"] in test))):
-                            new_line_list[line] = orig_line_list[line]
-                            rmse_thresholds.append(res["TARGET_RMSE"][i])
-                    break
+        if len(test_fit_results.keys()) == 1: # first run
+            prev_label, prev_results = test_label, fit_results
+            continue
 
-    # Now check AON if it is a test statistic
-    remove_aon = []
-    if "AON" in test_options["metrics"]:
-        aon_thresh = test_options["thresholds"][test_options["metrics"].index("AON")]
-        # print(aon_thresh)
-        for test in test_options["lines"]:
-            # Get the NCOMP_0 vs. NCOMP_1 AON
-            aon = [test_results["AON"][i] for i,t in enumerate(test_results["TEST"]) if t==test][0]
-            # print(aon)
-            if aon>=aon_thresh:
-                break
-            else:
-                if verbose:
-                    print("\n %s line(s) does not meet amplitude-over-noise (AON) threshold.  Removing from line list." % (test))
-                for line in new_line_list:
-                    if (line in test) or (("parent" in new_line_list[line]) and (new_line_list[line]["parent"] in test)):
-                        #new_line_list.pop(line,None)
-                        remove_aon.append(line)
-    if len(remove_aon)>0:
-        for line in remove_aon:
-            new_line_list.pop(line,None)
-    #
-    if verbose:
-        print("\n")
-        print("New Line List:")
-        for line in new_line_list:
-            print(line)
-        print("\n")
+        # get metrics
+        resid_A = prev_results['mccomps']['RESID'][0,:][target.fit_mask]
+        resid_B = fit_results['mccomps']['RESID'][0,:][target.fit_mask]
 
-    if verbose:
-        for line in new_line_list:
-            print(line)
-            for hpar in new_line_list[line]:
-                print("\t",hpar,":",new_line_list[line][hpar])
+        # TODO: test suite util to get all metrics
+        metrics = {}
 
+        ddof = np.abs(prev_results['dof']-fit_results['dof'])
+        _,_,_,conf,_,_,_,_,_,_ = badass_test_suite.bayesian_AB_test(resid_B, resid_A, target.wave[target.fit_mask], target.noise[target.fit_mask], target.spec[target.fit_mask], np.arange(len(resid_A)), ddof, target.options.io_options.output_dir, plot=False)
+        metrics['BADASS'] = conf
 
-    # Print a table with the results and write it to the log
-    ptbl = PrettyTable()
-    ptbl.field_names = ["TEST","NCOMP_A","NCOMP_B","ANOVA","BADASS","CHI2_RATIO","F_RATIO","SSR_RATIO","AON","TARGET_RMSE"]
-    for i in range(len(test_results["TEST"])):
-        ptbl.add_row([test_results["TEST"][i]]+list(np.round([test_results["NCOMP_A"][i],test_results["NCOMP_B"][i],test_results["ANOVA"][i],test_results["BADASS"][i],test_results["CHI2_RATIO"][i],test_results["F_RATIO"][i],test_results["SSR_RATIO"][i],test_results["AON"][i],test_results["TARGET_RMSE"][i]],4)))
-    if verbose:
-        print("\n Test Results:")
+        ssr_ratio, ssr_A, ssr_B = badass_test_suite.ssr_test(resid_B, resid_A, target.options.io_options.output_dir)
+        metrics['SSR_RATIO'] = ssr_ratio
+
+        k_A, k_B = prev_results['npar'], fit_results['npar']
+        f_stat, f_pval, f_conf = badass_test_suite.anova_test(resid_B, resid_A, k_A, k_B, target.options.io_options.output_dir)
+        metrics['ANOVA'] = f_conf
+
+        metrics['F_RATIO'] = badass_test_suite.f_ratio(resid_B, resid_A)
+
+        chi2_B, chi2_A, chi2_ratio = badass_test_suite.chi2_metric(np.arange(len(resid_A)), fit_results['mccomps'], prev_results['mccomps'])
+        metrics['CHI2_RATIO'] = chi2_ratio
+
+        if target.options.test_options.plot_tests:
+            create_test_plot(target, test_fit_results, prev_label, test_label, test_title=test_title)
+
+        test_pass = badass_test_suite.thresholds_met(target.options.test_options, metrics, fit_results)
+        fit_results['pass'] = test_pass
+
+        test_metrics.append((prev_label, test_label, metrics))
+        ptbl = PrettyTable()
+        ptbl.field_names = ['TEST A', 'TEST B'] + list(metrics.keys()) + ['AON', 'PASS']
+        ptbl.add_row([prev_label, test_label] + ['%f'%v for v in metrics.values()] + ['%f'%aon, test_pass])
         print(ptbl)
-    
-    # import pickle
-    # with open("fit_res_dict.pickle","wb") as handle:
-    #    pickle.dump(fit_res_dict,handle)
-    # with open("test_results.pickle","wb") as handle:
-    #    pickle.dump(test_results,handle)
 
-    # sys.exit()
-    # Write to log
-    write_log(ptbl,'line_test',run_dir)
+        print('(Test %s)' % 'Passed' if test_pass else 'Failed')
+        if test_pass and target.options.test_options.auto_stop:
+            print('metric thresholds met, stopping')
+            break
 
-    # Save results to JSON files for all tests
-    write_line_test_results(fit_res_dict,test_results,run_dir,"line",binnum,spaxelx,spaxely)
+        prev_label, prev_results = test_label, fit_results
 
-    # print(rmse_thresholds)
-    # print(np.min(rmse_thresholds))
-    # sys.exit()
-
-    return new_line_list, np.nanmin(rmse_thresholds)
-
-##################################################################################
-
-def config_test(param_dict,
-              line_list,
-              combined_line_list,
-              soft_cons,
-              ncomp_dict,
-              lam_gal,
-              galaxy,
-              noise,
-              z,
-              cosmology,
-              fit_reg,
-              user_lines,
-              user_constraints,
-              combined_lines,
-              test_options,
-              comp_options,
-              narrow_options,
-              broad_options,
-              absorp_options,
-              losvd_options,
-              host_options,
-              power_options,
-              poly_options,
-              opt_feii_options,
-              uv_iron_options,
-              balmer_options,
-              outflow_test_options,
-              host_template,
-              opt_feii_templates,
-              uv_iron_template,
-              balmer_template,
-              stel_templates,
-              blob_pars,
-              disp_res,
-              fit_mask,
-              velscale,
-              flux_norm,
-              fit_norm,
-              run_dir,
-              fit_type='init',
-              fit_stat="ML",
-              output_model=False,
-              test_outflows=False,
-              n_basinhop=25,
-              reweighting=True,
-              max_like_niter=10,
-              verbose=True,
-              binnum=None,
-              spaxelx=None,
-              spaxely=None):
-    """
-    Performs component (or line) testing based on user input wavelength range.
-    """
-
-    # print("\n")
-    # for opt in test_options:
-    #    print(opt,test_options[opt])
-
-    # Make a copy of the original line list for reference
-    orig_line_list = copy.deepcopy(line_list)
-    
-     # dict to store test results of ALL tests
-    test_results = {"TEST":[],
-                    "RANGE":[],
-                    "CONFIG_A":[],
-                    "CONFIG_B":[],
-                    # "AIC_RATIO":[],
-                    "ANOVA":[],
-                    "BADASS":[],
-                    # "BIC_RATIO":[],
-                    "CHI2_RATIO":[],
-                    "F_RATIO":[],
-                    # "R_SQUARED_RATIO":[],
-                    "SSR_RATIO":[],
-                    "TARGET_RMSE":[],
-                    }
-
-    fit_res_dict = {}
-    # Determine ALL fits that will need to take place
-    for i in range(len(test_options["lines"])-1):
-        
-        test_results["TEST"].append(i+1)
-        test_range = test_options["ranges"][i]
-        test_results["RANGE"].append(test_range)
-        test_results["CONFIG_A"].append(i+1)
-        test_results["CONFIG_B"].append(i+2)
-
-        # Loop through tests, constructing a line list for each test and only testing the necessary components.
-        # Each test must begin with the parent line against a no-line model (continuum only).
-        # dict to store fitted results for each fit per-line
-        #
-        fit_A_ncomp = i+1
-        fit_B_ncomp = i+2
-        print("\n Performing test of configuration %d versus configuration %d...\n" % (fit_A_ncomp,fit_B_ncomp))
-        
-        # Check if A has been fit, if not, fit. Then check if B has been fit, if not, fit.
-        if "CONFIG_%d" % (fit_A_ncomp) not in fit_res_dict: 
-            print("\t","Fitting CONFIG %d" % (fit_A_ncomp))
-            
-            user_line_list = {line:orig_line_list[line] for line in test_options["lines"][i]}
-
-            # Generate parameters without lines
-            _param_dict, _line_list, _combined_line_list, _soft_cons, _ncomp_dict = initialize_pars(lam_gal,galaxy,noise,fit_reg,disp_res,fit_mask,velscale,
-                                 comp_options,narrow_options,broad_options,absorp_options,
-                                 user_line_list,user_constraints,combined_lines,losvd_options,host_options,power_options,poly_options,
-                                 opt_feii_options,uv_iron_options,balmer_options,
-                                 run_dir,fit_type='init',fit_stat=fit_stat,
-                                 fit_opt_feii=comp_options["fit_opt_feii"],fit_uv_iron=comp_options["fit_uv_iron"],fit_balmer=comp_options["fit_balmer"],
-                                 fit_losvd=comp_options["fit_losvd"],fit_host=comp_options["fit_host"],fit_power=comp_options["fit_power"],fit_poly=comp_options["fit_poly"],
-                                 fit_narrow=comp_options["fit_narrow"],fit_broad=comp_options["fit_broad"],fit_absorp=comp_options["fit_absorp"],
-                                 tie_line_disp=comp_options["tie_line_disp"],tie_line_voff=comp_options["tie_line_voff"],remove_lines=False,verbose=False)
-
-
-            if test_options["full_verbose"]:
-                print("-------------------------------------------------------")
-                print("\n")
-                # Print out fitted parameters
-                for p in _param_dict:
-                    print(p)
-                    for hpar in _param_dict[p]:
-                        print("\t",hpar,"=",_param_dict[p][hpar])
-                print("\n")
-                # Print out line list
-                for l in _line_list:
-                    print(l)
-                    for hpar in _line_list[l]:
-                        print("\t",hpar,"=",_line_list[l][hpar])
-                print("\n")
-                # Print out combined lines
-                for l in _combined_line_list:
-                    print(l)
-                    for hpar in _combined_line_list[l]:
-                        print("\t",hpar,"=",_combined_line_list[l][hpar])
-                print("\n")
-                # Print out soft cons
-                for s in _soft_cons:
-                    print(s)
-
-            mcpars, mccomps, mcLL, lowest_rmse = max_likelihood(_param_dict,
-                                                   _line_list,
-                                                   _combined_line_list,
-                                                   _soft_cons,
-                                                   lam_gal,
-                                                   galaxy,
-                                                   noise,
-                                                   z,
-                                                   cosmology,
-                                                   comp_options,
-                                                   losvd_options,
-                                                   host_options,
-                                                   power_options,
-                                                   poly_options,
-                                                   opt_feii_options,
-                                                   uv_iron_options,
-                                                   balmer_options,
-                                                   outflow_test_options,
-                                                   host_template,
-                                                   opt_feii_templates,
-                                                   uv_iron_template,
-                                                   balmer_template,
-                                                   stel_templates,
-                                                   blob_pars,
-                                                   disp_res,
-                                                   fit_mask,
-                                                   velscale,
-                                                   flux_norm,
-                                                   fit_norm,
-                                                   run_dir,
-                                                   fit_type='init',
-                                                   fit_stat=fit_stat,
-                                                   output_model=False,
-                                                   test_outflows=True,
-                                                   n_basinhop=n_basinhop,
-                                                   reweighting=reweighting,
-                                                   max_like_niter=0,
-                                                   full_verbose=test_options["full_verbose"],
-                                                   verbose=test_options["full_verbose"])
-
-            if test_options["full_verbose"]:
-                
-                print("\n")
-                # Calculate R-Squared statistic of best fit
-                r2 = badass_test_suite.r_squared(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
-                print(" R-Squared = %0.4f" % r2)
-
-
-                print("\n")
-                # Calculate rCHI2 statistic of best fit
-                rchi2 = badass_test_suite.r_chi_squared(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]),copy.deepcopy(mccomps["NOISE"][0]),len(_param_dict))
-                print(" reduced Chi-Squared = %0.4f" % rchi2)
-
-                print("\n")
-                # Calculate RMSE statistic of best fit
-                rmse = lowest_rmse #badass_test_suite.root_mean_squared_error(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
-                print(" Root Mean Squared Error = %0.4f" % rmse)
-
-                print("\n")
-                # Calculate MAE statistic of best fit
-                mae = badass_test_suite.mean_abs_error(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
-                print(" Mean Absolute Error = %0.4f" % mae)
-
-                print("\n")
-
-                print("-------------------------------------------------------")
-            
-            # Plot for testing
-            # fig = plt.figure(figsize=(10,6))
-            # ax1 = fig.add_subplot(2,1,1)
-            # ax2 = fig.add_subplot(2,1,2)
-            # ax1.step(mccomps["WAVE"][0],mccomps["DATA"][0],color="xkcd:white",label="Data")
-            # ax1.step(mccomps["WAVE"][0],mccomps["MODEL"][0],color="xkcd:bright red",label="Model")
-            # ax2.step(mccomps["WAVE"][0],mccomps["RESID"][0],color="xkcd:radioactive green",label="Residuals")
-            # ax1.axhline(0.0,linestyle="--",color="xkcd:white",)
-            # ax2.axhline(0.0,linestyle="--",color="xkcd:white",)
-            # for comp in [c for c in mccomps if c not in ["WAVE","DATA","MODEL","NOISE","RESID"]]:
-            #    ax1.step(mccomps["WAVE"][0],mccomps[comp][0],label="%s" % (comp))
-            # ax1.legend()
-            # ax2.legend()
-            # plt.tight_layout() 
-            # sys.exit()
-            #
-
-            # Calculate degrees of freedom of fit; nu = n - m (n number of observations minus m degrees of freedom (free fitted parameters))
-            dof = len(lam_gal)-len(_param_dict)
-            if dof<=0: 
-                if verbose:
-                    print("\n WARNING: Degrees-of-Freedom in fit is <= 0.  One should increase the test range and/or decrease the number of free parameters of the model appropriately.\n")
-                dof = 1
-            # Add data to fit_res_dict
-            npar = len(_param_dict)
-            fit_res_dict["CONFIG_%d" % (fit_A_ncomp)] = {"mcpars":copy.deepcopy(mcpars),"mccomps":copy.deepcopy(mccomps),"mcLL":copy.deepcopy(mcLL),"line_list":copy.deepcopy(user_line_list),"dof":copy.deepcopy(dof),"npar":copy.deepcopy(npar)}
-
-            # sys.exit()
-
-        # Check B.
-        if "CONFIG_%d" % (fit_B_ncomp) not in fit_res_dict: 
-
-            remove_lines=False
-            print("\t","Fitting CONFIG %d" % (fit_B_ncomp))
-            
-            user_line_list = {line:orig_line_list[line] for line in test_options["lines"][i+1]}
-
-            # Generate parameters without lines
-            _param_dict, _line_list, _combined_line_list, _soft_cons, _ncomp_dict = initialize_pars(lam_gal,galaxy,noise,fit_reg,disp_res,fit_mask,velscale,
-                                 comp_options,narrow_options,broad_options,absorp_options,
-                                 user_line_list,user_constraints,combined_lines,losvd_options,host_options,power_options,poly_options,
-                                 opt_feii_options,uv_iron_options,balmer_options,
-                                 run_dir,fit_type='init',fit_stat=fit_stat,
-                                 fit_opt_feii=comp_options["fit_opt_feii"],fit_uv_iron=comp_options["fit_uv_iron"],fit_balmer=comp_options["fit_balmer"],
-                                 fit_losvd=comp_options["fit_losvd"],fit_host=comp_options["fit_host"],fit_power=comp_options["fit_power"],fit_poly=comp_options["fit_poly"],
-                                 fit_narrow=comp_options["fit_narrow"],fit_broad=comp_options["fit_broad"],fit_absorp=comp_options["fit_absorp"],
-                                 tie_line_disp=comp_options["tie_line_disp"],tie_line_voff=comp_options["tie_line_voff"],remove_lines=remove_lines,verbose=False)
-
-            # slice data (galaxy,lam_gal,noise) to size of test range
-            if test_options["force_best"]:
-                # force_thresh is the threshold that needs to be achieved (along with n_basinhop)
-                # for the complex model if force_best=True.  For now, the threshold is the RMSE of 
-                # the previous fit, and the complex model must achieive an RMSE lower than that of 
-                # the simpler model
-                force_thresh = lowest_rmse#badass_test_suite.root_mean_squared_error(copy.deepcopy(fit_res_dict["CONFIG_%d" % (fit_A_ncomp)]["mccomps"]["DATA"][0]),copy.deepcopy(fit_res_dict["CONFIG_%d" % (fit_A_ncomp)]["mccomps"]["MODEL"][0]))
-                # print(force_thresh)
-            else: force_thresh=np.inf
-
-
-            if test_options["full_verbose"]:
-                print("-------------------------------------------------------")
-                for p in _param_dict:
-                    print(p)
-                    for hpar in _param_dict[p]:
-                        print("\t",hpar,"=",_param_dict[p][hpar])
-                print("\n")
-                for l in _line_list:
-                    print(l)
-                    for hpar in _line_list[l]:
-                        print("\t",hpar,"=",_line_list[l][hpar])
-                print("\n")
-                for l in _combined_line_list:
-                    print(l)
-                    for hpar in _combined_line_list[l]:
-                        print("\t",hpar,"=",_combined_line_list[l][hpar])
-                print("\n")
-                for s in _soft_cons:
-                    print(s)
-
-            mcpars, mccomps, mcLL, lowest_rmse = max_likelihood(_param_dict,
-                                                   _line_list,
-                                                   _combined_line_list,
-                                                   _soft_cons,
-                                                   lam_gal,
-                                                   galaxy,
-                                                   noise,
-                                                   z,
-                                                   cosmology,
-                                                   comp_options,
-                                                   losvd_options,
-                                                   host_options,
-                                                   power_options,
-                                                   poly_options,
-                                                   opt_feii_options,
-                                                   uv_iron_options,
-                                                   balmer_options,
-                                                   outflow_test_options,
-                                                   host_template,
-                                                   opt_feii_templates,
-                                                   uv_iron_template,
-                                                   balmer_template,
-                                                   stel_templates,
-                                                   blob_pars,
-                                                   disp_res,
-                                                   fit_mask,
-                                                   velscale,
-                                                   flux_norm,
-                                                   fit_norm,
-                                                   run_dir,
-                                                   fit_type='init',
-                                                   fit_stat=fit_stat,
-                                                   output_model=False,
-                                                   test_outflows=True,
-                                                   n_basinhop=n_basinhop,
-                                                   reweighting=reweighting,
-                                                   max_like_niter=0,
-                                                   force_best=test_options["force_best"],
-                                                   force_thresh=force_thresh,
-                                                   full_verbose=test_options["full_verbose"],
-                                                   verbose=test_options["full_verbose"])
-
-            if test_options["full_verbose"]:
-                
-                print("\n")
-                # Calculate R-Squared statistic of best fit
-                r2 = badass_test_suite.r_squared(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
-                print(" R-Squared = %0.4f" % r2)
-
-
-                print("\n")
-                # Calculate rCHI2 statistic of best fit
-                rchi2 = badass_test_suite.r_chi_squared(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]),copy.deepcopy(mccomps["NOISE"][0]),len(_param_dict))
-                print(" reduced Chi-Squared = %0.4f" % rchi2)
-
-                print("\n")
-                # Calculate RMSE statistic of best fit
-                rmse = lowest_rmse#badass_test_suite.root_mean_squared_error(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
-                print(" Root Mean Squared Error = %0.4f" % rmse)
-
-                print("\n")
-                # Calculate MAE statistic of best fit
-                mae = badass_test_suite.mean_abs_error(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
-                print(" Mean Absolute Error = %0.4f" % mae)
-
-                print("\n")
-                print("-------------------------------------------------------")
-            
-            # Plot for testing
-            # fig = plt.figure(figsize=(10,6))
-            # ax1 = fig.add_subplot(2,1,1)
-            # ax2 = fig.add_subplot(2,1,2)
-            # ax1.step(mccomps["WAVE"][0],mccomps["DATA"][0],color="xkcd:white",label="Data")
-            # ax1.step(mccomps["WAVE"][0],mccomps["MODEL"][0],color="xkcd:bright red",label="Model")
-            # ax2.step(mccomps["WAVE"][0],mccomps["RESID"][0],color="xkcd:radioactive green",label="Residuals")
-            # ax1.axhline(0.0,linestyle="--",color="xkcd:white",)
-            # ax2.axhline(0.0,linestyle="--",color="xkcd:white",)
-            # for comp in [c for c in mccomps if c not in ["WAVE","DATA","MODEL","NOISE","RESID"]]:
-            #    ax1.step(mccomps["WAVE"][0],mccomps[comp][0],label="%s" % (comp))
-            # ax1.legend()
-            # ax2.legend()
-            # plt.tight_layout()
-            #
-            # sys.exit(0)
-            #
-            # Calculate degrees of freedom of fit; nu = n - m (n number of observations minus m degrees of freedom (free fitted parameters))
-            dof = len(lam_gal)-len(_param_dict)
-            if dof<=0: 
-                if verbose:
-                    print("\n WARNING: Degrees-of-Freedom in fit is <= 0.  One should increase the test range and/or decrease the number of free parameters of the model appropriately.\n")
-                dof = 1
-            # Add data to fit_res_dict
-            npar = len(_param_dict)
-            fit_res_dict["CONFIG_%d" % (fit_B_ncomp)] = {"mcpars":copy.deepcopy(mcpars),"mccomps":copy.deepcopy(mccomps),"mcLL":copy.deepcopy(mcLL),"line_list":copy.deepcopy(user_line_list),"dof":copy.deepcopy(dof),"npar":copy.deepcopy(npar)}
-
-        
-
-        # Now that both A and B have been fit, we can generate statistics from badass_test_suite functions
-        # We evaluate over the entire test range for each line
-        # storage arrays for residuals in [OIII] test region
-        resid_A = fit_res_dict["CONFIG_%d" % (fit_A_ncomp)]["mccomps"]['RESID'][0,:][fit_mask]
-        resid_B = fit_res_dict["CONFIG_%d" % (fit_B_ncomp)]["mccomps"]['RESID'][0,:][fit_mask]
-
-        # Plot for testing
-        # fig = plt.figure(figsize=(10,3))
-        # ax1 = fig.add_subplot(1,1,1)
-        # ax1.step(mccomps["WAVE"][0],resid_A,label="Resid A: NCOMP %d" % fit_A_ncomp)
-        # ax1.step(mccomps["WAVE"][0],resid_B,label="Resid B: NCOMP %d" % fit_B_ncomp)
-        # ax1.axhline(0.0,linestyle="--",color="xkcd:white",)
-        # ax1.legend()
-        # plt.suptitle("%s test: NCOMP %d versus NCOMP %d Residuals" % (line,fit_A_ncomp,fit_B_ncomp))
-        # plt.tight_layout()
-        # sys.exit(0)
-
-        # Begin adding statistics to test_results
-
-        # Record the target threshold (RMSE) of the complex fit; this will be used to ensure the final maximum likelihood fit 
-        # is at least as good as this
-        targ_thresh = lowest_rmse#badass_test_suite.root_mean_squared_error(copy.deepcopy(fit_res_dict["CONFIG_%d" % (fit_B_ncomp)]["mccomps"]["DATA"][0]),copy.deepcopy(fit_res_dict["CONFIG_%d" % (fit_B_ncomp)]["mccomps"]["MODEL"][0]))
-        test_results["TARGET_RMSE"].append(targ_thresh)
-        # Perform Bayesian A/B test
-        # delta degrees of freedom between the two models A and B (dof A > dof B)
-        ddof = np.abs(fit_res_dict["CONFIG_%d" % (fit_A_ncomp)]["dof"] - fit_res_dict["CONFIG_%d" % (fit_B_ncomp)]["dof"])
-        pval, pval_upp, pval_low, conf, conf_upp, conf_low, dist, disp, signif, overlap = badass_test_suite.bayesian_AB_test(resid_B, resid_A, 
-                                        lam_gal[fit_mask], noise[fit_mask], galaxy[fit_mask], np.arange(len(resid_A)), ddof, run_dir, plot=False)
-        test_results["BADASS"].append(conf)
-        # Calculate sum-of-square of residuals and its uncertainty
-        ssr_ratio, ssr_A, ssr_B = badass_test_suite.ssr_test(resid_B,resid_A,run_dir)
-        test_results["SSR_RATIO"].append(ssr_ratio)
-        # Perform ANOVA model comparison(for normally distributed model residuals)
-        k_A, k_B = fit_res_dict["CONFIG_%d" % (fit_A_ncomp)]["npar"],fit_res_dict["CONFIG_%d" % (fit_B_ncomp)]["npar"]# number of parameters for each model
-        f_stat, f_pval, f_conf = badass_test_suite.anova_test(resid_B,resid_A,k_A,k_B,run_dir)
-        test_results["ANOVA"].append(f_conf)
-        # F-ratio
-        f_ratio = badass_test_suite.f_ratio(resid_B,resid_A)
-        test_results["F_RATIO"].append(f_ratio)
-        # Chi2 Metrics
-        # Chi-squared is evaluated in the region of the line for the two models
-        # The ratio of chi squared for the outflow to the no-outflow model indicates
-        # how much the model improved over the other.
-        mccomps_A, mccomps_B = fit_res_dict["CONFIG_%d" % (fit_A_ncomp)]["mccomps"],fit_res_dict["CONFIG_%d" % (fit_B_ncomp)]["mccomps"]
-        chi2_B, chi2_A, chi2_ratio = badass_test_suite.chi2_metric(np.arange(len(resid_A)), mccomps_B, mccomps_A)
-        test_results["CHI2_RATIO"].append(chi2_ratio)
-        # # Bayesian Information Criterion (BIC) ratio
-        # bic_A, bic_B, bic_ratio = badass_test_suite.calculate_BIC(mccomps_A, mccomps_B, k_A, k_B)
-        # test_results["BIC_RATIO"].append(bic_ratio)
-        # # Akaike Information Criterion (AIC) ratio
-        # aic_A, aic_B, aic_ratio = badass_test_suite.calculate_AIC(mccomps_A, mccomps_B, k_A, k_B)
-        # test_results["AIC_RATIO"].append(aic_ratio)
-        # R-squared ratio 
-        # rsquared_A, rsquared_B, rsquared_ratio = badass_test_suite.calculate_rsquared_ratio(mccomps_A, mccomps_B)
-        # test_results["R_SQUARED_RATIO"].append(rsquared_ratio)
-        # sys.exit()
-
-        # Plot tests
-        if test_options["plot_tests"]:
-            # Make comparison plots of outflow and no-outflow models
-            config_test_plot(i+1,fit_A_ncomp,fit_B_ncomp,
-                            fit_res_dict["CONFIG_%d" % (fit_B_ncomp)]["mccomps"],fit_res_dict["CONFIG_%d" % (fit_A_ncomp)]["mccomps"],
-                            fit_res_dict["CONFIG_%d" % (fit_B_ncomp)]["line_list"],fit_res_dict["CONFIG_%d" % (fit_A_ncomp)]["line_list"],
-                            fit_res_dict["CONFIG_%d" % (fit_B_ncomp)]["mcpars"],fit_res_dict["CONFIG_%d" % (fit_A_ncomp)]["mcpars"],
-                            run_dir)
-
-        # Check parameters if auto_stop=True; this automatically stops the testing of a line
-        if (test_options["auto_stop"]):
-
-            current_metrics = {}
-            target_metrics = {}
-            for  m,metric in enumerate(test_options["metrics"]):
-                if metric not in ["AON"]:
-                    target_metrics[metric] = test_options["thresholds"][m]
-                    current_metrics[metric]  = test_results[metric][-1]
-
-
-            checked_metrics = badass_test_suite.check_test_stats(target_metrics,current_metrics,verbose)
-            # print(target_metrics)
-            # print(current_metrics)
-            # print(checked_metrics)
-            if test_options["conv_mode"]=="any":
-                if np.any(checked_metrics):
-                    if verbose:
-                        print("\n Target metric (any) achieved for %s line test . \n" % (line))
-                    break
-
-            if test_options["conv_mode"]=="all":
-                if np.all(checked_metrics):
-                    if verbose:
-                        print("\n All target metrics achieved for %s line test. \n" % (line))
-                    break
-            if (i==(len(test_options["lines"])-1)) and (np.any(checked_metrics)==False):
-                if verbose:
-                    print("\n Reached end of testing for %s and have not reached thresholds.\n" % (line))
-
-    
-    # import pickle
-    # with open("fit_res_dict.pickle","wb") as handle:
-    #    pickle.dump(fit_res_dict,handle)
-    # with open("test_results.pickle","wb") as handle:
-    #    pickle.dump(test_results,handle)
-    # with open("orig_line_list.pickle","wb") as handle:
-    #    pickle.dump(orig_line_list,handle)
-
-    # print(test_results)
-
-    # sys.exit()
-
-    # Testing should've concluded at this stage; so now we need to check the results and determine the best line list
-    new_line_list = {}
-    rmse_thresholds = []
-    # for line in line_list:
-    #    print(line)
-    # sys.exit()
-
-    # Get lines that are not being tested and are not associated and add them to the new line list.
-    all_tested_lines = np.unique([line for group in test_options["lines"] for line in group])
-    for line in orig_line_list:
-        if (line in all_tested_lines) or (("parent" in orig_line_list[line]) and (orig_line_list[line]["parent"] in all_tested_lines)):
-            pass
-        else:
-            new_line_list[line] = orig_line_list[line]
-    # Now we check the test_results
-    for test in test_options["lines"]:
-        res = {} # results by tested line
-        for key in test_results:
-            res[key] = []
-        for i,t in enumerate(test_results["TEST"]):
-            if t==test:
-                for key in test_results:
-                    res[key].append(test_results[key][i])
-
-        for i in range(len(res["TEST"])):
-            current_metrics = {}
-            target_metrics = {}
-            for  m,metric in enumerate(test_options["metrics"]):
-                if metric not in ["AON"]:
-                    current_metrics[metric] = res[metric][i]
-                    target_metrics[metric] = test_options["thresholds"][m]
-    
-            checked_metrics = badass_test_suite.check_test_stats(target_metrics,current_metrics)
-
-            if test_options["conv_mode"]=="any":
-                if np.any(checked_metrics) and (i==0):
-                    rmse_thresholds.append(np.inf)
-                    break
-                elif np.any(checked_metrics) and (i>0) and (i<=len(res["TEST"])-1):
-                    max_ncomp = res["NCOMP_B"][i]
-    #            print(max_ncomp)
-                    for line in orig_line_list:
-                        if (line in test) or ((orig_line_list[line]["ncomp"]<max_ncomp) and (("parent" in orig_line_list[line]) and (orig_line_list[line]["parent"] in test))):
-                            new_line_list[line] = orig_line_list[line]
-                            rmse_thresholds.append(res["TARGET_RMSE"][i-1])
-                    break
-                # if reached the end and no convergence is met, use max number of components
-                elif (i==len(res["TEST"])-1):
-                    max_ncomp = res["NCOMP_B"][i]
-                    for line in orig_line_list:
-                        if (line in test) or ((orig_line_list[line]["ncomp"]<=max_ncomp) and (("parent" in orig_line_list[line]) and (orig_line_list[line]["parent"] in test))):
-                            new_line_list[line] = orig_line_list[line]
-                            rmse_thresholds.append(res["TARGET_RMSE"][i])
-                    break
-            elif test_options["conv_mode"]=="all":
-                if np.all(checked_metrics) and (i==0):
-                    rmse_thresholds.append(np.inf)
-                    break
-                elif np.all(checked_metrics) and (i>0) and (i<=len(res["TEST"])-1):
-                    max_ncomp = res["NCOMP_B"][i]
-    #            print(max_ncomp)
-                    for line in orig_line_list:
-                        if (line in test) or ((orig_line_list[line]["ncomp"]<max_ncomp) and (("parent" in orig_line_list[line]) and (orig_line_list[line]["parent"] in test))):
-                            new_line_list[line] = orig_line_list[line]
-                            rmse_thresholds.append(res["TARGET_RMSE"][i-1])
-                    break
-                # if reached the end and no convergence is met, use max number of components
-                elif (i==len(res["TEST"])-1):
-                    max_ncomp = res["NCOMP_B"][i]
-                    for line in orig_line_list:
-                        if (line in test) or ((orig_line_list[line]["ncomp"]<=max_ncomp) and (("parent" in orig_line_list[line]) and (orig_line_list[line]["parent"] in test))):
-                            new_line_list[line] = orig_line_list[line]
-                            rmse_thresholds.append(res["TARGET_RMSE"][i])
-                    break
-
-    ###
-
-    new_line_list = {}
-    rmse_thresholds = []
-    # Get lines that are not being tested and are not associated and add them to the new line list.
-    all_tested_lines = np.unique([line for group in test_options["lines"] for line in group])
-    for line in orig_line_list:
-        if (line in all_tested_lines) or (("parent" in orig_line_list[line]) and (orig_line_list[line]["parent"] in all_tested_lines)):
-            pass
-        else:
-            new_line_list[line] = orig_line_list[line]
-    
-    # Now we check the test_results
-    for i in range(len(test_results["TEST"])):
-        current_metrics = {}
-        target_metrics = {}
-        for  m,metric in enumerate(test_options["metrics"]):
-            if metric not in ["AON"]:
-                current_metrics[metric] = test_results[metric][i]
-                target_metrics[metric]  = test_options["thresholds"][m]
-    
-        checked_metrics = badass_test_suite.check_test_stats(target_metrics,current_metrics)
-        
-        if test_options["conv_mode"]=="any":
-            if np.any(checked_metrics):
-                for line in test_options["lines"][i]:
-                    new_line_list[line] = orig_line_list[line]
-                rmse_thresholds.append(test_results["TARGET_RMSE"][i-1])
-                config_final = i+1
-                break
-            # if reached the end and no convergence is met, use max number of components
-            elif (i==len(test_results["TEST"])-1):
-                for line in test_options["lines"][i+1]:
-                    new_line_list[line] = orig_line_list[line]
-                rmse_thresholds.append(test_results["TARGET_RMSE"][i])
-                config_final = i+2
-                break
-                
-        elif test_options["conv_mode"]=="all":
-            if np.all(checked_metrics):
-                for line in test_options["lines"][i]:
-                    new_line_list[line] = orig_line_list[line]
-                rmse_thresholds.append(test_results["TARGET_RMSE"][i-1])
-                config_final = i+1
-                break
-            # if reached the end and no convergence is met, use max number of components
-            elif (i==len(test_results["TEST"])-1):
-                for line in test_options["lines"][i+1]:
-                    new_line_list[line] = orig_line_list[line]
-                rmse_thresholds.append(test_results["TARGET_RMSE"][i])
-                config_final = i+2
-                break
-    
-    # print("\n")
-    # for line in new_line_list:
-    #    print(line)
-    #    for hpar in new_line_list[line]:
-    #       print("\t",hpar,":",new_line_list[line][hpar])            
-
-    # check SNR (AON) level and prune any lines that don't satisfy the requirement
-    remove_aon = []
-    if "AON" in test_options["metrics"]:
-        aon_thresh = test_options["thresholds"][test_options["metrics"].index("AON")]
-        for line in test_options["lines"][config_final-1]:
-            # Construct line familys (groups of parent and child lines)
-            line_family = []
-            if ("ncomp" in new_line_list[line]) and (new_line_list[line]["ncomp"]==1):
-                line_family.append(line)
-                for child in new_line_list:
-                    if ("parent" in new_line_list[child]) and (new_line_list[child]["parent"]==line):
-                        line_family.append(child)
-            
-            if reweighting:
-                rchi2 = badass_test_suite.r_chi_squared(copy.deepcopy(fit_res_dict["CONFIG_%d" % config_final]["mccomps"]["DATA"][0]),
-                                                        copy.deepcopy(fit_res_dict["CONFIG_%d" % config_final]["mccomps"]["MODEL"][0]),
-                                                        copy.deepcopy(fit_res_dict["CONFIG_%d" % config_final]["mccomps"]["NOISE"][0]),
-                                                        fit_res_dict["CONFIG_%d" % config_final]["npar"]
-                                                        )
-
-                avg_noise = np.nanmean(fit_res_dict["CONFIG_%d" % config_final]["mccomps"]["NOISE"][0] * np.sqrt(rchi2))
-            else: 
-                avg_noise = np.nanmean(fit_res_dict["CONFIG_%d" % config_final]["mccomps"]["NOISE"][0])
-            if len(line_family)>0:
-                # print(line_family)
-                comb_line = np.zeros(len(fit_res_dict["CONFIG_%d" % config_final]["mccomps"]["DATA"][0]))
-                for l in line_family:
-                    comb_line+=fit_res_dict["CONFIG_%d" % config_final]["mccomps"][l][0]
-                aon = np.nanmax(comb_line)/avg_noise
-                # print(aon)
-                if aon<aon_thresh:
-                    if verbose:
-                        print("\n %s line(s) does not meet amplitude-over-noise (AON) threshold.  Removing from lines list." % (line_family))
-                    for l in line_family:
-                        remove_aon.append(l)
-    if len(remove_aon)>0:
-            for line in remove_aon:
-                new_line_list.pop(line,None)
-    #
-    if verbose:
-        print("\n")
-        print("New Line List:")
-        for line in new_line_list:
-            print(line)
-        print("\n")
-
-    if verbose:
-        for line in new_line_list:
-            print(line)
-            for hpar in new_line_list[line]:
-                print("\t",hpar,":",new_line_list[line][hpar])
-
-
-    # Print a table with the results and write it to the log
     ptbl = PrettyTable()
-    ptbl.field_names = ["TEST","CONFIG_A","CONFIG_B","ANOVA","BADASS","CHI2_RATIO","F_RATIO","SSR_RATIO","TARGET_RMSE"]
-    for i in range(len(test_results["TEST"])):
-        ptbl.add_row([test_results["TEST"][i]]+list(np.round([test_results["CONFIG_A"][i],test_results["CONFIG_B"][i],test_results["ANOVA"][i],test_results["BADASS"][i],test_results["CHI2_RATIO"][i],test_results["F_RATIO"][i],test_results["SSR_RATIO"][i],test_results["TARGET_RMSE"][i]],4)))
-    if verbose:
-        print("\n Test Results:")
-        print(ptbl)
-    
-    # import pickle
-    # with open("fit_res_dict.pickle","wb") as handle:
-    #    pickle.dump(fit_res_dict,handle)
-    # with open("test_results.pickle","wb") as handle:
-    #    pickle.dump(test_results,handle)
+    ptbl.field_names = ['TEST A', 'TEST B'] + list(test_metrics[0][2].keys()) + ['AON', 'PASS']
+    for label_A, label_B, metrics in test_metrics:
+        ptbl.add_row([label_A, label_B] + ['%f'%v for v in metrics.values()] + ['%f'%test_fit_results[label_B]['aon'], test_fit_results[label_B]['pass']])
+    print('Test Results:')
+    print(ptbl)
 
-    # sys.exit()
-    # Write to log
-    write_log(ptbl,'line_test',run_dir)
+    return test_fit_results, test_metrics
 
-    # Save results to JSON files for all tests
-    write_line_test_results(fit_res_dict,test_results,run_dir,"config",binnum,spaxelx,spaxely)
 
-    # print(rmse_thresholds)
-    # print(np.min(rmse_thresholds))
-    # sys.exit()
+# TODO: move to plot utils
+def create_test_plot(target, fit_results, label_A, label_B, test_title=None):
 
-    return new_line_list, np.nanmin(rmse_thresholds)
+    test_A_fit = fit_results[label_A]
+    test_A_comps = {key:val[0] for key,val in test_A_fit['mccomps'].items()}
+    test_A_wave = test_A_comps['WAVE']
+    test_B_fit = fit_results[label_B]
+    test_B_comps = {key:val[0] for key,val in test_B_fit['mccomps'].items()}
+    test_B_wave = test_B_comps['WAVE']
 
-##################################################################################
-
-def get_test_range(lam_gal, noise, full_profile, line_list, remove_lines, velscale):
-
-    # Get indices where we perform f-test
-    eval_ind = np.where(full_profile>=(0.10*noise))[0]#range(len(lam_gal))
-
-    if len(eval_ind)<=1:
-        # eval_ind = np.arange(len(lam_gal))
-        # If the line is zero, then eval_ind will also be zero.  So we take the +/- 2500 km/s around
-        # the line(s) being tested as the default test range.
-        cen_pix = np.empty(len(remove_lines))
-        for l,line in enumerate(remove_lines):
-            cen_pix[l] = line_list[line]["center_pix"]
-
-        vpad = 2500.0 # padding around test lines in km/s
-        delta_pix = int(np.min(cen_pix)-vpad/velscale), int(np.ceil(np.max(cen_pix)+vpad/velscale))
-        eval_ind = np.arange(delta_pix[0],delta_pix[1],1)
-    else: 
-        eval_ind = np.arange(np.min(eval_ind),np.max(eval_ind),1)
-
-    # number of channels in the  test region 
-    nchannel = len(eval_ind)
-    # if the number of channels < 6 (number of degrees of freedom for double-Gaussian model), then the calculated f-statistic
-    # will be zero.  To resolve this, we extend the range by one pixel on each side, i.e. nchannel = 8.
-    if (nchannel <= 25) & (len(lam_gal)>25): 
-        add_chan = 26 - nchannel# number of channels to add to each side; minimum is 7 channels since deg. of freedom  = 6
-        lower_pad = np.arange(eval_ind[0]-add_chan,eval_ind[0],1)#np.arange(eval_ind[0]-add_chan,eval_ind[0],1)
-        upper_pad = np.arange(eval_ind[-1]+1,eval_ind[-1]+1+add_chan,1)
-        eval_ind = np.concatenate([lower_pad, eval_ind, upper_pad],axis=0)
-        eval_ind = eval_ind[(eval_ind>=0)&(eval_ind<len(lam_gal))] # ensures that eval_ind is at most the same size as lam_gal
-        nchannel = len(eval_ind)
-        
-    return eval_ind, nchannel
-
-##################################################################################
-
-def line_test_plot(n,test,ncomp_A,ncomp_B,
-                   comp_dict_B,comp_dict_A,
-                   line_list_B,line_list_A,
-                   params_B,params_A,
-                   flux_norm,fit_norm,
-                   run_dir):
-    """
-    The plotting function for test_line().  It plots both the outflow
-    and no_outflow results.
-    """
-    # Reshape the component dictionary by extracting the 0th array
-    comp_dict_A = {key:comp_dict_A[key][0] for key in comp_dict_A}
-    comp_dict_B = {key:comp_dict_B[key][0] for key in comp_dict_B}  
-
-    param_names_A = [p for p in params_A]
-    param_names_B = [p for p in params_B]
-
-    def poly_label(kind):
-        if kind=="apoly":
-            order = len([p for p in param_names_B if p.startswith("APOLY_")])-1
-        if kind=="mpoly":
-            order = len([p for p in param_names_B if p.startswith("MPOLY_")])-1
-        #
-        ordinal = lambda n: "%d%s" % (n,"tsnrhtdd"[(n//10%10!=1)*(n%10<4)*n%10::4])
-        return ordinal(order)
-
-    def calc_new_center(center,voff):
-        """
-        Calculated new center shifted 
-        by some velocity offset.
-        """
-        c = 299792.458 # speed of light (km/s)
-        new_center = (voff*center)/c + center
-        return new_center
-
-    # Creat plot window and axes
-    fig = plt.figure(figsize=(14,11)) 
+    fig = plt.figure(figsize=(14,11))
     gs = gridspec.GridSpec(9,1)
-    ax1  = fig.add_subplot(gs[0:3,0]) # No outflow
-    ax2  = fig.add_subplot(gs[3:4,0]) # No outflow residuals
-    ax3  = fig.add_subplot(gs[5:8,0]) # Outflow
-    ax4  = fig.add_subplot(gs[8:9,0]) # Outflow residuals
-    gs.update(wspace=0.0, hspace=0.0) # set the spacing between axes. 
+    test_A_axes = (fig.add_subplot(gs[0:3,0]), fig.add_subplot(gs[3:4,0]))
+    test_B_axes = (fig.add_subplot(gs[5:8,0]), fig.add_subplot(gs[8:9,0]))
+    gs.update(wspace=0.0, hspace=0.0)
+
+    linewidth_default = 0.5
+    linestyle_default = '-'
+
+    order = len([p for p in test_B_fit['mcpars'] if p.startswith('APOLY_')]) - 1
+    apoly_label = '%d%s-order Add Poly' % (order,'tsnrhtdd'[(order//10%10!=1)*(order%10<4)*order%10::4])
+    order = len([p for p in test_B_fit['mcpars'] if p.startswith('MPOLY_')]) - 1
+    mpoly_label = '%d%s-order Mult Poly' % (order,'tsnrhtdd'[(order//10%10!=1)*(order%10<4)*order%10::4])
+
+    # Common values between tests
+    # (label, key, color, linewidth, linestyle)
+    plot_vals = [
+        ('Data', 'DATA', 'white', linewidth_default, linestyle_default),
+        ('Host/Stellar', 'HOST_GALAXY', 'xkcd:bright green', linewidth_default, linestyle_default),
+        ('AGN Cont', 'POWER', 'xkcd:red', linewidth_default, '--'),
+        (apoly_label, 'APOLY', 'xkcd:bright purple', linewidth_default, linestyle_default),
+        (mpoly_label, 'MPOLY', 'xkcd:lavender', linewidth_default, linestyle_default),
+        ('Narrow FeII', 'NA_OPT_FEII_TEMPLATE', 'xkcd:yellow', linewidth_default, linestyle_default),
+        ('Broad FeII', 'BR_OPT_FEII_TEMPLATE', 'xkcd:orange', linewidth_default, linestyle_default),
+        ('F-transition FeII', 'F_OPT_FEII_TEMPLATE', 'xkcd:yellow', linewidth_default, linestyle_default),
+        ('S-transition FeII', 'F_OPT_FEII_TEMPLATE', 'xkcd:mustard', linewidth_default, linestyle_default),
+        ('G-transition FeII', 'F_OPT_FEII_TEMPLATE', 'xkcd:orange', linewidth_default, linestyle_default),
+        ('Z-transition FeII', 'F_OPT_FEII_TEMPLATE', 'xkcd:rust', linewidth_default, linestyle_default),
+        ('UV Iron', 'UV_IRON_TEMPLATE', 'xkcd:bright purple', linewidth_default, linestyle_default),
+        ('Balmer Continuum', 'BALMER_CONT', 'xkcd:bright green', linewidth_default, '--'),
+        ('Model', 'MODEL', 'xkcd:bright red', 1.0, linestyle_default), # make last so it is on top of others
+    ]
+
+    for label, key, color, linewidth, linestyle in plot_vals:
+        if (key not in test_A_comps) or (key not in test_B_comps):
+            continue
+        test_A_axes[0].plot(test_A_wave, test_A_comps[key], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
+        test_B_axes[0].plot(test_B_wave, test_B_comps[key], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
+
+    # {line_type: (label, color)}
+    line_vals = {
+        'na': ('Narrow/Core Comp', 'xkcd:cerulean'),
+        'br': ('Broad Comp', 'xkcd:bright teal'),
+        'abs': ('Absorption Comp', 'xkcd:pastel red'),
+        'user': ('Other', 'xkcd:electric lime'),
+    }
+
+    # TODO: reduce dup code
+    for line_name, line_dict in test_A_fit['line_list'].items():
+        label, color = line_vals[line_dict['line_type']]
+        test_A_axes[0].plot(test_A_wave, test_A_comps[line_name], color=color, linewidth=0.5, linestyle='-', label=label)
+
+    for line_name, line_dict in test_B_fit['line_list'].items():
+        label, color = line_vals[line_dict['line_type']]
+        test_B_axes[0].plot(test_B_wave, test_B_comps[line_name], color=color, linewidth=0.5, linestyle='-', label=label)
+
+    for comp_dict, ax in [(test_A_comps,test_A_axes),(test_B_comps,test_B_axes)]:
+        ax[0].set_xticklabels([])
+        ax[0].set_xlim(np.min(comp_dict['WAVE'])-10, np.max(comp_dict['WAVE'])+10)
+        ax[0].set_ylabel('Normalized Flux',fontsize=10)
+
+        sigma_resid = np.nanstd(comp_dict['DATA']-comp_dict['MODEL'])
+        sigma_noise = np.nanmedian(comp_dict['NOISE'])
+        ax[1].plot(comp_dict['WAVE'], comp_dict['NOISE']*3.0, linewidth=0.5, color='xkcd:bright orange', label=r'$\sigma_{\mathrm{noise}}=%0.4f$' % sigma_noise)
+        ax[1].plot(comp_dict['WAVE'], comp_dict['RESID']*3.0, linewidth=0.5, color='white', label=r'$\sigma_{\mathrm{resid}}=%0.4f$' % sigma_resid)
+        ax[1].axhline(0.0, linewidth=1.0, color='white', linestyle='--')
+
+        ax_low = np.min([ax[0].get_ylim()[0], ax[1].get_ylim()[0]])
+        ax_upp = np.max([ax[0].get_ylim()[1], ax[1].get_ylim()[1]])
+        if np.isfinite(sigma_resid): ax_upp += 3.0 * sigma_resid
+
+        minimum = np.nanmin([np.nanmin(vals) for vals in comp_dict.values()])
+        if (not np.isfinite(minimum)) or (np.isnan(minimum)): minimum = 0.0
+
+        ax[0].set_ylim(np.nanmin([0.0, minimum]), ax_upp)
+        ax[0].set_xlim(np.min(comp_dict['WAVE']), np.max(comp_dict['WAVE']))
+        ax[1].set_ylim(ax_low, ax_upp)
+        ax[1].set_xlim(np.min(comp_dict['WAVE']), np.max(comp_dict['WAVE']))
+
+        ax[1].set_yticklabels(np.round(np.array(ax[1].get_yticks()/3.0)))
+        ax[1].set_ylabel(r'$\Delta f_\lambda$', fontsize=12)
+        ax[1].set_xlabel(r'Wavelength, $\lambda\;(\mathrm{\AA})$', fontsize=12)
+
+        handles, labels = ax[0].get_legend_handles_labels()
+        unique_labels = dict(zip(labels, handles))
+        ax[0].legend(unique_labels.values(), unique_labels.keys(), loc='upper right', fontsize=8)
+        ax[1].legend(loc='upper right', fontsize=8)
 
 
+    def calc_new_center(center, voff):
+        return (voff*center)/const.c.to('km/s').value + center
 
-    # Simple "A" model (ax1,ax2)
-    # Put params in dictionary
-    p = dict(zip(param_names_A,[params_A[key]["med"] for key in params_A]))
+    for test_label, comp_dict, ax in ((label_A, test_A_comps, test_A_axes), (label_B, test_B_comps, test_B_axes)):
+        line_list = fit_results[test_label]['line_list']
+        for line_name, line_dict in line_list.items():
+            if 'label' not in line_dict:
+                continue
 
-    for key in comp_dict_A:
-        if (key=='DATA'):
-            ax1.plot(comp_dict_A['WAVE'],comp_dict_A['DATA'],linewidth=0.5,color='white',label='Data',zorder=0)
-        elif (key=='MODEL'):
-            ax1.plot(comp_dict_A['WAVE'],comp_dict_A[key], color='xkcd:bright red', linewidth=1.0, label='Model', zorder=15)
-        elif (key=='HOST_GALAXY'):
-            ax1.plot(comp_dict_A['WAVE'], comp_dict_A['HOST_GALAXY'], color='xkcd:bright green', linewidth=0.5, linestyle='-', label='Host/Stellar')
+            voff = fit_results[test_label]['mcpars'].get('%s_VOFF'%line_name, {}).get('med',np.nan)
+            if voff == np.nan:
+                continue
 
-        elif (key=='POWER'):
-            ax1.plot(comp_dict_A['WAVE'], comp_dict_A['POWER'], color='xkcd:red' , linewidth=0.5, linestyle='--', label='AGN Cont.')
+            xloc = calc_new_center(line_dict['center'], voff)
+            idx = find_nearest(comp_dict['WAVE'], xloc)[1]
+            yloc = np.max([comp_dict['DATA'][idx], comp_dict['MODEL'][idx]])*1.05
 
-        elif (key=='APOLY'):
-            ax1.plot(comp_dict_A['WAVE'], comp_dict_A['APOLY'], color='xkcd:bright purple' , linewidth=0.5, linestyle='-', label='%s-order Add. Poly.' % (poly_label("apoly")))
-        elif (key=='MPOLY'):
-            ax1.plot(comp_dict_A['WAVE'], comp_dict_A['MPOLY'], color='xkcd:lavender' , linewidth=0.5, linestyle='-', label='%s-order Mult. Poly.' % (poly_label("mpoly")))
+            ax[0].annotate(line_dict['label'], xy=(xloc,yloc), xycoords='data', xytext=(xloc,yloc), textcoords='data', horizontalalignment='center', verticalalignment='center', color='xkcd:white', fontsize=6)
 
-        elif (key in ['NA_OPT_FEII_TEMPLATE','BR_OPT_FEII_TEMPLATE']):
-            ax1.plot(comp_dict_A['WAVE'], comp_dict_A['NA_OPT_FEII_TEMPLATE'], color='xkcd:yellow', linewidth=0.5, linestyle='-' , label='Narrow FeII')
-            ax1.plot(comp_dict_A['WAVE'], comp_dict_A['BR_OPT_FEII_TEMPLATE'], color='xkcd:orange', linewidth=0.5, linestyle='-' , label='Broad FeII')
+    test_A_axes[0].set_title(r'$\textrm{TEST%s: %s}$'%(' '+test_title.replace('_', '\\_') if test_title else '', label_A), fontsize=16)
+    test_B_axes[0].set_title(r'$\textrm{TEST%s: %s}$'%(' '+test_title.replace('_', '\\_') if test_title else '', label_B), fontsize=16)
 
-        elif (key in ['F_OPT_FEII_TEMPLATE','S_OPT_FEII_TEMPLATE','G_OPT_FEII_TEMPLATE','Z_OPT_FEII_TEMPLATE']):
-            if key=='F_OPT_FEII_TEMPLATE':
-                ax1.plot(comp_dict_A['WAVE'], comp_dict_A['F_OPT_FEII_TEMPLATE'], color='xkcd:yellow', linewidth=0.5, linestyle='-' , label='F-transition FeII')
-            elif key=='S_OPT_FEII_TEMPLATE':
-                ax1.plot(comp_dict_A['WAVE'], comp_dict_A['S_OPT_FEII_TEMPLATE'], color='xkcd:mustard', linewidth=0.5, linestyle='-' , label='S-transition FeII')
-            elif key=='G_OPT_FEII_TEMPLATE':
-                ax1.plot(comp_dict_A['WAVE'], comp_dict_A['G_OPT_FEII_TEMPLATE'], color='xkcd:orange', linewidth=0.5, linestyle='-' , label='G-transition FeII')
-            elif key=='Z_OPT_FEII_TEMPLATE':
-                ax1.plot(comp_dict_A['WAVE'], comp_dict_A['Z_OPT_FEII_TEMPLATE'], color='xkcd:rust', linewidth=0.5, linestyle='-' , label='Z-transition FeII')
-        elif (key=='UV_IRON_TEMPLATE'):
-            ax1.plot(comp_dict_A['WAVE'], comp_dict_A['UV_IRON_TEMPLATE'], color='xkcd:bright purple', linewidth=0.5, linestyle='-' , label='UV Iron'	 )
-        elif (key=='BALMER_CONT'):
-            ax1.plot(comp_dict_A['WAVE'], comp_dict_A['BALMER_CONT'], color='xkcd:bright green', linewidth=0.5, linestyle='--' , label='Balmer Continuum'	 )
-        # Plot emission lines by cross-referencing comp_dict with line_list
-        if (key in line_list_A):
-            if (line_list_A[key]["line_type"]=="na"):
-                ax1.plot(comp_dict_A['WAVE'], comp_dict_A[key], color='xkcd:cerulean', linewidth=0.5, linestyle='-', label='Narrow/Core Comp.')
-            if (line_list_A[key]["line_type"]=="br"):
-                ax1.plot(comp_dict_A['WAVE'], comp_dict_A[key], color='xkcd:bright teal', linewidth=0.5, linestyle='-', label='Broad Comp.')
-            if (line_list_A[key]["line_type"]=="abs"):
-                ax1.plot(comp_dict_A['WAVE'], comp_dict_A[key], color='xkcd:pastel red', linewidth=0.5, linestyle='-', label='Absorption Comp.')
-            if (line_list_A[key]["line_type"]=="user"):
-                ax1.plot(comp_dict_A['WAVE'], comp_dict_A[key], color='xkcd:electric lime', linewidth=0.5, linestyle='-', label='Other')
-
-    ax1.set_xticklabels([])
-    ax1.set_xlim(np.min(comp_dict_A['WAVE'])-10,np.max(comp_dict_A['WAVE'])+10)
-    # ax1.set_ylim(-0.5*np.nanmedian(comp_dict['MODEL']),np.max([comp_dict['DATA'],comp_dict['MODEL']]))
-    # ax1.set_ylabel(r'$f_\lambda$ ($10^{%d}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)' % (np.log10(flux_norm)),fontsize=10)
-    ax1.set_ylabel(r'Normalized Flux' % (np.log10(flux_norm)),fontsize=10)
-
-    # Residuals
-    sigma_resid = np.nanstd(comp_dict_A['DATA']-comp_dict_A['MODEL'])
-    sigma_noise = np.nanmedian(comp_dict_A['NOISE'])
-    ax2.plot(comp_dict_A['WAVE'],(comp_dict_A['NOISE']*3.0),linewidth=0.5,color="xkcd:bright orange",label='$\sigma_{\mathrm{noise}}=%0.4f$' % (sigma_noise))
-    ax2.plot(comp_dict_A['WAVE'],(comp_dict_A['RESID']*3.0),linewidth=0.5,color="white",label='$\sigma_{\mathrm{resid}}=%0.4f$' % (sigma_resid))
-    ax2.axhline(0.0,linewidth=1.0,color='white',linestyle='--')
-    # Axes limits 
-    ax_low = np.min([ax1.get_ylim()[0],ax2.get_ylim()[0]])
-    ax_upp = np.max([ax1.get_ylim()[1], ax2.get_ylim()[1]])
-    if np.isfinite(sigma_resid):
-        ax_upp += 3.0 * sigma_resid
-
-    minimum = [np.nanmin(comp_dict_A[comp][np.where(np.isfinite(comp_dict_A[comp]))[0]]) for comp in comp_dict_A
-               if comp_dict_A[comp][np.isfinite(comp_dict_A[comp])[0]].size > 0]
-    if len(minimum) > 0:
-        minimum = np.nanmin(minimum)
-    else:
-        minimum = 0.0
-    ax1.set_ylim(np.nanmin([0.0, minimum]), ax_upp)
-    ax1.set_xlim(np.min(comp_dict_A['WAVE']),np.max(comp_dict_A['WAVE']))
-    ax2.set_ylim(ax_low,ax_upp)
-    ax2.set_xlim(np.min(comp_dict_A['WAVE']),np.max(comp_dict_A['WAVE']))
-    # Axes labels
-    ax2.set_yticklabels(np.round(np.array(ax2.get_yticks()/3.0)))
-    ax2.set_ylabel(r'$\Delta f_\lambda$',fontsize=12)
-    ax2.set_xlabel(r'Wavelength, $\lambda\;(\mathrm{\AA})$',fontsize=12)
-    handles, labels = ax1.get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    ax1.legend(by_label.values(), by_label.keys(),loc='upper right',fontsize=8)
-    ax2.legend(loc='upper right',fontsize=8)
-
-    # Emission line annotations
-    # Gather up emission line center wavelengths and labels (if available, removing any duplicates)
-    line_labels = []
-    for line in line_list_A:
-        if "label" in line_list_A[line]:
-            line_labels.append([line,line_list_A[line]["label"]])
-    line_labels = set(map(tuple, line_labels))   
-    for label in line_labels:
-        center = line_list_A[label[0]]["center"]
-        if (line_list_A[label[0]]["voff"]=="free"):
-            voff = p[label[0]+"_VOFF"]
-        elif (line_list_A[label[0]]["voff"]!="free"):
-            voff   =  ne.evaluate(line_list_A[label[0]]["voff"],local_dict = p).item()
-        xloc = calc_new_center(center,voff)
-        yloc = np.max([comp_dict_A["DATA"][find_nearest(comp_dict_A['WAVE'],xloc)[1]],comp_dict_A["MODEL"][find_nearest(comp_dict_A['WAVE'],xloc)[1]]])
-        ax1.annotate(label[1], xy=(xloc, yloc),  xycoords='data',
-        xytext=(xloc, yloc), textcoords='data',
-        horizontalalignment='center', verticalalignment='bottom',
-        color='xkcd:white',fontsize=6,
-        )
-    
-    # Complex "B" model (ax3,ax4)
-    # Put params in dictionary
-    p = dict(zip(param_names_B,[params_B[key]["med"] for key in params_B]))
-
-    for key in comp_dict_B:
-        if (key=='DATA'):
-            ax3.plot(comp_dict_B['WAVE'],comp_dict_B['DATA'],linewidth=0.5,color='white',label='Data',zorder=0)
-        elif (key=='MODEL'):
-            ax3.plot(comp_dict_B['WAVE'],comp_dict_B[key], color='xkcd:bright red', linewidth=1.0, label='Model', zorder=15)
-        elif (key=='HOST_GALAXY'):
-            ax3.plot(comp_dict_B['WAVE'], comp_dict_B['HOST_GALAXY'], color='xkcd:bright green', linewidth=0.5, linestyle='-', label='Host/Stellar')
-
-        elif (key=='POWER'):
-            ax3.plot(comp_dict_B['WAVE'], comp_dict_B['POWER'], color='xkcd:red' , linewidth=0.5, linestyle='--', label='AGN Cont.')
-
-        elif (key=='APOLY'):
-            ax3.plot(comp_dict_B['WAVE'], comp_dict_B['APOLY'], color='xkcd:bright purple' , linewidth=0.5, linestyle='-', label='%s-order Add. Poly.' % (poly_label("apoly")))
-        elif (key=='MPOLY'):
-            ax3.plot(comp_dict_B['WAVE'], comp_dict_B['MPOLY'], color='xkcd:lavender' , linewidth=0.5, linestyle='-', label='%s-order Mult. Poly.' % (poly_label("mpoly")))
-
-        elif (key in ['NA_OPT_FEII_TEMPLATE','BR_OPT_FEII_TEMPLATE']):
-            ax3.plot(comp_dict_B['WAVE'], comp_dict_B['NA_OPT_FEII_TEMPLATE'], color='xkcd:yellow', linewidth=0.5, linestyle='-' , label='Narrow FeII')
-            ax3.plot(comp_dict_B['WAVE'], comp_dict_B['BR_OPT_FEII_TEMPLATE'], color='xkcd:orange', linewidth=0.5, linestyle='-' , label='Broad FeII')
-
-        elif (key in ['F_OPT_FEII_TEMPLATE','S_OPT_FEII_TEMPLATE','G_OPT_FEII_TEMPLATE','Z_OPT_FEII_TEMPLATE']):
-            if key=='F_OPT_FEII_TEMPLATE':
-                ax3.plot(comp_dict_B['WAVE'], comp_dict_B['F_OPT_FEII_TEMPLATE'], color='xkcd:yellow', linewidth=0.5, linestyle='-' , label='F-transition FeII')
-            elif key=='S_OPT_FEII_TEMPLATE':
-                ax3.plot(comp_dict_B['WAVE'], comp_dict_B['S_OPT_FEII_TEMPLATE'], color='xkcd:mustard', linewidth=0.5, linestyle='-' , label='S-transition FeII')
-            elif key=='G_OPT_FEII_TEMPLATE':
-                ax3.plot(comp_dict_B['WAVE'], comp_dict_B['G_OPT_FEII_TEMPLATE'], color='xkcd:orange', linewidth=0.5, linestyle='-' , label='G-transition FeII')
-            elif key=='Z_OPT_FEII_TEMPLATE':
-                ax3.plot(comp_dict_B['WAVE'], comp_dict_B['Z_OPT_FEII_TEMPLATE'], color='xkcd:rust', linewidth=0.5, linestyle='-' , label='Z-transition FeII')
-        elif (key=='UV_IRON_TEMPLATE'):
-            ax3.plot(comp_dict_B['WAVE'], comp_dict_B['UV_IRON_TEMPLATE'], color='xkcd:bright purple', linewidth=0.5, linestyle='-' , label='UV Iron'	 )
-        elif (key=='BALMER_CONT'):
-            ax3.plot(comp_dict_B['WAVE'], comp_dict_B['BALMER_CONT'], color='xkcd:bright green', linewidth=0.5, linestyle='--' , label='Balmer Continuum'	 )
-        # Plot emission lines by cross-referencing comp_dict with line_list
-        if (key in line_list_B):
-            if (line_list_B[key]["line_type"]=="na"):
-                ax3.plot(comp_dict_B['WAVE'], comp_dict_B[key], color='xkcd:cerulean', linewidth=0.5, linestyle='-', label='Narrow/Core Comp.')
-            if (line_list_B[key]["line_type"]=="br"):
-                ax3.plot(comp_dict_B['WAVE'], comp_dict_B[key], color='xkcd:bright teal', linewidth=0.5, linestyle='-', label='Broad Comp.')
-            if (line_list_B[key]["line_type"]=="abs"):
-                ax3.plot(comp_dict_B['WAVE'], comp_dict_B[key], color='xkcd:pastel red', linewidth=0.5, linestyle='-', label='Absorption Comp.')
-            if (line_list_B[key]["line_type"]=="user"):
-                ax3.plot(comp_dict_B['WAVE'], comp_dict_B[key], color='xkcd:electric lime', linewidth=0.5, linestyle='-', label='Other')
-
-    ax3.set_xticklabels([])
-    ax3.set_xlim(np.min(comp_dict_B['WAVE'])-10,np.max(comp_dict_B['WAVE'])+10)
-    # ax3.set_ylim(-0.5*np.nanmedian(comp_dict['MODEL']),np.max([comp_dict['DATA'],comp_dict['MODEL']]))
-    # ax3.set_ylabel(r'$f_\lambda$ ($10^{%d}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)' % (np.log10(flux_norm)),fontsize=10)
-    ax3.set_ylabel(r'Normalized Flux' % (np.log10(flux_norm)),fontsize=10)
-    # Residuals
-    sigma_resid = np.nanstd(comp_dict_B['DATA']-comp_dict_B['MODEL'])
-    sigma_noise = np.nanmedian(comp_dict_B['NOISE'])
-    ax4.plot(comp_dict_B['WAVE'],(comp_dict_B['NOISE']*3.0),linewidth=0.5,color="xkcd:bright orange",label='$\sigma_{\mathrm{noise}}=%0.4f$' % (sigma_noise))
-    ax4.plot(comp_dict_B['WAVE'],(comp_dict_B['RESID']*3.0),linewidth=0.5,color="white",label='$\sigma_{\mathrm{resid}}=%0.4f$' % (sigma_resid))
-    ax4.axhline(0.0,linewidth=1.0,color='white',linestyle='--')
-    # Axes limits 
-    ax_low = np.min([ax3.get_ylim()[0],ax4.get_ylim()[0]])
-    ax_upp = np.max([ax3.get_ylim()[1], ax4.get_ylim()[1]])
-    if np.isfinite(sigma_resid):
-        ax_upp += 3.0 * sigma_resid
-
-    minimum = [np.nanmin(comp_dict_B[comp][np.where(np.isfinite(comp_dict_B[comp]))[0]]) for comp in comp_dict_B
-               if comp_dict_B[comp][np.isfinite(comp_dict_B[comp])[0]].size > 0]
-    if len(minimum) > 0:
-        minimum = np.nanmin(minimum)
-    else:
-        minimum = 0.0
-    ax3.set_ylim(np.nanmin([0.0, minimum]), ax_upp)
-    ax3.set_xlim(np.min(comp_dict_B['WAVE']),np.max(comp_dict_B['WAVE']))
-    ax4.set_ylim(ax_low,ax_upp)
-    ax4.set_xlim(np.min(comp_dict_B['WAVE']),np.max(comp_dict_B['WAVE']))
-    # Axes labels
-    ax4.set_yticklabels(np.array(ax4.get_yticks()/3.0,dtype=int))
-    ax4.set_ylabel(r'$\Delta f_\lambda$',fontsize=12)
-    ax4.set_xlabel(r'Wavelength, $\lambda\;(\mathrm{\AA})$',fontsize=12)
-    handles, labels = ax3.get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    ax3.legend(by_label.values(), by_label.keys(),loc='upper right',fontsize=8)
-    ax4.legend(loc='upper right',fontsize=8)
-
-    # Emission line annotations
-    # Gather up emission line center wavelengths and labels (if available, removing any duplicates)
-    line_labels = []
-    for line in line_list_B:
-        if "label" in line_list_B[line]:
-            line_labels.append([line,line_list_B[line]["label"]])
-    line_labels = set(map(tuple, line_labels))   
-    for label in line_labels:
-        center = line_list_B[label[0]]["center"]
-        if (line_list_B[label[0]]["voff"]=="free"):
-            voff = p[label[0]+"_VOFF"]
-        elif (line_list_B[label[0]]["voff"]!="free"):
-            voff   =  ne.evaluate(line_list_B[label[0]]["voff"],local_dict = p).item()
-        xloc = calc_new_center(center,voff)
-        yloc = np.max([comp_dict_B["DATA"][find_nearest(comp_dict_B['WAVE'],xloc)[1]],comp_dict_B["MODEL"][find_nearest(comp_dict_B['WAVE'],xloc)[1]]])
-        ax3.annotate(label[1], xy=(xloc, yloc),  xycoords='data',
-        xytext=(xloc, yloc), textcoords='data',
-        horizontalalignment='center', verticalalignment='bottom',
-        color='xkcd:white',fontsize=6,
-        )
-    # Title
-    ax1.set_title(r"$\textrm{TEST %s: NCOMP %d}$" % (str(test).replace('_', '\\_'),ncomp_A),fontsize=16)
-    ax3.set_title(r"$\textrm{TEST %s: NCOMP %d}$" % (str(test).replace('_', '\\_'),ncomp_B),fontsize=16)
-    #
     fig.tight_layout()
-    # Save the figure
-    test_plot_dir = run_dir.joinpath('line_test_results')
-    test_plot_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(test_plot_dir.joinpath('test_%d_NCOMP_%d_vs_NCOMP_%d.png' % (n+1,ncomp_A,ncomp_B)), bbox_inches="tight",dpi=300)
-    # Close figure
+    plot_dir = target.outdir.joinpath('test_plots')
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    plt.savefig(plot_dir.joinpath('test%s_%s_vs_%s'%('_'+test_title if test_title else '', label_A, label_B)), bbox_inches='tight', dpi=300)
     plt.close()
-    #
-    return
 
-##################################################################################
-
-
-def config_test_plot(n,ncomp_A,ncomp_B,
-                   comp_dict_B,comp_dict_A,
-                   line_list_B,line_list_A,
-                   params_B,params_A,
-                   run_dir):
-    """
-    The plotting function for test_line().  It plots both the outflow
-    and no_outflow results.
-    """
-    # Reshape the component dictionary by extracting the 0th array
-    comp_dict_A = {key:comp_dict_A[key][0] for key in comp_dict_A}
-    comp_dict_B = {key:comp_dict_B[key][0] for key in comp_dict_B}
-
-    param_names_A = [p for p in params_A]
-    param_names_B = [p for p in params_B]
-
-    def poly_label(kind):
-        if kind=="apoly":
-            order = len([p for p in param_names_B if p.startswith("APOLY_")])-1
-        if kind=="mpoly":
-            order = len([p for p in param_names_B if p.startswith("MPOLY_")])-1
-        #
-        ordinal = lambda n: "%d%s" % (n,"tsnrhtdd"[(n//10%10!=1)*(n%10<4)*n%10::4])
-        return ordinal(order)
-
-    def calc_new_center(center,voff):
-        """
-        Calculated new center shifted 
-        by some velocity offset.
-        """
-        c = 299792.458 # speed of light (km/s)
-        new_center = (voff*center)/c + center
-        return new_center
-
-    # Creat plot window and axes
-    fig = plt.figure(figsize=(14,11)) 
-    gs = gridspec.GridSpec(9,1)
-    ax1  = fig.add_subplot(gs[0:3,0]) # No outflow
-    ax2  = fig.add_subplot(gs[3:4,0]) # No outflow residuals
-    ax3  = fig.add_subplot(gs[5:8,0]) # Outflow
-    ax4  = fig.add_subplot(gs[8:9,0]) # Outflow residuals
-    gs.update(wspace=0.0, hspace=0.0) # set the spacing between axes. 
-
-
-
-    # Simple "A" model (ax1,ax2)
-    # Put params in dictionary
-    p = dict(zip(param_names_A,[params_A[key]["med"] for key in params_A]))
-
-    for key in comp_dict_A:
-        if (key=='DATA'):
-            ax1.plot(comp_dict_A['WAVE'],comp_dict_A['DATA'],linewidth=0.5,color='white',label='Data',zorder=0)
-        elif (key=='MODEL'):
-            ax1.plot(comp_dict_A['WAVE'],comp_dict_A[key], color='xkcd:bright red', linewidth=1.0, label='Model', zorder=15)
-        elif (key=='HOST_GALAXY'):
-            ax1.plot(comp_dict_A['WAVE'], comp_dict_A['HOST_GALAXY'], color='xkcd:bright green', linewidth=0.5, linestyle='-', label='Host/Stellar')
-
-        elif (key=='POWER'):
-            ax1.plot(comp_dict_A['WAVE'], comp_dict_A['POWER'], color='xkcd:red' , linewidth=0.5, linestyle='--', label='AGN Cont.')
-
-        elif (key=='APOLY'):
-            ax1.plot(comp_dict_A['WAVE'], comp_dict_A['APOLY'], color='xkcd:bright purple' , linewidth=0.5, linestyle='-', label='%s-order Add. Poly.' % (poly_label("apoly")))
-        elif (key=='MPOLY'):
-            ax1.plot(comp_dict_A['WAVE'], comp_dict_A['MPOLY'], color='xkcd:lavender' , linewidth=0.5, linestyle='-', label='%s-order Mult. Poly.' % (poly_label("mpoly")))
-
-        elif (key in ['NA_OPT_FEII_TEMPLATE','BR_OPT_FEII_TEMPLATE']):
-            ax1.plot(comp_dict_A['WAVE'], comp_dict_A['NA_OPT_FEII_TEMPLATE'], color='xkcd:yellow', linewidth=0.5, linestyle='-' , label='Narrow FeII')
-            ax1.plot(comp_dict_A['WAVE'], comp_dict_A['BR_OPT_FEII_TEMPLATE'], color='xkcd:orange', linewidth=0.5, linestyle='-' , label='Broad FeII')
-
-        elif (key in ['F_OPT_FEII_TEMPLATE','S_OPT_FEII_TEMPLATE','G_OPT_FEII_TEMPLATE','Z_OPT_FEII_TEMPLATE']):
-            if key=='F_OPT_FEII_TEMPLATE':
-                ax1.plot(comp_dict_A['WAVE'], comp_dict_A['F_OPT_FEII_TEMPLATE'], color='xkcd:yellow', linewidth=0.5, linestyle='-' , label='F-transition FeII')
-            elif key=='S_OPT_FEII_TEMPLATE':
-                ax1.plot(comp_dict_A['WAVE'], comp_dict_A['S_OPT_FEII_TEMPLATE'], color='xkcd:mustard', linewidth=0.5, linestyle='-' , label='S-transition FeII')
-            elif key=='G_OPT_FEII_TEMPLATE':
-                ax1.plot(comp_dict_A['WAVE'], comp_dict_A['G_OPT_FEII_TEMPLATE'], color='xkcd:orange', linewidth=0.5, linestyle='-' , label='G-transition FeII')
-            elif key=='Z_OPT_FEII_TEMPLATE':
-                ax1.plot(comp_dict_A['WAVE'], comp_dict_A['Z_OPT_FEII_TEMPLATE'], color='xkcd:rust', linewidth=0.5, linestyle='-' , label='Z-transition FeII')
-        elif (key=='UV_IRON_TEMPLATE'):
-            ax1.plot(comp_dict_A['WAVE'], comp_dict_A['UV_IRON_TEMPLATE'], color='xkcd:bright purple', linewidth=0.5, linestyle='-' , label='UV Iron'   )
-        elif (key=='BALMER_CONT'):
-            ax1.plot(comp_dict_A['WAVE'], comp_dict_A['BALMER_CONT'], color='xkcd:bright green', linewidth=0.5, linestyle='--' , label='Balmer Continuum'   )
-        # Plot emission lines by cross-referencing comp_dict with line_list
-        if (key in line_list_A):
-            if (line_list_A[key]["line_type"]=="na"):
-                ax1.plot(comp_dict_A['WAVE'], comp_dict_A[key], color='xkcd:cerulean', linewidth=0.5, linestyle='-', label='Narrow/Core Comp.')
-            if (line_list_A[key]["line_type"]=="br"):
-                ax1.plot(comp_dict_A['WAVE'], comp_dict_A[key], color='xkcd:bright teal', linewidth=0.5, linestyle='-', label='Broad Comp.')
-            if (line_list_A[key]["line_type"]=="abs"):
-                ax1.plot(comp_dict_A['WAVE'], comp_dict_A[key], color='xkcd:pastel red', linewidth=0.5, linestyle='-', label='Absorption Comp.')
-            if (line_list_A[key]["line_type"]=="user"):
-                ax1.plot(comp_dict_A['WAVE'], comp_dict_A[key], color='xkcd:electric lime', linewidth=0.5, linestyle='-', label='Other')
-
-    ax1.set_xticklabels([])
-    ax1.set_xlim(np.min(comp_dict_A['WAVE'])-10,np.max(comp_dict_A['WAVE'])+10)
-    # ax1.set_ylim(-0.5*np.nanmedian(comp_dict['MODEL']),np.max([comp_dict['DATA'],comp_dict['MODEL']]))
-    # ax1.set_ylabel(r'$f_\lambda$ ($10^{-17}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)',fontsize=10)
-    ax1.set_ylabel(r'Normalized Flux',fontsize=10)
-    # Residuals
-    sigma_resid = np.nanstd(comp_dict_A['DATA']-comp_dict_A['MODEL'])
-    sigma_noise = np.nanmedian(comp_dict_A['NOISE'])
-    ax2.plot(comp_dict_A['WAVE'],(comp_dict_A['NOISE']*3.0),linewidth=0.5,color="xkcd:bright orange",label='$\sigma_{\mathrm{noise}}=%0.4f$' % (sigma_noise))
-    ax2.plot(comp_dict_A['WAVE'],(comp_dict_A['RESID']*3.0),linewidth=0.5,color="white",label='$\sigma_{\mathrm{resid}}=%0.4f$' % (sigma_resid))
-    ax2.axhline(0.0,linewidth=1.0,color='white',linestyle='--')
-    # Axes limits 
-    ax_low = np.min([ax1.get_ylim()[0],ax2.get_ylim()[0]])
-    ax_upp = np.max([ax1.get_ylim()[1], ax2.get_ylim()[1]])
-    if np.isfinite(sigma_resid):
-        ax_upp += 3.0 * sigma_resid
-
-    minimum = [np.nanmin(comp_dict_A[comp][np.where(np.isfinite(comp_dict_A[comp]))[0]]) for comp in comp_dict_A
-               if comp_dict_A[comp][np.isfinite(comp_dict_A[comp])[0]].size > 0]
-    if len(minimum) > 0:
-        minimum = np.nanmin(minimum)
-    else:
-        minimum = 0.0
-    ax1.set_ylim(np.nanmin([0.0, minimum]), ax_upp)
-    ax1.set_xlim(np.min(comp_dict_A['WAVE']),np.max(comp_dict_A['WAVE']))
-    ax2.set_ylim(ax_low,ax_upp)
-    ax2.set_xlim(np.min(comp_dict_A['WAVE']),np.max(comp_dict_A['WAVE']))
-    # Axes labels
-    ax2.set_yticklabels(np.round(np.array(ax2.get_yticks()/3.0)))
-    ax2.set_ylabel(r'$\Delta f_\lambda$',fontsize=12)
-    ax2.set_xlabel(r'Wavelength, $\lambda\;(\mathrm{\AA})$',fontsize=12)
-    handles, labels = ax1.get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    ax1.legend(by_label.values(), by_label.keys(),loc='upper right',fontsize=8)
-    ax2.legend(loc='upper right',fontsize=8)
-
-    # Emission line annotations
-    # Gather up emission line center wavelengths and labels (if available, removing any duplicates)
-    line_labels = []
-    for line in line_list_A:
-        if "label" in line_list_A[line]:
-            line_labels.append([line,line_list_A[line]["label"]])
-    line_labels = set(map(tuple, line_labels))   
-    for label in line_labels:
-        center = line_list_A[label[0]]["center"]
-        if (line_list_A[label[0]]["voff"]=="free"):
-            voff = p[label[0]+"_VOFF"]
-        elif (line_list_A[label[0]]["voff"]!="free"):
-            voff   =  ne.evaluate(line_list_A[label[0]]["voff"],local_dict = p).item()
-        xloc = calc_new_center(center,voff)
-        yloc = np.max([comp_dict_A["DATA"][find_nearest(comp_dict_A['WAVE'],xloc)[1]],comp_dict_A["MODEL"][find_nearest(comp_dict_A['WAVE'],xloc)[1]]])
-        ax1.annotate(label[1], xy=(xloc, yloc),  xycoords='data',
-        xytext=(xloc, yloc), textcoords='data',
-        horizontalalignment='center', verticalalignment='bottom',
-        color='xkcd:white',fontsize=6,
-        )
-    
-    # Complex "B" model (ax3,ax4)
-    # Put params in dictionary
-    p = dict(zip(param_names_B,[params_B[key]["med"] for key in params_B]))
-
-    for key in comp_dict_B:
-        if (key=='DATA'):
-            ax3.plot(comp_dict_B['WAVE'],comp_dict_B['DATA'],linewidth=0.5,color='white',label='Data',zorder=0)
-        elif (key=='MODEL'):
-            ax3.plot(comp_dict_B['WAVE'],comp_dict_B[key], color='xkcd:bright red', linewidth=1.0, label='Model', zorder=15)
-        elif (key=='HOST_GALAXY'):
-            ax3.plot(comp_dict_B['WAVE'], comp_dict_B['HOST_GALAXY'], color='xkcd:bright green', linewidth=0.5, linestyle='-', label='Host/Stellar')
-
-        elif (key=='POWER'):
-            ax3.plot(comp_dict_B['WAVE'], comp_dict_B['POWER'], color='xkcd:red' , linewidth=0.5, linestyle='--', label='AGN Cont.')
-
-        elif (key=='APOLY'):
-            ax3.plot(comp_dict_B['WAVE'], comp_dict_B['APOLY'], color='xkcd:bright purple' , linewidth=0.5, linestyle='-', label='%s-order Add. Poly.' % (poly_label("apoly")))
-        elif (key=='MPOLY'):
-            ax3.plot(comp_dict_B['WAVE'], comp_dict_B['MPOLY'], color='xkcd:lavender' , linewidth=0.5, linestyle='-', label='%s-order Mult. Poly.' % (poly_label("mpoly")))
-
-        elif (key in ['NA_OPT_FEII_TEMPLATE','BR_OPT_FEII_TEMPLATE']):
-            ax3.plot(comp_dict_B['WAVE'], comp_dict_B['NA_OPT_FEII_TEMPLATE'], color='xkcd:yellow', linewidth=0.5, linestyle='-' , label='Narrow FeII')
-            ax3.plot(comp_dict_B['WAVE'], comp_dict_B['BR_OPT_FEII_TEMPLATE'], color='xkcd:orange', linewidth=0.5, linestyle='-' , label='Broad FeII')
-
-        elif (key in ['F_OPT_FEII_TEMPLATE','S_OPT_FEII_TEMPLATE','G_OPT_FEII_TEMPLATE','Z_OPT_FEII_TEMPLATE']):
-            if key=='F_OPT_FEII_TEMPLATE':
-                ax3.plot(comp_dict_B['WAVE'], comp_dict_B['F_OPT_FEII_TEMPLATE'], color='xkcd:yellow', linewidth=0.5, linestyle='-' , label='F-transition FeII')
-            elif key=='S_OPT_FEII_TEMPLATE':
-                ax3.plot(comp_dict_B['WAVE'], comp_dict_B['S_OPT_FEII_TEMPLATE'], color='xkcd:mustard', linewidth=0.5, linestyle='-' , label='S-transition FeII')
-            elif key=='G_OPT_FEII_TEMPLATE':
-                ax3.plot(comp_dict_B['WAVE'], comp_dict_B['G_OPT_FEII_TEMPLATE'], color='xkcd:orange', linewidth=0.5, linestyle='-' , label='G-transition FeII')
-            elif key=='Z_OPT_FEII_TEMPLATE':
-                ax3.plot(comp_dict_B['WAVE'], comp_dict_B['Z_OPT_FEII_TEMPLATE'], color='xkcd:rust', linewidth=0.5, linestyle='-' , label='Z-transition FeII')
-        elif (key=='UV_IRON_TEMPLATE'):
-            ax3.plot(comp_dict_B['WAVE'], comp_dict_B['UV_IRON_TEMPLATE'], color='xkcd:bright purple', linewidth=0.5, linestyle='-' , label='UV Iron'   )
-        elif (key=='BALMER_CONT'):
-            ax3.plot(comp_dict_B['WAVE'], comp_dict_B['BALMER_CONT'], color='xkcd:bright green', linewidth=0.5, linestyle='--' , label='Balmer Continuum'   )
-        # Plot emission lines by cross-referencing comp_dict with line_list
-        if (key in line_list_B):
-            if (line_list_B[key]["line_type"]=="na"):
-                ax3.plot(comp_dict_B['WAVE'], comp_dict_B[key], color='xkcd:cerulean', linewidth=0.5, linestyle='-', label='Narrow/Core Comp.')
-            if (line_list_B[key]["line_type"]=="br"):
-                ax3.plot(comp_dict_B['WAVE'], comp_dict_B[key], color='xkcd:bright teal', linewidth=0.5, linestyle='-', label='Broad Comp.')
-            if (line_list_B[key]["line_type"]=="abs"):
-                ax3.plot(comp_dict_B['WAVE'], comp_dict_B[key], color='xkcd:pastel red', linewidth=0.5, linestyle='-', label='Absorption Comp.')
-            if (line_list_B[key]["line_type"]=="user"):
-                ax3.plot(comp_dict_B['WAVE'], comp_dict_B[key], color='xkcd:electric lime', linewidth=0.5, linestyle='-', label='Other')
-
-    ax3.set_xticklabels([])
-    ax3.set_xlim(np.min(comp_dict_B['WAVE'])-10,np.max(comp_dict_B['WAVE'])+10)
-    # ax3.set_ylim(-0.5*np.nanmedian(comp_dict['MODEL']),np.max([comp_dict['DATA'],comp_dict['MODEL']]))
-    # ax3.set_ylabel(r'$f_\lambda$ ($10^{-17}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)',fontsize=10)
-    ax3.set_ylabel(r'Normalized Flux',fontsize=10)
-    # Residuals
-    sigma_resid = np.nanstd(comp_dict_B['DATA']-comp_dict_B['MODEL'])
-    sigma_noise = np.nanmedian(comp_dict_B['NOISE'])
-    ax4.plot(comp_dict_B['WAVE'],(comp_dict_B['NOISE']*3.0),linewidth=0.5,color="xkcd:bright orange",label='$\sigma_{\mathrm{noise}}=%0.4f$' % (sigma_noise))
-    ax4.plot(comp_dict_B['WAVE'],(comp_dict_B['RESID']*3.0),linewidth=0.5,color="white",label='$\sigma_{\mathrm{resid}}=%0.4f$' % (sigma_resid))
-    ax4.axhline(0.0,linewidth=1.0,color='white',linestyle='--')
-    # Axes limits 
-    ax_low = np.min([ax3.get_ylim()[0],ax4.get_ylim()[0]])
-    ax_upp = np.max([ax3.get_ylim()[1], ax4.get_ylim()[1]])
-    if np.isfinite(sigma_resid):
-        ax_upp += 3.0 * sigma_resid
-
-    minimum = [np.nanmin(comp_dict_B[comp][np.where(np.isfinite(comp_dict_B[comp]))[0]]) for comp in comp_dict_B
-               if comp_dict_B[comp][np.isfinite(comp_dict_B[comp])[0]].size > 0]
-    if len(minimum) > 0:
-        minimum = np.nanmin(minimum)
-    else:
-        minimum = 0.0
-    ax3.set_ylim(np.nanmin([0.0, minimum]), ax_upp)
-    ax3.set_xlim(np.min(comp_dict_B['WAVE']),np.max(comp_dict_B['WAVE']))
-    ax4.set_ylim(ax_low,ax_upp)
-    ax4.set_xlim(np.min(comp_dict_B['WAVE']),np.max(comp_dict_B['WAVE']))
-    # Axes labels
-    ax4.set_yticklabels(np.array(ax4.get_yticks()/3.0,dtype=int))
-    ax4.set_ylabel(r'$\Delta f_\lambda$',fontsize=12)
-    ax4.set_xlabel(r'Wavelength, $\lambda\;(\mathrm{\AA})$',fontsize=12)
-    handles, labels = ax3.get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    ax3.legend(by_label.values(), by_label.keys(),loc='upper right',fontsize=8)
-    ax4.legend(loc='upper right',fontsize=8)
-
-    # Emission line annotations
-    # Gather up emission line center wavelengths and labels (if available, removing any duplicates)
-    line_labels = []
-    for line in line_list_B:
-        if "label" in line_list_B[line]:
-            line_labels.append([line,line_list_B[line]["label"]])
-    line_labels = set(map(tuple, line_labels))   
-    for label in line_labels:
-        center = line_list_B[label[0]]["center"]
-        if (line_list_B[label[0]]["voff"]=="free"):
-            voff = p[label[0]+"_VOFF"]
-        elif (line_list_B[label[0]]["voff"]!="free"):
-            voff   =  ne.evaluate(line_list_B[label[0]]["voff"],local_dict = p).item()
-        xloc = calc_new_center(center,voff)
-        yloc = np.max([comp_dict_B["DATA"][find_nearest(comp_dict_B['WAVE'],xloc)[1]],comp_dict_B["MODEL"][find_nearest(comp_dict_B['WAVE'],xloc)[1]]])
-        ax3.annotate(label[1], xy=(xloc, yloc),  xycoords='data',
-        xytext=(xloc, yloc), textcoords='data',
-        horizontalalignment='center', verticalalignment='bottom',
-        color='xkcd:white',fontsize=6,
-        )
-    # Title
-    ax1.set_title(r"$\textrm{Configuration %d}$" % (ncomp_A),fontsize=16)
-    ax3.set_title(r"$\textrm{Configuration %d}$" % (ncomp_B),fontsize=16)
-    #
-    fig.tight_layout()
-    # Save the figure
-    test_plot_dir = run_dir.joinpath('config_test_results')
-    test_plot_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(test_plot_dir.joinpath('test_%d_CONFIG_%d_vs_CONFIG_%d.png' % (n,ncomp_A,ncomp_B)), bbox_inches="tight",dpi=300)
-    # Close figure
-    plt.close()
-    #
-    return
-
-##################################################################################
-
-#### Write Line Test Results ##################################################
-
-def write_line_test_results(fit_res,
-                            test_res,
-                            run_dir,
-                            test,
-                            binnum=None,
-                            spaxelx=None,
-                            spaxely=None):
-    """
-    Writes results of ALL line tests to pickle files.
-    Pickle files were preferred over FITS files for multiple line tests
-    and can be read as Python dictionaries.
-    """
-    #
-    if test=="line":
-        test_plot_dir = run_dir.joinpath('line_test_results')
-    if test=="config":
-        test_plot_dir = run_dir.joinpath('config_test_results')
-    test_plot_dir.mkdir(parents=True, exist_ok=True)
-    # If IFU data, add BINNUM, spaxelx, spaxely to both dicts
-    if binnum is not None:
-        test_res["BINNUM"]  = binnum
-        test_res["spaxelx"] = spaxelx
-        test_res["spaxely"] = spaxely
-        fit_res["BINNUM"]   = binnum
-        fit_res["spaxelx"]  = spaxelx
-        fit_res["spaxely"]  = spaxely
-
-    # Write fit results
-    with open(test_plot_dir.joinpath('fit_results.pkl'), 'wb') as f:
-        pickle.dump(fit_res, f)
-    # Write test results
-    with open(test_plot_dir.joinpath('test_results.pkl'), 'wb') as f:
-        pickle.dump(test_res, f)
-    #
-    return 
-
-####################################################################################
 
 def calc_max_like_flux(comp_dict,flux_norm,fit_norm, z):
     """
@@ -5019,9 +3167,9 @@ def max_likelihood(param_dict,mlctx,fit_type='init',fit_stat='ML',output_model=F
     H0 = mlctx.target.options.fit_options.cosmology.H0
     Om0 = mlctx.target.options.fit_options.cosmology.Om0
 
-    mlctx.param_names = [key for key in param_dict ]
-    params = [param_dict[key]['init'] for key in param_dict ]
-    mlctx.bounds = [param_dict[key]['plim'] for key in param_dict ]
+    mlctx.param_names = [key for key in param_dict]
+    params = [param_dict[key]['init'] for key in param_dict]
+    mlctx.bounds = [param_dict[key]['plim'] for key in param_dict]
     lb, ub = zip(*mlctx.bounds) 
     param_bounds = op.Bounds(lb,ub,keep_feasible=True)
     n_free_pars = len(params) # number of free parameters
@@ -5032,6 +3180,9 @@ def max_likelihood(param_dict,mlctx,fit_type='init',fit_stat='ML',output_model=F
 
     mlctx.prior_dict = {key:param_dict[key] for key in param_dict if ('prior' in param_dict[key])}
 
+
+    # ne.evaluate(con[0],local_dict = {mlctx.param_names[i]:p[i] for i in range(len(p))}).item()
+    # -ne.evaluate(con[1],local_dict = {mlctx.param_names[i]:p[i] for i in range(len(p))}).item()
     def lambda_gen(con): 
         return lambda p: ne.evaluate(con[0],local_dict = {mlctx.param_names[i]:p[i] for i in range(len(p))}).item()-ne.evaluate(con[1],local_dict = {mlctx.param_names[i]:p[i] for i in range(len(p))}).item()
     cons = [{"type":"ineq","fun": lambda_gen(copy.deepcopy(con))} for con in mlctx.soft_cons]
@@ -5061,15 +3212,14 @@ def max_likelihood(param_dict,mlctx,fit_type='init',fit_stat='ML',output_model=F
         basinhop_value = np.inf
 
         # Define a callback function for forcing a better fit to the B model 
-        # if force_best=True;
         # see: https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.basinhopping.html
-        def callback_ftn(x,f, accepted):
+        def callback_ftn(x,f,accepted):
             nonlocal basinhop_value, basinhop_count, lowest_rmse, accepted_count
             # print(basinhop_value,basinhop_count)
             # print("at minimum %.4f accepted %d" % (f, int(accepted)))
             
             if f<=basinhop_value:
-                basinhop_value=f 
+                basinhop_value=f
                 basinhop_count=0 # reset counter
             elif f>basinhop_value:
                 basinhop_count+=1
@@ -9626,95 +7776,6 @@ def plotly_best_fit(objname,line_list,fit_mask,run_dir):
 
     return
 
-# Restart File
-##################################################################################
-def dump_options(fit_options,
-            comp_options,
-            mcmc_options,
-            pca_options,
-            line_list,
-            soft_cons,
-            user_mask,
-            combined_lines,
-            losvd_options,
-            host_options,
-            power_options,
-            poly_options,
-            opt_feii_options,
-            uv_iron_options,
-            balmer_options,
-            plot_options,
-            output_options,
-            run_dir,
-            ):
-
-        opt_file_path = run_dir.joinpath('log', 'badass_options.py')
-        opt_file_path.parent.mkdir(parents=True, exist_ok=True)
-        with opt_file_path.open(mode='w') as f:
-            f.write("\n# BADASS Options File")
-            f.write("\n# Use the file as the input for the options_file in BADASS to re-run the fit with the same options.")
-            f.write("\n# --------------------------------------------------------------------------------------------------")
-            f.write("\n#")
-            f.write("\nfit_options = %s" % fit_options)
-            f.write("\n#")
-            f.write("\nmcmc_options = %s" % mcmc_options)
-            f.write("\n#")
-            f.write("\ncomp_options = %s" % comp_options)
-            f.write("\n#")
-            f.write("\nlosvd_options = %s" % losvd_options)
-            f.write("\n#")
-            f.write("\nhost_options = %s" % host_options)
-            f.write("\n#")
-            f.write("\npower_options = %s" % power_options)
-            f.write("\n#")
-            f.write("\npoly_options = %s" % poly_options)
-            f.write("\n#")
-            f.write("\nopt_feii_options = %s" % opt_feii_options)
-            f.write("\n#")
-            f.write("\nuv_iron_options = %s" % uv_iron_options)
-            f.write("\n#")
-            f.write("\nbalmer_options = %s" % balmer_options)
-            f.write("\n#")
-            f.write("\nplot_options = %s" % plot_options)
-            f.write("\n#")
-            f.write("\noutput_options = %s" % output_options)
-            f.write("\n#")
-            f.write("\npca_options = %s" % pca_options)
-            f.write("\n#")
-            f.write("\nuser_mask = %s" % user_mask)
-            f.write("\n#")
-            f.write("\nuser_constraints = %s" % soft_cons)
-            f.write("\n#")
-            f.write("\nuser_lines = %s" % line_list)
-            f.write("\n#")
-            f.write("\ncombined_lines = %s" % combined_lines)
-            f.write("\n#")
-            f.write("\n# --------------------------------------------------------------------------------------------------")
-            f.write("\n# End of BADASS Options File")
-            
-        return
-
-
-
-# Clean-up Routine
-##################################################################################
-
-def cleanup(run_dir):
-    """
-    Cleans up the run directory.
-    """
-    # Remove param_plots folder if empty
-    histo_dir = run_dir.joinpath('histogram_plots')
-    if histo_dir.is_dir() and not any(histo_dir.iterdir()):
-        histo_dir.rmdir()
-
-    # If run_dir is empty because there aren't enough good pixels, remove it
-    if run_dir.is_dir() and not any(run_dir.iterdir()):
-        run_dir.rmdir()
-
-    return None
-
-##################################################################################
 
 def write_log(output_val,output_type,run_dir):
     """
