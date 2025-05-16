@@ -1,4 +1,6 @@
 import numpy as np
+from sklearn.decomposition import PCA
+from astroML.datasets import sdss_corrected_spectra
 
 def pca_reconstruction(target):
     '''

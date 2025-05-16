@@ -53,6 +53,17 @@ class HostTemplate(BadassTemplate):
         hdu.close()
 
         lam_temp = np.array(h['CRVAL1'] + h['CDELT1']*np.arange(h['NAXIS1']))
+
+        # lam_temp needs to be larger than ctx.wave by npad pixels; if it isn't we need to make it larger
+        npad = 100
+        interp_temp = False
+        if (self.ctx.wave[0]-npad <= lam_temp[0]) or (self.ctx.wave[-1]+npad >= lam_temp[-1]):
+            interp_temp = True
+            lam_temp_new = np.arange(int(self.ctx.wave[0]-npad), np.ceil(self.ctx.wave[-1]+npad), 1)
+            interp_ftn = interp1d(lam_temp, ssp, kind='linear', bounds_error=False, fill_value=(0.0,0.0))
+            ssp = interp_ftn(lam_temp_new)
+            lam_temp = lam_temp_new
+
         mask = ((lam_temp>=(self.ctx.wave[0]-100.0)) & (lam_temp<=(self.ctx.wave[-1]+100.0)))
         # Apply mask and get lamRange
         ssp = ssp[mask]
@@ -74,6 +85,15 @@ class HostTemplate(BadassTemplate):
 
             hdu = fits.open(atemp)
             ssp = hdu[0].data
+
+            if interp_temp:
+                h = hdu[0].header
+                lam_temp = np.array(h['CRVAL1'] + h['CDELT1']*np.arange(h['NAXIS1']))
+                lam_temp_new = np.arange(int(self.ctx.wave[0]-npad), np.ceil(self.ctx.wave[-1]+npad), 1)
+                interp_ftn = interp1d(lam_temp, ssp, kind='linear', bounds_error=False, fill_value=(0.0,0.0))
+                ssp = interp_ftn(lam_temp_new)
+                lam_temp = lam_temp_new 
+
             ssp = ssp[mask]
             ssp = gaussian_filter1d(ssp, sigma)  # perform convolution with variable sigma
             sspNew,loglam_temp,velscale_temp = log_rebin(lamRange_temp, ssp, velscale=self.ctx.velscale)

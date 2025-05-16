@@ -15,7 +15,7 @@ def template_rfft(templates):
     templates = templates.reshape(npix_temp, -1)
     npad = fftpack.next_fast_len(npix_temp)
     templates_rfft = np.fft.rfft(templates, npad, axis=0)
-    
+
     return templates_rfft,npad
 
 
