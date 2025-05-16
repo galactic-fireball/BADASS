@@ -450,48 +450,8 @@ def calculate_aon(test,line_list,mccomps,noise):
 	return aon
 
 
-##################################################################################
-
 def thresholds_met(test_options, cur_metrics, fit_results):
 	pass_list = [cur_metrics[metric] >= thresh for metric, thresh in test_options.metrics.items() if metric in cur_metrics]
 	if 'AON' in test_options.metrics: pass_list.append(fit_results['aon'] >= test_options.metrics['AON']) # special case
 	mode_func = {'any':np.any, 'all':np.all}[test_options.conv_mode]
 	return mode_func(pass_list)
-
-
-# TODO: remove
-def check_test_stats(target,current,verbose=False):
-	"""
-	Function for checking thresholds of line
-	tests.  Note, this omits the AON (amplitude-over-noise)
-	test, since it is not a test between models.
-	"""
-
-	target = {t:target[t] for t in target if t in ["ANOVA","BADASS","CHI2_RATIO","F_RATIO","SSR_RATIO"]}
-	current = {c:current[c] for c in current if c in ["ANOVA","BADASS","CHI2_RATIO","F_RATIO","SSR_RATIO"]}
-
-	checked = []
-	for stat in target:
-		# Confidence based matrics; metric must remain above a current threshold to 
-		# remain False, and becomes True once it drops below that confidence threshold.
-		if current[stat]<=target[stat]:
-			checked.append(True)
-		else:
-			checked.append(False)
-
-	return checked
-
-
-##################################################################################
-
-
-
-
-
-
-
-
-
-
-
-
