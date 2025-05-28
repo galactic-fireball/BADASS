@@ -17,6 +17,7 @@ from astropy.io import fits
 import scipy.optimize as op
 from scipy.ndimage import generic_filter
 
+from utils.utils import nan_helper
 
 def continuum_subtract(wave,flux,noise,sigma_clip=3.0,clip_iter=25,filter_size=[25,50,100,150,200,250,500],
                       noise_scale=1.0,opt_rchi2=True,plot=True,fig_scale=8,fontsize=16,verbose=True,
@@ -53,22 +54,6 @@ def continuum_subtract(wave,flux,noise,sigma_clip=3.0,clip_iter=25,filter_size=[
         #
         return noise_scale[0]
 
-    def nan_helper(y):
-        """Helper to handle indices and logical indices of NaNs.
-    
-        Input:
-            - y, 1d numpy array with possible NaNs
-        Output:
-            - nans, logical indices of NaNs
-            - index, a function, with signature indices= index(logical_indices),
-              to convert logical indices of NaNs to 'equivalent' indices
-        Example:
-            >>> # linear interpolation of NaNs
-            >>> nans, x= nan_helper(y)
-            >>> y[nans]= np.interp(x(nans), x(~nans), y[~nans])
-        """
-    
-        return np.isnan(y), lambda z: z.nonzero()[0]
 
     def plot_cont_sub():
         # Determine 

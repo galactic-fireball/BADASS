@@ -57,8 +57,8 @@ def root_mean_squared_error(data,model):
 
 	# Normalize by subtracting by the median of the data
 	data_med = np.nanmedian(data)
-	data  /= data_med
-	model /= data_med
+	data  = data / data_med
+	model = model / data_med
 	return np.sqrt(1.0/len(data) * np.nansum((data-model)**2))
 
 ##################################################################################

@@ -2,6 +2,8 @@ import numpy as np
 from sklearn.decomposition import PCA
 from astroML.datasets import sdss_corrected_spectra
 
+from utils.utils import nan_helper
+
 def pca_reconstruction(target):
     '''
     Performs principal component analysis (PCA) on input spectrum using SDSS template spectra to reconstruct specific, user-specified, spectral regions.

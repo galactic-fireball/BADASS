@@ -116,87 +116,934 @@ def run_BADASS(inputs, **kwargs):
 
     # TODO: multiprocess
     for target in targets:
-        run_single_target(target)
+        BadassRunContext(target).run()
 
 
-def run_single_target(target):
-    if target.options.io_options.dust_cache != None:
-        IrsaDust.cache_location = str(dust_cache)
-
-    # Check to make sure plotly is installed for HTML interactive plots:
-    if (target.options.plot_options.plot_HTML) and (not importlib.util.find_spec('plotly')):
-        target.options.plot_options.plot_HTML = False
-
-    print('\n > Starting fit for %s' % target.infile.parent.name)
-    target.log.log_target_info()
-
-    sys.stdout.flush()
-    # Start a timer to record the total runtime
-    start_time = time.time()
-
-    target.log.log_fit_information()
-    target.templates = initialize_templates(target) # TODO: move to BadassContext
-
-    # TODO: need?
-    # TODO: input from past line test or user config
-    # Set force_thresh to np.inf. This will get overridden if the user does the line test
-    force_thresh = badass_test_suite.root_mean_squared_error(copy.deepcopy(target.spec),np.full_like(target.spec,np.nanmedian(target.spec)))
-
-    # Initialize free parameters (all components, lines, etc.)
-    target.log.info('\n Initializing parameters...')
-    target.log.info('----------------------------------------------------------------------------------------------------')
-
-    # TODO: results in BadassContext
-    # TODO: don't need to do this before line/config testing
-    param_dict, line_list, combined_line_list, soft_cons, ncomp_dict = initialize_pars(target)
-
-    # Output all free parameters of fit prior to fitting (useful for diagnostics)
-    if target.options.fit_options.output_pars or target.options.output_options.verbose:
-        target.log.output_free_pars(line_list, param_dict, soft_cons)
-    target.log.output_line_list(line_list, soft_cons)
-
-    blob_pars = get_blob_pars(target, combined_line_list)
-    target.log.output_options()
+# TODO: move logger to here instead of target
+class BadassRunContext:
+    def __init__(self, target):
+        self.target = target
+        self.options = target.options
+        self.verbose = self.options.output_options.verbose
 
 
-    #### Line Testing ################################################################################################################################################################################
+    def run(self):
+        if self.options.io_options.dust_cache != None:
+            IrsaDust.cache_location = str(dust_cache)
 
-    # Line testing is meant to be performed prior to max. like and MCMC to allow for a better line list determination (number of multiple components).
+        # Check to make sure plotly is installed for HTML interactive plots:
+        if (self.options.plot_options.plot_HTML) and (not importlib.util.find_spec('plotly')):
+            self.options.plot_options.plot_HTML = False
 
-    # TODO: move to separate function
-    if (target.options.fit_options.test_lines) and (target.options.test_options.test_mode == 'line'):
+        print('\n > Starting fit for %s' % self.target.infile.parent.name)
+        self.target.log.log_target_info()
 
+        sys.stdout.flush()
+        # Start a timer to record the total runtime
+        start_time = time.time()
+
+        self.target.log.log_fit_information()
+        # TODO: the templates ctx is BadassRunContext
+        self.templates = initialize_templates(self.target)
+
+        # TODO: need?
+        # TODO: input from past line test or user config
+        # Set force_thresh to np.inf. This will get overridden if the user does the line test
+        self.force_thresh = badass_test_suite.root_mean_squared_error(self.target.spec, np.full_like(self.target.spec,np.nanmedian(self.target.spec)))
+
+        # Initialize free parameters (all components, lines, etc.)
+        self.target.log.info('\n Initializing parameters...')
+        self.target.log.info('----------------------------------------------------------------------------------------------------')
+
+        # TODO: don't need to do this before line/config testing
+        self.initialize_pars()
+
+        # Output all free parameters of fit prior to fitting (useful for diagnostics)
+        if self.options.fit_options.output_pars or self.verbose:
+            self.target.log.output_free_pars(self.line_list, self.param_dict, self.soft_cons)
+        self.target.log.output_line_list(self.line_list, self.soft_cons)
+
+        self.get_blob_pars()
+        self.target.log.output_options()
+
+        # Line testing is meant to be performed prior to max like and MCMC to allow for a better line list determination (number of multiple components)
+        continue_fit = self.run_tests()
+
+        # TODO: honor continue_fit
+
+        # Max Likelihood Fitting
+        # TODO: move all to separate function
+
+        if (self.force_thresh/self.force_thresh==1):
+            self.force_best=True
+        else:
+            self.force_best=False 
+            self.force_thresh=np.inf
+
+        if self.verbose and self.force_best:
+            print("\n Required Maximum Likelihood RMSE threshold: %0.4f \n" % (self.force_thresh))
+
+        # TODO: remove, used anywhere?
+        outflow_test_options = False
+
+        # TODO: eventually larger BadassCtx class
+        mlctx = Prodict()
+        mlctx.target = self.target
+        mlctx.noise = copy.deepcopy(self.target.noise) # in case needs updating with reweighting
+        mlctx.line_list = self.line_list
+        mlctx.combined_line_list = self.combined_line_list
+        mlctx.soft_cons = self.soft_cons
+        mlctx.outflow_test_options = outflow_test_options
+        mlctx.templates = self.templates
+        mlctx.blob_pars = self.blob_pars
+
+        # Peform the initial maximum likelihood fit (used for initial guesses for MCMC)
+        # TODO: put rest of parameters in mlctx
+        result_dict, comp_dict = max_likelihood(self.param_dict,mlctx,fit_type='init',fit_stat=self.options.fit_options.fit_stat,
+                                                output_model=False,test_outflows=False,n_basinhop=self.options.fit_options.n_basinhop,
+                                                reweighting=self.options.fit_options.reweighting,max_like_niter=self.options.fit_options.max_like_niter,
+                                                force_best=self.force_best,force_thresh=self.force_thresh,full_verbose=self.verbose,
+                                                verbose=self.verbose)
+
+        # if not target.options.mcmc_options.mcmc_fit:
+        # If not performing MCMC fitting, terminate BADASS here and write 
+        # parameters, uncertainties, and components to a fits file
+        # Write final parameters to file
+        # Header information
+        header_dict = {}
+        header_dict["z_sdss"] = self.target.z
+        header_dict["med_noise"] = np.nanmedian(self.target.noise)
+        header_dict["velscale"]  = self.target.velscale
+        header_dict["fit_norm"]  = self.target.fit_norm
+        header_dict["flux_norm"] = self.target.options.fit_options.flux_norm
+
+        # TODO: remove, add to ifu inputs
+        binnum = spaxelx = spaxely = None
+        write_max_like_results(copy.deepcopy(result_dict),copy.deepcopy(comp_dict),header_dict,self.target.fit_mask,self.target.fit_norm,self.target.outdir,binnum,spaxelx,spaxely)
+        
+        # Make interactive HTML plot 
+        if self.target.options.plot_options.plot_HTML:
+            # TODO: object name option
+            plotly_best_fit(self.target.options.io_options.output_dir,self.line_list,self.target.fit_mask,self.target.outdir)
+
+        print(' - Done fitting %s! \n' % self.target.options.io_options.output_dir)
+        sys.stdout.flush()
+
+
+    def initialize_pars(self, user_lines=None, remove_lines=False):
+        """
+        Initializes all free parameters for the fit based on user input and options.
+        """
+
+        # Initial conditions for some parameters
+        max_flux = np.nanmax(self.target.spec)*1.5
+        median_flux = np.nanmedian(self.target.spec)
+
+        # Padding on the edges; any line(s) within this many angstroms is omitted
+        # from the fit so problems do not occur with the fit
+        edge_pad = 10.0
+        par_input = {} # initialize an empty dictionary to store free parameter dicts
+        template_args = {'median_flux':median_flux, 'max_flux':max_flux}
+
+        for template in self.templates.values():
+            template.initialize_parameters(par_input, template_args)
+
+        # TODO: config file
+        # TODO: separate classes?
+        if self.options.comp_options.fit_poly:
+            if (self.options.poly_options.apoly.bool) and (self.options.poly_options.apoly.order >= 0):
+                if self.verbose:
+                    print('\t- Fitting additive legendre polynomial component')
+                for n in range(1, int(self.options.poly_options.apoly.order)+1):
+                    par_input['APOLY_COEFF_%d' % n] = {'init':0.0, 'plim':(-1.0e2,1.0e2),}
+            if (self.options.poly_options.mpoly.bool) and (self.options.poly_options.mpoly.order >= 0):
+                if self.verbose:
+                    print('\t- Fitting multiplicative legendre polynomial component')
+                for n in range(1, int(self.options.poly_options.mpoly.order)+1):
+                    par_input['MPOLY_COEFF_%d' % n] = {'init':0.0,'plim':(-1.0e2,1.0e2),}
+
+        # TODO: config file
+        if self.options.comp_options.fit_power:
+            #### Simple Power-Law (AGN continuum)
+            if self.options.power_options.type == 'simple':
+                if self.verbose:
+                    print('\t- Fitting Simple AGN power-law continuum')
+                # AGN simple power-law amplitude
+                par_input['POWER_AMP'] = {'init':(0.5*median_flux), 'plim':(0,max_flux),}
+                # AGN simple power-law slope
+                par_input['POWER_SLOPE'] = {'init':-1.0, 'plim':(-6.0,6.0),}
+                
+            #### Smoothly-Broken Power-Law (AGN continuum)
+            if self.options.power_options.type == 'broken':
+                if self.verbose:
+                    print('\t- Fitting Smoothly-Broken AGN power-law continuum.')
+                # AGN simple power-law amplitude
+                par_input['POWER_AMP'] = {'init':(0.5*median_flux), 'plim':(0,max_flux),}
+                # AGN simple power-law break wavelength
+                par_input['POWER_BREAK'] = {'init':(np.max(self.target.wave) - (0.5*(np.max(self.target.wave)-np.min(self.target.wave)))),
+                                            'plim':(np.min(self.target.wave), np.max(self.target.wave)),}
+                # AGN simple power-law slope 1 (blue side)
+                par_input['POWER_SLOPE_1'] = {'init':-1.0, 'plim':(-6.0,6.0),}
+                # AGN simple power-law slope 2 (red side)
+                par_input['POWER_SLOPE_2'] = {'init':-1.0, 'plim':(-6.0,6.0),}
+                # Power-law curvature parameter (Delta)
+                par_input['POWER_CURVATURE'] = {'init':0.10, 'plim':(0.01,1.0),}
+
+
+        # Emission Lines
+        self.line_list = user_lines if user_lines else self.options.user_lines if self.options.user_lines else line_list_default()
+        self.add_line_comps()
+
+        # Add the FWHM resolution and central pixel locations for each line so we don't have to find them during the fit.
+        self.add_disp_res()
+        # TODO: do this after all the line par initialization so we don't have to edit it along the way
+        self.make_ncomp_dict()
+
+        # Generate line free parameters based on input line_list
+        self.initialize_line_pars()
+
+        param_keys = list(par_input.keys()) + list(self.line_par_input.keys())
+        # Check hard line constraints
+        self.check_hard_cons(param_keys)
+
+        # TODO: way to not have to run this twice?
+        # Re-Generate line free parameters based on revised line_list
+        self.initialize_line_pars()
+
+        # TODO: just add line pars directly to par_input?
+        # Append line_par_input to par_input
+        self.param_dict = {**par_input, **(self.line_par_input)}
+
+        # The default line list is automatically generated from lines with multiple components.
+        # User can provide a combined line list, which can override the default.
+        self.generate_comb_line_list()
+
+        # Check soft-constraints
+        # Default soft constraints
+        # Soft constraints: If you want to vary a free parameter relative to another free parameter (such as
+        # requiring that broad lines have larger widths than narrow lines), these are called "soft" constraints,
+        # or "inequality" constraints. 
+        # These are passed through a separate list of tuples which are used by the maximum likelihood constraints 
+        # and prior constraints by emcee.  Soft constraints have a very specific format following
+        # the scipy optimize SLSQP syntax: 
+        #
+        #               (parameter1 - parameter2) >= 0.0 OR (parameter1 >= parameter2)
+        #
+        self.check_soft_cons()
+
+
+    def add_line_comps(self):
+        """
+        Checks each entry in the complete (narrow, broad, absorption, and user) line list
+        and ensures all necessary keywords are input. It also checks every line entry against the 
+        front-end component options (comp_options). The only required keyword for a line entry is 
+        the "center" wavelength of the line. If "amp", "disp", "voff", "h3" and "h4" (for Gauss-Hermite)
+        line profiles are missing, it assumes these are all "free" parameters in the fitting of that line. 
+        If "line_type" is not defined, it is assumed to be "na" (narrow).  If "line_profile" is not defined, 
+        it is assumed to be "gaussian". 
+
+        Line list hyper-parameters:
+        amp, amp_init, amp_plim
+        disp, disp_init, disp_plim
+        voff, voff_init, voff_plim
+        shape, shape_init, shape_plim,
+        h3, h4, h5, h6, h7, h8, h9, h10, _init, _plim
+        line_type
+        line_profile
+        ncomp
+        parent
+        label
+        """
+
+        comp_options = self.options.comp_options
+        verbose = self.options.output_options.verbose
+        edge_pad = 10 # TODO: config
+
+        # TODO: better handle types + 'user'
+        line_types = {
+            'na': 'narrow',
+            'br': 'broad',
+            'abs': 'absorp',
+        }
+        line_profiles = ['gaussian', 'lorentzian', 'gauss-hermite', 'voigt', 'laplace', 'uniform']
+        line_attrs = ['amp', 'disp', 'voff']
+
+        for line_name, line_dict in self.line_list.items():
+
+            if 'line_type' not in line_dict:
+                line_dict['line_type'] = 'user'
+
+            line_type_s = line_dict['line_type'] # short name
+            if (not line_type_s == 'user') and (not line_type_s in line_types):
+                print('Unsupported line type: %s' % line_type_s)
+                continue
+
+            line_type = line_types[line_type_s] if line_type_s in line_types else 'user'
+            is_user = line_type == 'user'
+            type_options = self.options[line_type+'_options']
+
+            # TODO: center is unit-configurable
+            if ('center' not in line_dict) or (not isinstance(line_dict['center'],(int,float))):
+                # TODO: just log and continue?
+                raise ValueError('\n Line list entry requires at least \'center\' wavelength (in Angstroms) to be defined as an int or float type\n')
+
+            # TODO: should use fitting region?
+            # Check line in wavelength region
+            if (line_dict['center'] <= self.target.wave[0]+edge_pad) or (line_dict['center'] >= self.target.wave[-1]-edge_pad):
+                continue
+
+            # Check if we are fitting lines of this type
+            if not comp_options['fit_'+line_type]:
+                continue
+
+            if is_user:
+                if 'line_profile' not in line_dict:
+                    line_dict['line_profile'] = 'gaussian' # TODO: default in config
+            else:
+                line_dict['line_profile'] = type_options['line_profile']
+
+            line_profile = line_dict['line_profile']
+            if line_profile not in line_profiles:
+                print('Unsupported line profile: %s' % line_profile)
+
+            for attr in line_attrs:
+                if attr not in line_dict:
+                    line_dict[attr] = 'free'
+
+            # TODO: something else for these specialized line profiles?
+            if (not is_user) and (line_profile == 'gauss-hermite'):
+                # Gauss-Hermite higher-order moments for each narrow, broad, and absorp
+                if type_options['n_moments'] > 2:
+                    for m in range(3, 3+(type_options['n_moments']-2)):
+                        attr = 'h%d'%m
+                        if attr not in line_dict:
+                            line_dict[attr] = 'free'
+
+                # If the line profile is Gauss-Hermite, but the number of higher-order moments is 
+                # less than or equal to 2 (for which the line profile is just Gaussian), remove any 
+                # unnecessary higher-order line parameters that may be in the line dictionary.
+                for m in range(type_options['n_moments']+1, 11):
+                    attr = 'h%d'%m
+                    line_dict.pop(attr, None)
+                    line_dict.pop(attr+'_init', None)
+                    line_dict.pop(attr+'_plim', None)
+
+
+            # Higher-order moments for laplace and uniform (h3 and h4) only for each narrow, broad, and absorp.
+            if line_profile in ['laplace','uniform']:
+                if 'h3' not in line_dict:
+                    line_dict['h3'] = 'free'
+                if 'h4' not in line_dict:
+                    line_dict['h4'] = 'free'
+
+            if line_profile not in ['gauss-hermite', 'laplace', 'uniform']:
+                for m in range(3,11,1):
+                    attr = 'h%d'%m
+                    line_dict.pop(attr, None)
+                    line_dict.pop(attr+'_init', None)
+                    line_dict.pop(attr+'_plim', None)
+
+
+            if line_profile == 'voigt':
+                if 'shape' not in line_dict:
+                    line_dict['shape'] = 'free'
+            else:
+                line_dict.pop('shape', None)
+                line_dict.pop('shape_init', None)
+                line_dict.pop('shape_plim', None)
+
+            # line widths (narrow, broad, and absorption disp) are tied, respectively.
+            if comp_options.tie_line_disp:
+                for m in range(3, 3+type_options['n_moments']-2):
+                    line_dict.pop('h%d'%m, None)
+                line_dict.pop('shape', None)
+
+                type_prefix = line_type_s.upper()
+                if line_type == 'user': type_prefix = 'NA' # default to narrow
+
+                line_dict['disp'] = type_prefix + '_DISP'
+                if line_profile == 'gauss-hermite':
+                    for m in range(3, 3+type_options['n_moments']-2):
+                        line_dict['h%d'%m] = type_prefix + '_H%d'%m
+                elif line_profile == 'voigt':
+                    line_dict['shape'] = type_prefix + '_SHAPE'
+                elif line_profile in ['laplace', 'uniform']:
+                    line_dict['h3'] = type_prefix + '_H3'
+                    line_dict['h4'] = type_prefix + '_H4'
+
+            # line velocity offsets (narrow, broad, and absorption voff) are tied, respectively.
+            if comp_options.tie_line_voff:
+                type_prefix = line_type_s.upper()
+                if line_type == 'user': type_prefix = 'NA' # default to narrow
+                line_dict['voff'] = type_prefix + '_VOFF'
+
+            if ('ncomp' not in line_dict) or (line_dict['ncomp'] <= 0):
+                line_dict['ncomp'] = 1
+
+            # Check parent keyword if exists against line list; will be used for generating combined lines
+            if ('parent' in line_dict) and (line_dict['parent'] not in self.line_list):
+                line_dict.pop('parent', None)
+
+
+        valid_keys = ['center','center_pix','disp_res_kms','disp_res_ang','amp','disp','voff','shape','line_type',
+                      'line_profile','amp_init','amp_plim','disp_init','disp_plim','voff_init','voff_plim',
+                      'shape_init','shape_plim','amp_prior','disp_prior','voff_prior','shape_prior',
+                      'label','ncomp','parent']
+
+        for line_type in line_types.values():
+            type_options = self.target.options[line_type+'_options']
+            for suffix in ['', '_init', '_plim', '_prior']:
+                valid_keys.extend(['h%d%s'%(m,suffix) for m in range(3, 3+type_options['n_moments']-2)])
+
+        for line_dict in self.line_list.values():
+            for key in line_dict.keys():
+                if key not in valid_keys:
+                    raise ValueError('\n %s not a valid keyword for the line list!\n'%key)
+
+
+    def add_disp_res(self):
+        # Perform linear interpolation on the disp_res array as a function of wavelength 
+        # We will use this to determine the dispersion resolution as a function of wavelenth for each 
+        # emission line so we can correct for the resolution at every iteration.
+        disp_res_ftn = interp1d(self.target.wave,self.target.disp_res,kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
+        # Interpolation function that maps x (in angstroms) to pixels so we can get the exact
+        # location in pixel space of the emission line.
+        x_pix = np.array(range(len(self.target.wave)))
+        pix_interp_ftn = interp1d(self.target.wave,x_pix,kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
+
+        # iterate through the line_list and add the keywords
+        for line_dict in self.line_list.values():
+            center = line_dict['center'] # line center in Angstroms
+            line_dict['center_pix'] = float(pix_interp_ftn(center)) # line center in pixels
+            disp_res_ang = float(disp_res_ftn(center)) # instrumental FWHM resolution in angstroms
+            line_dict['disp_res_ang'] = disp_res_ang
+            c = const.c.to('km/s').value
+            line_dict['disp_res_kms'] = (disp_res_ang/center)*c # instrumental FWHM resolution in km/s
+
+
+    # TODO: re-evaluate if needed after line config revamp
+    def make_ncomp_dict(self):
+        """
+        Make a dictionary of multiple components (ncomp).
+        """
+        # Check to make sure there is at least 1 parent line (ncomp = 1) in the line_list
+        # print([True if line_list[line]["ncomp"]==1 else False for line in line_list])
+
+        if len(self.line_list) == 0:
+            self.ncomp_dict = {}
+            return
+
+        if np.all([self.line_list[line]['ncomp'] != 1 for line in self.line_list]):
+            raise ValueError('\n There must be at least one parent line (ncomp=1) for any line with ncomp>1')
+
+        max_ncomp = np.max([line_dict['ncomp'] for line_dict in self.line_list.values()])
+        ncomp_dict = {'NCOMP_%d'%i:{} for i in range(1,max_ncomp+1)}
+        
+        for line_name, line_dict in self.line_list.items():
+            ncomp = line_dict['ncomp']
+            ncomp_dict['NCOMP_%d'%ncomp][line_name] = line_dict
+
+        self.ncomp_dict = ncomp_dict
+
+
+    def initialize_line_pars(self):
+        """
+        This function initializes the initial guess, parameter limits (lower and upper), and 
+        priors if not explicily defined by the user in the line list for each line.
+
+        Special care is taken with tring to determine the location of the particular line
+        in terms of velocity.
+        """
+
+        c = const.c.to('km/s').value
+
+        # TODO: config file
+        # type_name, disp_init, disp_plim, h_init, h_plim, shape_init, shape_plim
+        line_types = {
+            'na': ('narrow', 250.0, (0.0,1200.0), 0.0, (-0.5,0.5), 0.0, (0.0,1.0),),
+            'br': ('broad', 2500.0, (500.0,15000.0), 0.0, (-0.5,0.5), 0.0, (0.0,1.0),),
+            'abs': ('absorp', 450.0, (0.1,2500.0), 0.0, (-0.5,0.5), 0.0, (0.0,1.0),),
+            'out': ('outflow', 100.0, (0.0,800.0), 0.0, (-0.5,0.5), 0.0, (0.0,1.0),),
+        }
+
+        # First we remove the continuum 
+        galaxy_csub = badass_tools.continuum_subtract(self.target.wave,self.target.spec,self.target.noise,sigma_clip=2.0,clip_iter=25,filter_size=[25,50,100,150,200,250,500],
+                       noise_scale=1.0,opt_rchi2=True,plot=False,
+                       fig_scale=8,fontsize=16,verbose=False)
+
+        try:
+            # normalize by noise
+            norm_csub = galaxy_csub/self.target.noise
+
+            peaks,_ = scipy.signal.find_peaks(norm_csub, height=2.0, width=3.0, prominence=1)
+            troughs,_ = scipy.signal.find_peaks(-norm_csub, height=2.0, width=3.0, prominence=1)
+            peak_wave = self.target.wave[peaks]
+            trough_wave = self.target.wave[troughs]
+        except:
+            if self.verbose:
+                print('\n Warning! Peak finding algorithm used for initial guesses of amplitude and velocity failed! Defaulting to user-defined locations...')
+            peak_wave = np.array([line_dict['center'] for line_dict in self.line_list.values() if line_dict['line_type'] in ['na','br']])
+            trough_wave = np.array([line_dict['center'] for line_dict in self.line_list.values() if line_dict['line_type'] in ['abs']])
+            if len(peak_wave) == 0:
+                peak_wave = np.array([0])
+            if len(trough_wave) == 0:
+                trough_wave = np.array([0])
+
+
+        def amp_hyperpars(line_type, line_center, voff_init, voff_plim, amp_factor):
+            """
+            Assigns the user-defined or default line amplitude initial guesses and limits.
+            """
+            line_center = float(line_center)
+
+            line_types = {
+                'na': ('narrow', peak_wave, 1),
+                'br': ('broad', peak_wave, 1),
+                'abs': ('absorp', trough_wave, -1),
+            }
+
+            type_options = self.options[line_types[line_type][0]+'_options']
+
+            if (line_type in line_types) and type_options['amp_plim']:
+                min_amp, max_amp = np.abs(np.min(type_options['amp_plim'])), np.abs(np.max(type_options['amp_plim']))
+            else:
+                min_amp, max_amp = 0.0, 2*np.nanmax(self.target.spec)
+
+            mf = line_types[line_type][2] # multiplicative factor (1 or -1) to handle troughs
+            feature_wave = line_types[line_type][1]
+
+            # calculate velocities of features around line center
+            feature_center = feature_wave[np.argmin(np.abs(feature_wave-line_center))] # feature in angstroms
+            feature_vel = (feature_center-line_center)/line_center*c # feature in velocity offset
+
+            center = line_center
+            # if velocity less than search_kms, calculate amplitude at that point
+            if (feature_vel >= voff_plim[0]) and (feature_vel <= voff_plim[1]):
+                center = feature_center
+
+            init_amp = self.target.spec[find_nearest(self.target.wave,center)[1]]
+            if (init_amp >= min_amp) and (init_amp <= max_amp):
+                return mf*init_amp/amp_factor, (min(mf*min_amp,mf*max_amp), max(mf*min_amp,mf*max_amp))
+            return mf*max_amp-mf*(max_amp-min_amp)/2.0/amp_factor, (min(mf*min_amp,mf*max_amp), max(mf*min_amp,mf*max_amp))
+
+
+        def disp_hyperpars(line_type,line_center,line_profile): # FWHM hyperparameters
+            """
+            Assigns the user-defined or default line width (dispersion)
+            initial guesses and limits.
+            """
+
+            # TODO: in config file
+            line_types = {
+                'na': ('narrow', 50.0, (0.001,300.0)),
+                'br': ('broad', 500.0, (300.0,3000.0)),
+                'abs': ('absorp', 50.0, (0.001,300.0))
+            }
+
+            default_init = line_types[line_type][1]
+            type_options = self.options[line_types[line_type][0] + '_options']
+
+            min_disp, max_disp = type_options['disp_plim'] if type_options['disp_plim'] else line_types[line_type][2]
+
+            if (default_init >= min_disp) and (default_init <= max_disp):
+                return default_init, (min_disp, max_disp)
+            return max_disp-(max_disp-min_disp)/2.0, (min_disp, max_disp)
+
+
+        def voff_hyperpars(line_type, line_center):
+            """
+            Assigns the user-defined or default line velocity offset (voff)
+            initial guesses and limits.
+            """
+
+            voff_default_init = 0.0
+
+            # TODO: in config file
+            line_types = {
+                'na': ('narrow', (-500,500), peak_wave),
+                'br': ('broad', (-1000,1000), peak_wave),
+                'abs': ('absorp', (-500,500), trough_wave)
+            }
+
+            if line_type not in line_types:
+                min_voff, max_voff = line_types['na'][1] # default narrow
+                if (min_voff <= voff_default_init) and (max_voff >= voff_default_init):
+                    return voff_default_init, (min_voff, max_voff)
+                return max_voff - ((max_voff-min_voff)/2.0), (min_voff, max_voff)
+
+            type_options = self.options[line_types[line_type][0] + '_options']
+            min_voff, max_voff = line_types[line_type][1]
+            if type_options['voff_plim']:
+                min_voff, max_voff = type_options['voff_plim']
+
+            # calculate velocities of features around line center
+            feature_wave = line_types[line_type][2]
+            feature_ang = feature_wave[np.argmin(np.abs(feature_wave-line_center))] # feature in angstroms
+            feature_vel = (feature_ang-line_center)/line_center*c # feature in velocity offset
+            if (feature_vel >= min_voff) and (feature_vel <= max_voff):
+                return feature_vel, (min_voff, max_voff)
+            else:
+                return voff_default_init, (min_voff, max_voff)
+
+
+        def h_moment_hyperpars():
+            # Higher-order moments for Gauss-Hermite line profiles
+            # extends to Laplace and Uniform kernels
+            # TODO: config file
+            h_init = 0.0
+            h_lim  = (-0.5,0.5)
+            return h_init, h_lim
+
+
+        def shape_hyperpars(): # shape of the Voigt profile; if line_profile="voigt"
+            # TODO: config file
+            shape_init = 0.0
+            shape_lim = (0.0,1.0)
+            return shape_init, shape_lim    
+
+
+        line_par_input = {}
+
+        # We start with standard lines and options. These are added one-by-one. Then we check specific line options and then override any lines that have
+        # been already added. Params are added regardless of component options as long as the parameter is set to "free"
+        for line_name, line_dict in self.line_list.items():
+
+            line_type = line_dict['line_type']
+            line_center = line_dict['center']
+
+            # Velocity offsets determine both the intial guess in line velocity as well as amplitude, so it makes sense to perform the voff for each line first.
+            if (('voff' in line_dict) and (line_dict['voff'] == 'free')):
+                voff_default_init, voff_default_plim = voff_hyperpars(line_type, line_center)
+                line_par_input[line_name+'_VOFF'] = {'init': line_dict.get('voff_init', voff_default_init), 
+                                                     'plim':line_dict.get('voff_plim', voff_default_plim),
+                                                     'prior':line_dict.get('voff_prior', {'type':'gaussian'}),
+                                                    }
+                if line_par_input[line_name+'_VOFF']['prior'] is None: line_par_input[line_name+'_VOFF'].pop('prior',None)
+
+                # Check to make sure init value is within limits of plim
+                if (line_par_input[line_name+'_VOFF']['init'] < line_par_input[line_name+'_VOFF']['plim'][0]) or (line_par_input[line_name+'_VOFF']['init'] > line_par_input[line_name+'_VOFF']['plim'][1]):
+                    raise ValueError('\n Velocity offset (voff) initial value (voff_init) for %s outside of parameter limits (voff_plim)!\n' % (line_name))
+
+
+            if (('amp' in line_dict) and (line_dict['amp'] == 'free')):
+                # If amplitude parameter limits are already set in (narrow,broad,absorp)_options, then use those, otherwise, automatically generate them
+                amp_factor = 1
+                if 'ncomp' in line_dict:
+                    # Get number of components that are in the line list for this line
+                    total_ncomp = [1]
+                    # If line is a parent line
+                    if line_dict['ncomp'] == 1:
+                        for ld in self.line_list.values():
+                            if ('parent' in ld) and (ld['parent'] == line_name):
+                                total_ncomp.append(ld['ncomp'])
+
+                    # if line is a child line
+                    if 'parent' in line_dict:
+                        # Look in the line list for any other lines that have the same parent and append them
+                        for ld in self.line_list.values():
+                            if ('parent' in ld) and (ld['parent'] == line_dict['parent']):
+                                total_ncomp.append(ld['ncomp'])
+
+                    amp_factor = np.max(total_ncomp)
+
+                # Amplitude is dependent on velocity offset from expected location, which we determined above.  If the amplitude is free but voff 
+                # is tied to another line, we must extract whatever tied voff is
+                # TODO: config file
+                voff_init = 0.0
+                voff_plim = (-500,500)
+                if ('voff' in line_dict) and (line_dict['voff'] == 'free'):
+                    voff_init = line_par_input[line_name+'_VOFF']['init']
+                    voff_plim = line_par_input[line_name+'_VOFF']['plim']
+
+                amp_default_init, amp_default_plim = amp_hyperpars(line_type, line_center, voff_init, voff_plim, amp_factor)
+                line_par_input[line_name+'_AMP'] = {'init': line_dict.get('amp_init', amp_default_init), 
+                                                    'plim': line_dict.get('amp_plim', amp_default_plim),
+                                                    'prior': line_dict.get('amp_prior'),
+                                                   }
+                if line_par_input[line_name+'_AMP']['prior'] is None: line_par_input[line_name+'_AMP'].pop('prior',None)
+
+                # Check to make sure init value is within limits of plim
+                if (line_par_input[line_name+'_AMP']['init'] < line_par_input[line_name+'_AMP']['plim'][0]) or (line_par_input[line_name+'_AMP']['init'] > line_par_input[line_name+'_AMP']['plim'][1]):
+                    raise ValueError('\n Amplitude (amp) initial value (amp_init) for %s outside of parameter limits (amp_plim)!\n' % (line_name))
+
+
+            if (('disp' in line_dict) and (line_dict['disp'] == 'free')):
+                disp_default_init, disp_default_plim = disp_hyperpars(line_type, line_center, line_dict['line_profile'])
+                line_par_input[line_name+'_DISP'] = {'init': line_dict.get('disp_init', disp_default_init), 
+                                                     'plim': line_dict.get('disp_plim', disp_default_plim),
+                                                     'prior':line_dict.get('disp_prior')
+                                                    }
+                if line_par_input[line_name+'_DISP']['prior'] is None: line_par_input[line_name+'_DISP'].pop('prior',None)
+
+                # Check to make sure init value is within limits of plim
+                if (line_par_input[line_name+'_DISP']['init'] < line_par_input[line_name+'_DISP']['plim'][0]) or (line_par_input[line_name+'_DISP']['init'] > line_par_input[line_name+'_DISP']['plim'][1]):
+                    raise ValueError('\n DISP (disp) initial value (disp_init) for %s outside of parameter limits (disp_plim)!\n' % (line_name))
+
+
+            if (line_dict['line_profile'] == 'gauss-hermite'):
+                type_options = target.options[line_types[line_type][0] + '_options']
+                n_moments = type_options['n_moments']
+
+                # TODO: combine with below
+                h_default_init, h_default_plim = h_moment_hyperpars()
+                for m in range(3,3+(n_moments-2)):
+                    attr = 'h%d'%m
+                    par_attr = '%s_H%d'%(line_name,m)
+                    if (attr in line_dict) and (line_dict[attr] == 'free'):
+                        line_par_input[par_attr] = {'init': line_dict.get(attr+'_init', h_default_init),
+                                                    'plim': line_dict.get(attr+'_plim', h_default_plim),
+                                                    'prior': line_dict.get(attr+'_prior', {'type':'gaussian'})
+                                                   }
+                    if line_par_input[par_attr]['prior'] is None: line_par_input[par_attr].pop('prior',None)
+
+                    # Check to make sure init value is within limits of plim
+                    if (line_par_input[par_attr]['init'] < line_par_input[par_attr]['plim'][0]) or (line_par_input[par_attr]["init"] > line_par_input[par_attr]['plim'][1]):
+                        raise ValueError('\n Gauss-Hermite moment h%d initial value (h%d_init) for %s outside of parameter limits (h%d_plim)!\n' % (m,m,line_name,m))
+
+
+            if line_dict['line_profile'] in ['laplace','uniform']:
+                h_default_init, h_default_plim = h_moment_hyperpars()
+                for m in range(3,5):
+                    attr = 'h%d'%m
+                    par_attr = '%s_H%d'%(line_name,m)
+                    if (attr in line_dict) and (line_dict[attr] == 'free'):
+                        line_par_input[par_attr] = {'init': line_dict.get(attr+'_init', h_default_init),
+                                                    'plim': line_dict.get(attr+'_plim', h_default_plim),
+                                                    'prior': line_dict.get(attr+'_prior', {'type':'halfnorm'})
+                                                   }
+                    if line_par_input[par_attr]['prior'] is None: line_par_input[par_attr].pop('prior',None)
+
+                    # Check to make sure init value is within limits of plim
+                    if (line_par_input[par_attr]['init'] < line_par_input[par_attr]['plim'][0]) or (line_par_input[par_attr]['init'] > line_par_input[par_attr]['plim'][1]):
+                        raise ValueError('\n Laplace or Uniform moment h%d initial value (h%d_init) for %s outside of parameter limits (h%d_plim)!\n' % (m,m,line_name,m))
+
+                # TODO: config file
+                # add exceptions for h4 in each line profile; laplace h4>=0, uniform h4<0
+                if line_dict['line_profile'] == 'laplace':
+                    line_par_input['%s_H3'%line_name]['init'] = 0.01
+                    line_par_input['%s_H3'%line_name]['plim'] = (-0.15,0.15)
+                    line_par_input['%s_H4'%line_name]['init'] = 0.01
+                    line_par_input['%s_H4'%line_name]['plim'] = (0,0.2)
+
+                if line_dict['line_profile'] == 'uniform':
+                    line_par_input['%s_H4'%line_name]['init'] = -0.01
+                    line_par_input['%s_H4'%line_name]['plim'] = (-0.3,-1e-4)
+
+
+            if ('shape' in line_dict) and (line_dict['shape'] == 'free'):
+                par_attr = '%s_SHAPE'%line_name
+                shape_default_init, shape_default_plim = shape_hyperpars()
+                line_par_input[par_attr] = {'init': line_dict.get('shape_init', shape_default_init),
+                                            'plim': line_dict.get('shape_plim', shape_default_plim),
+                                            'prior': line_dict.get('shape_prior')
+                                           }
+                if line_par_input[par_attr]['prior'] is None: line_par_input[par_attr].pop('prior',None)
+
+                # Check to make sure init value is within limits of plim
+                if (line_par_input[par_attr]['init'] < line_par_input[par_attr]['plim'][0]) or (line_par_input[par_attr]['init'] > line_par_input[par_attr]['plim'][1]):
+                    raise ValueError('\n Voigt profile shape parameter (shape) initial value (shape_init) for %s outside of parameter limits (shape_plim)!\n' % (line_name))
+
+
+        # If tie_line_disp, we tie all widths (including any higher order moments) by respective line groups (Na, Br, Out, Abs)
+        comp_options = self.options.comp_options
+        if comp_options.tie_line_disp:
+            for line_type, type_attrs in line_types.items():
+                line_profile = comp_options[line_type+'_line_profile']
+                if (comp_options['fit_'+type_attrs[0]]) or (line_type in [line_dict['line_type'] for line_dict in self.line_list.values()]):
+                    line_par_input[line_type.upper()+'_DISP'] = {'init': type_attrs[1], 'plim': type_attrs[2]}
+                if (line_profile == 'gauss-hermite') and (comp_options['n_moments'] > 2):
+                    for m in range(3,3+comp_options['n_moments']-2):
+                        line_par_input[line_type.upper()+'_H%d'%m] = {'init': type_attrs[3], 'plim': type_attrs[4]}
+                if line_profile == 'voigt':
+                    line_par_input[line_type.upper()+'_SHAPE'] = {'init': type_attrs[5], 'plim': type_attrs[6]}
+                if line_profile in ['laplace', 'uniform']:
+                    for m in range(3,5):
+                        line_par_input[line_type.upper()+'_H%d'%m] = {'init': type_attrs[3], 'plim': type_attrs[4]}
+
+        # If tie_line_voff, we tie all velocity offsets (including any higher order moments) by respective line groups (Na, Br, Out, Abs)   
+        if comp_options.tie_line_voff:
+            for line_type, type_attrs in line_types.items():
+                if (comp_options['fit_'+type_attrs[0]]) or (line_type in [line_dict['line_type'] for line_dict in self.line_list.values()]):
+                    # TODO: config file
+                    line_par_input[line_type.upper()+'_VOFF'] = {'init': 0.0, 'plim': (-500.0,500.0), 'prior': {'type': 'gaussian'}}
+
+        self.line_par_input = line_par_input
+
+
+    def check_hard_cons(self, param_keys, remove_lines=False):
+        valid_keys = ['amp','disp','voff', 'shape'] + ['h%d'%m for m in range(3,11)]
+        param_dict = {par:0 for par in param_keys}
+        for line_name, line_dict in self.line_list.items():
+            for hpar, value in line_dict.items():
+                if (hpar not in valid_keys) or (value == 'free'):
+                    continue
+
+                if isinstance(value, (int,float)):
+                    line_dict[hpar] = float(value)
+                    continue
+
+                # hpar value is an expression, make sure it's valid
+                if ne.validate(value, local_dict=param_dict) is not None:
+                    if remove_lines:
+                        if self.verbose:
+                            print('\n WARNING: Hard-constraint %s not found in parameter list or could not be parsed; removing %s line from line list.\n' % (value,line_name))
+                        self.line_list.pop(line, None)
+                        for n, ndict in self.ncomp_dict.items():
+                            ndict.pop(line_name, None)
+                    else:
+                        if self.verbose:
+                            print('Hard-constraint %s not found in parameter list or could not be parsed; converting to free parameter.\n' % value)
+                        line_dict[hpar] = 'free'
+                        for n, ndict in self.ncomp_dict.items():
+                            if line_name in ndict:
+                                ndict[line_name][hpar] = 'free'
+
+
+    def check_soft_cons(self):
+        out_cons = []
+        soft_cons = self.options.user_constraints if self.options.user_constraints else []
+        line_par_dict = {k:v['init'] for k,v in self.line_par_input.items()}
+
+        # Check that soft cons can be parsed; if not, convert to free parameter
+        for con in soft_cons:
+            # validate returns None if successful
+            if any([ne.validate(c,local_dict=line_par_dict) for c in con]):
+                print('\n - %s soft constraint removed because one or more free parameters is not available.' % str(con))
+            else:
+                out_cons.append(con)
+
+        # Now check to see that initial values are obeyed; if not, throw exception and warning message
+        for con in out_cons:
+            val1 = ne.evaluate(con[0],local_dict=line_par_dict).item()
+            val2 = ne.evaluate(con[1],local_dict=line_par_dict).item()
+            if val1 < val2:
+                raise ValueError('\n The initial value for %s is less than the initial value for %s, but the constraint %s says otherwise.  Either remove the constraint or initialize the values appropriately.\n' % (con[0],con[1],con))
+
+        self.soft_cons = out_cons
+
+
+    def generate_comb_line_list(self):
+        """
+        Generate a list of 'combined lines' for lines with multiple components, for which 
+        velocity moments (integrated velocity and dispersion) and other quantities will 
+        be calculated during the fit. This is done automatically for lines that have a valid
+        "parent" explicitly defined, for which the parent line is the 1st component
+        """
+        if len(self.line_list) == 0:
+            self.combined_line_list = {}
+            return
+
+        orig_line_list = self.ncomp_dict['NCOMP_1']
+        combined_line_list = {}
+
+        for line_name, line_dict in self.line_list.items():
+            if (line_dict['ncomp'] <= 1) or ('parent' not in line_dict) or (line_dict['parent'] not in orig_line_list):
+                continue
+
+            parent = line_dict['parent']
+            comb_name = '%s_COMB' % parent
+            if comb_name not in combined_line_list:
+                combined_line_list[comb_name] = {'lines':[parent,]}
+            combined_line_list[comb_name]['lines'].append(line_name)
+            for attr in ['center', 'center_pix', 'disp_res_kms', 'line_profile']:
+                combined_line_list[comb_name][attr] = orig_line_list[parent][attr]
+
+        for comb_name, comb_lines in self.options.combined_lines.items():
+            # Check to make sure lines are in line list; only add the lines that are valid
+            valid_lines = [line for line in comb_lines if line in self.line_list.keys()]
+            if len(valid_lines) < 2: # need at least two valid lines to add a combined line
+                continue
+
+            combined_line_list[comb_name] = {
+                'lines': valid_lines,
+                'center': self.line_list[valid_lines[0]]['center'],
+                'center_pix': self.line_list[valid_lines[0]]['center_pix'],
+                'disp_res_kms': self.line_list[valid_lines[0]]['disp_res_kms'],
+            }
+
+        self.combined_line_list = combined_line_list
+
+
+    def get_blob_pars(self):
+        """
+        The blob-parameter dictionary is a dictionary for any non-free "blob" parameters for values that need 
+        to be calculated during the fit. For MCMC, these equate to non-fitted parameters like fluxes, equivalent widths, 
+        or continuum fluxes that aren't explicitly fit as free paramters, but need to be calculated as output /during the fitting process/
+        such that full chains can be constructed out of their values (as opposed to calculated after the fitting is over).
+        We mainly use blob-pars for the indices of the wavelength vector at which to calculate continuum luminosities, so we don't have to 
+        interpolate during the fit, which is computationally expensive.
+        This needs to be passed throughout the fit_model() algorithm so it can be used.
+        """
+
+        blob_pars = {}
+
+        # Values of velocity scale corresponding to wavelengths; this is used to calculate
+        # integrated dispersions and velocity offsets for combined lines.
+        interp_ftn = interp1d(self.target.wave, np.arange(len(self.target.wave))*self.target.velscale, kind='linear', bounds_error=False)
+        
+        for line_name, line_dict in self.combined_line_list.items():
+            blob_pars[line_name+'_LINE_VEL'] = interp_ftn(line_dict['center'])
+
+        # Indices for continuum wavelengths
+        # TODO: config file
+        # TODO: unit agnostic
+        for wave in [1350, 3000, 4000, 5100, 7000]:
+            if (self.target.wave[0] < wave) & (self.target.wave[-1] > wave):
+                blob_pars['INDEX_%d'%wave] = find_nearest(self.target.wave,float(wave))[1]
+
+        self.blob_pars = blob_pars
+
+
+    # TODO: move to separate testing file
+    def run_tests(self):
+        test_mode_dict = {
+            'line': self.line_test,
+            'config': self.config_test,
+        }
+
+        if not self.options.fit_options.test_lines:
+            return True # continue fit
+
+        test_mode = self.options.test_options.test_mode
+        if test_mode not in test_mode_dict:
+            raise Exception('Unimplemented test mode: %s'%self.test_mode)
+
+        return test_mode_dict[test_mode]()
+
+
+    def line_test(self):
         # TODO: update once new line list specifications are in place
-        test_options = target.options.test_options
+        test_options = self.options.test_options
         if isinstance(test_options.lines[0], str): test_options.lines = [line for line in test_options.lines]
 
-        if not target.options.user_lines:
+        if not self.options.user_lines:
             raise ValueError('The input user line list is None or empty. There are no lines to test. You cannot use the default line list to test for lines, as they must be explicitly defined by user lines. See examples for details...')
 
-        if target.options.output_options.verbose:
+        if self.verbose:
             print('Performing line testing for %s' % (test_options.lines))
 
         # TODO: validate lines to test are in line list and within the fitting region
 
         # TODO: eventually larger BadassCtx class
         mlctx = Prodict()
-        mlctx.target = target
-        mlctx.noise = copy.deepcopy(target.noise) # in case needs updating with reweighting
+        mlctx.target = self.target
+        mlctx.noise = copy.deepcopy(self.target.noise) # in case needs updating with reweighting
         mlctx.outflow_test_options = False
-        mlctx.templates = target.templates
-        mlctx.blob_pars = blob_pars
+        mlctx.templates = self.templates
+        mlctx.blob_pars = self.blob_pars
 
         all_test_fits = []
         all_test_metrics = []
 
         # TODO: deepcopy's needed?
         for i, test_lines in enumerate(test_options.lines):
+            # TODO: make class or dict
             # test_set = [(label, [test_lines], {full_line_list}), ...]
             test_set = []
             full_line_list = {}
             max_ncomp = 0
 
-            for label, line_dict in line_list.items():
+            for label, line_dict in self.line_list.items():
                 if (label not in test_lines) and (line_dict.get('parent') not in test_lines):
                     # add any line that's not a test line or a test line child to line list
                     full_line_list[label] = line_dict
@@ -209,16 +1056,16 @@ def run_single_target(target):
 
             # add subsequent tests, adding a component to each test line as specified
             for ncomp in range(1, max_ncomp+1):
-                for label, line_dict in line_list.items():
+                for label, line_dict in self.line_list.items():
                     if ((label in test_lines) or (line_dict.get('parent') in test_lines)) and line_dict.get('ncomp', 1) == ncomp:
                         full_line_list[label] = line_dict
                 test_set.append(('NCOMP_%d'%ncomp, test_lines, copy.deepcopy(full_line_list)))
 
-            test_fit_results, test_metrics = run_test_set(target, test_set, mlctx, test_title=str(i))
+            test_fit_results, test_metrics = self.run_test_set(test_set, mlctx, test_title=str(i))
             all_test_fits.append(test_fit_results)
             all_test_metrics.append(test_metrics)
 
-        res_dir = target.outdir.joinpath('line_test_results')
+        res_dir = self.target.outdir.joinpath('line_test_results')
         res_dir.mkdir(parents=True, exist_ok=True)
         with open(res_dir.joinpath('fit_results.pkl'), 'wb') as f: pickle.dump(all_test_fits, f)
         with open(res_dir.joinpath('test_results.pkl'), 'wb') as f: pickle.dump(all_test_metrics, f)
@@ -228,7 +1075,7 @@ def run_single_target(target):
         new_line_list = {}
 
         all_test_lines = [line for line in test_lines for test_lines in test_options.lines]
-        for label, line_dict in line_list.items():
+        for label, line_dict in self.line_list.items():
             if (label not in all_test_lines) and (line_dict.get('parent') not in all_test_lines):
                 new_line_list[label] = line_dict
 
@@ -240,19 +1087,20 @@ def run_single_target(target):
                     new_line_list.update(test_fit_results[label_B]['line_list'])
                     break
 
-        line_list = new_line_list
-
-        if not test_options.continue_fit:
-            return
+        self.line_list = new_line_list
+        self.force_thresh = force_thresh
 
         # TODO: fix to limit number of times initialize_pars needs to be called
-        param_dict, line_list, combined_line_list, soft_cons, ncomp_dict = initialize_pars(target, user_lines=line_list)
+        # TODO: instead of user_lines, use whatever line_list is set in the context
+        self.initialize_pars(user_lines=self.line_list)
 
-    # TODO: move to separate function
-    elif (target.options.fit_options.test_lines) and (target.options.test_options.test_mode == 'config'):
-        test_options = target.options.test_options
+        return test_options.continue_fit
 
-        if not target.options.user_lines:
+
+    def config_test(self):
+        test_options = self.options.test_options
+
+        if not self.options.user_lines:
             raise ValueError('The input user line list is None or empty.  There are no lines to test.  You cannot use the default line list to test for lines, as they must be explicitly defined by user lines.  See examples for details...')
 
         if len(test_options.lines) < 2: 
@@ -260,114 +1108,163 @@ def run_single_target(target):
 
         # Check to see that each line in each configuration is in the line list
         for config in test_options.lines:
-            if not np.all([True if line in line_list else False for line in config]):
+            if not np.all([True if line in self.line_list else False for line in config]):
                 raise ValueError('A line in a configuration is not defined in the input line list!')
 
-        if target.options.output_options.verbose:
+        if self.verbose:
             print('Performing configuration testing for %d configurations...' % len(test_options.lines))
             print('----------------------------------------------------------------------------------------------------')
 
         # TODO: eventually larger BadassCtx class
         mlctx = Prodict()
-        mlctx.target = target
-        mlctx.noise = copy.deepcopy(target.noise) # in case needs updating with reweighting
+        mlctx.target = self.target
+        mlctx.noise = copy.deepcopy(self.target.noise) # in case needs updating with reweighting
         mlctx.outflow_test_options = False
-        mlctx.templates = target.templates
-        mlctx.blob_pars = blob_pars
+        mlctx.templates = self.templates
+        mlctx.blob_pars = self.blob_pars
 
         # test_set = [(label, [test_lines], {full_line_list}), ...]
         test_set = []
 
         for i, test_config in enumerate(test_options.lines):
             # For each config, we want *only* the lines specified
-            test_line_list = {line_name:line_dict for line_name,line_dict in line_list.items() if line_name in test_config}
+            test_line_list = {line_name:line_dict for line_name,line_dict in self.line_list.items() if line_name in test_config}
             test_set.append(('CONFIG_%d'%(i+1), test_config, test_line_list))
 
-        test_fit_results, test_metrics = run_test_set(target, test_set, mlctx)
+        test_fit_results, test_metrics = self.run_test_set(test_set, mlctx)
 
-        res_dir = target.outdir.joinpath('config_test_results')
+        res_dir = self.target.outdir.joinpath('config_test_results')
         res_dir.mkdir(parents=True, exist_ok=True)
         with open(res_dir.joinpath('fit_results.pkl'), 'wb') as f: pickle.dump(test_fit_results, f)
         with open(res_dir.joinpath('test_results.pkl'), 'wb') as f: pickle.dump(test_metrics, f)
 
-        force_thresh = np.inf
-        line_list = test_set[0][2] # default line_list to first config
+        self.force_thresh = np.inf
+        self.line_list = test_set[0][2] # default line_list to first config
         # look in reverse to find last test config that passed
         for label_A, label_B, metrics in test_metrics[::-1]:
             if test_fit_results[label_B]['pass']:
-                line_list = test_fit_results[label_B]['line_list']
-                force_thresh = test_fit_results[label_B]['rmse']
+                self.line_list = test_fit_results[label_B]['line_list']
+                self.force_thresh = test_fit_results[label_B]['rmse']
                 break
 
         if not test_options.continue_fit:
             return
 
         # TODO: fix to limit number of times initialize_pars needs to be called
-        param_dict, line_list, combined_line_list, soft_cons, ncomp_dict = initialize_pars(target, user_lines=line_list)
+        self.initialize_pars(user_lines=self.line_list)
+
+        return test_options.continue_fit
 
 
-    # Max Likelihood Fitting
-    # TODO: move all to separate function
+    # TODO: do something with:
+    # Calculate R-Squared statistic of best fit
+    # r2 = badass_test_suite.r_squared(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
+    # Calculate rCHI2 statistic of best fit
+    # rchi2 = badass_test_suite.r_chi_squared(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]),copy.deepcopy(mccomps["NOISE"][0]),len(_param_dict))
+    # Calculate RMSE statistic of best fit
+    # rmse = lowest_rmse#badass_test_suite.root_mean_squared_error(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
+    # Calculate MAE statistic of best fit
+    # mae = badass_test_suite.mean_abs_error(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
 
-    if (force_thresh/force_thresh==1):
-        force_best=True
-    else:
-        force_best=False 
-        force_thresh=np.inf
+    def run_test_set(self, test_set, mlctx, test_title=None):
 
-    if target.options.output_options.verbose and force_best:
-        print("\n Required Maximum Likelihood RMSE threshold: %0.4f \n" % (force_thresh))
+        # test_set = [(label, [test_lines], {full_line_list}), ...]
 
-    # TODO: remove, used anywhere?
-    outflow_test_options = False
+        # TODO: all test_labels are unique
+        # {label: {fit_results}), ...}
+        test_fit_results = {}
 
-    # TODO: eventually larger BadassCtx class
-    mlctx = Prodict()
-    mlctx.target = target
-    mlctx.noise = copy.deepcopy(target.noise) # in case needs updating with reweighting
-    mlctx.line_list = line_list
-    mlctx.combined_line_list = combined_line_list
-    mlctx.soft_cons = soft_cons
-    mlctx.outflow_test_options = outflow_test_options
-    mlctx.templates = target.templates
-    mlctx.blob_pars = blob_pars
+        # [(label1, label2, {metrics}), ...]
+        test_metrics = []
 
-    # Peform the initial maximum likelihood fit (used for initial guesses for MCMC)
-    # TODO: put rest of parameters in mlctx
-    result_dict, comp_dict = max_likelihood(param_dict,mlctx,fit_type='init',fit_stat=target.options.fit_options.fit_stat,
-                                            output_model=False,test_outflows=False,n_basinhop=target.options.fit_options.n_basinhop,
-                                            reweighting=target.options.fit_options.reweighting,max_like_niter=target.options.fit_options.max_like_niter,
-                                            force_best=force_best,force_thresh=force_thresh,full_verbose=target.options.output_options.verbose,
-                                            verbose=target.options.output_options.verbose)
+        for test_label, test_lines, full_line_list in test_set:
 
-    if not target.options.mcmc_options.mcmc_fit:
-        # If not performing MCMC fitting, terminate BADASS here and write 
-        # parameters, uncertainties, and components to a fits file
-        # Write final parameters to file
-        # Header information
-        header_dict = {}
-        header_dict["z_sdss"] = target.z
-        header_dict["med_noise"] = np.nanmedian(target.noise)
-        header_dict["velscale"]  = target.velscale
-        header_dict["fit_norm"]  = target.fit_norm
-        header_dict["flux_norm"] = target.options.fit_options.flux_norm
+            self.initialize_pars(user_lines=full_line_list)
 
-        # TODO: remove, add to ifu inputs
-        binnum = spaxelx = spaxely = None
-        write_max_like_results(copy.deepcopy(result_dict),copy.deepcopy(comp_dict),header_dict,target.fit_mask,target.fit_norm,target.outdir,binnum,spaxelx,spaxely)
-        
-        # Make interactive HTML plot 
-        if target.options.plot_options.plot_HTML:
-            # TODO: object name option
-            plotly_best_fit(target.options.io_options.output_dir,line_list,target.fit_mask,target.outdir)
+            # TODO: put rest of parameters in mlctx
+            # TODO: fix
+            mlctx.line_list = full_line_list
+            mlctx.combined_line_list = self.combined_line_list
+            mlctx.soft_cons = self.soft_cons
+            mcpars, mccomps, mcLL, lowest_rmse = max_likelihood(self.param_dict,mlctx,fit_type='init',fit_stat=self.options.fit_options.fit_stat,
+                                                    output_model=False,test_outflows=True,n_basinhop=self.options.fit_options.n_basinhop,
+                                                    reweighting=self.options.fit_options.reweighting,max_like_niter=0,
+                                                    full_verbose=self.options.output_options.verbose,
+                                                    verbose=self.options.output_options.verbose)
 
-        print(' - Done fitting %s! \n' % target.options.io_options.output_dir)
-        sys.stdout.flush()
-        return
+            # Calculate degrees of freedom of fit; nu = n - m (n number of observations minus m degrees of freedom (free fitted parameters))
+            dof = len(self.target.wave)-len(self.param_dict)
+            if dof <= 0:
+                if self.verbose:
+                    print('WARNING: Degrees-of-Freedom in fit is <= 0.  One should increase the test range and/or decrease the number of free parameters of the model appropriately')
+                dof = 1
+
+            if self.options.fit_options.reweighting:
+                rchi2 = badass_test_suite.r_chi_squared(mccomps['DATA'][0], mccomps['MODEL'][0], mccomps['NOISE'][0], len(self.param_dict))
+                aon = badass_test_suite.calculate_aon(test_lines, full_line_list, mccomps, self.target.noise*np.sqrt(rchi2))
+            else:
+                aon = badass_test_suite.calculate_aon(test_lines, full_line_list, mccomps, tself.arget.noise)
+
+            fit_results = {'mcpars':mcpars,'mccomps':mccomps,'mcLL':mcLL,'line_list':full_line_list,'dof':dof,'npar':len(self.param_dict),'rmse':lowest_rmse, 'aon':aon}
+            test_fit_results[test_label] = fit_results
+
+            if len(test_fit_results.keys()) == 1: # first run
+                prev_label, prev_results = test_label, fit_results
+                continue
+
+            # get metrics
+            resid_A = prev_results['mccomps']['RESID'][0,:][self.target.fit_mask]
+            resid_B = fit_results['mccomps']['RESID'][0,:][self.target.fit_mask]
+
+            # TODO: test suite util to get all metrics
+            metrics = {}
+
+            ddof = np.abs(prev_results['dof']-fit_results['dof'])
+            _,_,_,conf,_,_,_,_,_,_ = badass_test_suite.bayesian_AB_test(resid_B, resid_A, self.target.wave[self.target.fit_mask], self.target.noise[self.target.fit_mask], self.target.spec[self.target.fit_mask], np.arange(len(resid_A)), ddof, self.target.options.io_options.output_dir, plot=False)
+            metrics['BADASS'] = conf
+
+            ssr_ratio, ssr_A, ssr_B = badass_test_suite.ssr_test(resid_B, resid_A, self.target.options.io_options.output_dir)
+            metrics['SSR_RATIO'] = ssr_ratio
+
+            k_A, k_B = prev_results['npar'], fit_results['npar']
+            f_stat, f_pval, f_conf = badass_test_suite.anova_test(resid_B, resid_A, k_A, k_B, self.target.options.io_options.output_dir)
+            metrics['ANOVA'] = f_conf
+
+            metrics['F_RATIO'] = badass_test_suite.f_ratio(resid_B, resid_A)
+
+            chi2_B, chi2_A, chi2_ratio = badass_test_suite.chi2_metric(np.arange(len(resid_A)), fit_results['mccomps'], prev_results['mccomps'])
+            metrics['CHI2_RATIO'] = chi2_ratio
+
+            if self.target.options.test_options.plot_tests:
+                create_test_plot(self.target, test_fit_results, prev_label, test_label, test_title=test_title)
+
+            test_pass = badass_test_suite.thresholds_met(self.target.options.test_options, metrics, fit_results)
+            fit_results['pass'] = test_pass
+
+            test_metrics.append((prev_label, test_label, metrics))
+            ptbl = PrettyTable()
+            ptbl.field_names = ['TEST A', 'TEST B'] + list(metrics.keys()) + ['AON', 'PASS']
+            ptbl.add_row([prev_label, test_label] + ['%f'%v for v in metrics.values()] + ['%f'%aon, test_pass])
+            print(ptbl)
+
+            print('(Test %s)' % 'Passed' if test_pass else 'Failed')
+            if test_pass and self.target.options.test_options.auto_stop:
+                print('metric thresholds met, stopping')
+                break
+
+            prev_label, prev_results = test_label, fit_results
+
+        ptbl = PrettyTable()
+        ptbl.field_names = ['TEST A', 'TEST B'] + list(test_metrics[0][2].keys()) + ['AON', 'PASS']
+        for label_A, label_B, metrics in test_metrics:
+            ptbl.add_row([label_A, label_B] + ['%f'%v for v in metrics.values()] + ['%f'%test_fit_results[label_B]['aon'], test_fit_results[label_B]['pass']])
+        print('Test Results:')
+        print(ptbl)
+
+        return test_fit_results, test_metrics
 
 
-    ####################################################################################################################################################################################
- 
+def ignore_this(): 
     #### Reweighting ###################################################################
 
     # If True, BADASS can reweight the noise to achieve a reduced chi-squared of 1.  It does this by multiplying the noise by the 
@@ -627,36 +1524,6 @@ def run_single_target(target):
     return
 
 
-def get_blob_pars(target, combined_line_list):
-    """
-    The blob-parameter dictionary is a dictionary for any non-free "blob" parameters for values that need 
-    to be calculated during the fit.  For MCMC, these equate to non-fitted parameters like fluxes, equivalent widths, 
-    or continuum fluxes that aren't explicitly fit as free paramters, but need to be calculated as output /during the fitting process/
-    such that full chains can be constructed out of their values (as opposed to calculated after the fitting is over).
-    We mainly use blob-pars for the indices of the wavelength vector at which to calculate continuum luminosities, so we don't have to 
-    interpolate during the fit, which is computationally expensive.
-    This needs to be passed throughout the fit_model() algorithm so it can be used.
-    """
-
-    blob_pars = {}
-
-    # Values of velocity scale corresponding to wavelengths; this is used to calculate
-    # integrated dispersions and velocity offsets for combined lines.
-    interp_ftn = interp1d(target.wave, np.arange(len(target.wave))*target.velscale, kind='linear', bounds_error=False)
-    
-    for line_name, line_dict in combined_line_list.items():
-        blob_pars[line_name+'_LINE_VEL'] = interp_ftn(line_dict['center'])
-
-    # Indices for continuum wavelengths
-    # TODO: config file
-    # TODO: unit agnostic
-    for wave in [1350, 3000, 4000, 5100, 7000]:
-        if (target.wave[0] < wave) & (target.wave[-1] > wave):
-            blob_pars['INDEX_%d'%wave] = find_nearest(target.wave,float(wave))[1]
-
-    return blob_pars
-
-
 def initialize_walkers(init_params,param_names,bounds,soft_cons,nwalkers,ndim):
     """
     Initializes the MCMC walkers within bounds and soft constraints.
@@ -775,147 +1642,6 @@ def systemic_vel_est(z,param_dict,burn_in,run_dir,plot_param_hist=True):
     return z_dict
 
 
-#### Galactic Extinction Correction ##############################################
-# TODO: call from input classes
-def ccm_unred(wave, flux, ebv, r_v=""):
-    """ccm_unred(wave, flux, ebv, r_v="")
-    Deredden a flux vector using the CCM 1989 parameterization 
-    Returns an array of the unreddened flux
-    
-    INPUTS:
-    wave - array of wavelengths (in Angstroms)
-    dec - calibrated flux array, same number of elements as wave
-    ebv - colour excess E(B-V) float. If a negative ebv is supplied
-          fluxes will be reddened rather than dereddened	 
-    
-    OPTIONAL INPUT:
-    r_v - float specifying the ratio of total selective
-          extinction R(V) = A(V)/E(B-V). If not specified,
-          then r_v = 3.1
-            
-    OUTPUTS:
-    funred - unreddened calibrated flux array, same number of 
-             elements as wave
-             
-    NOTES:
-    1. This function was converted from the IDL Astrolib procedure
-       last updated in April 1998. All notes from that function
-       (provided below) are relevant to this function 
-       
-    2. (From IDL:) The CCM curve shows good agreement with the Savage & Mathis (1979)
-       ultraviolet curve shortward of 1400 A, but is probably
-       preferable between 1200 and 1400 A.
-    3. (From IDL:) Many sightlines with peculiar ultraviolet interstellar extinction 
-       can be represented with a CCM curve, if the proper value of 
-       R(V) is supplied.
-    4. (From IDL:) Curve is extrapolated between 912 and 1000 A as suggested by
-       Longo et al. (1989, ApJ, 339,474)
-    5. (From IDL:) Use the 4 parameter calling sequence if you wish to save the 
-       original flux vector.
-    6. (From IDL:) Valencic et al. (2004, ApJ, 616, 912) revise the ultraviolet CCM
-       curve (3.3 -- 8.0 um-1).	But since their revised curve does
-       not connect smoothly with longer and shorter wavelengths, it is
-       not included here.
-    
-    7. For the optical/NIR transformation, the coefficients from 
-       O'Donnell (1994) are used
-    
-    >>> ccm_unred([1000, 2000, 3000], [1, 1, 1], 2 ) 
-    array([9.7976e+012, 1.12064e+07, 32287.1])
-    """
-    wave = np.array(wave, float)
-    flux = np.array(flux, float)
-    
-    if wave.size != flux.size: raise TypeError( 'ERROR - wave and flux vectors must be the same size')
-    
-    if not bool(r_v): r_v = 3.1 
-
-    x = 10000.0/wave
-    # Correction invalid for x>11:
-    if np.any(x>11):
-        return flux 
-
-    npts = wave.size
-    a = np.zeros(npts, float)
-    b = np.zeros(npts, float)
-    
-    ###############################
-    #Infrared
-    
-    good = np.where( (x > 0.3) & (x < 1.1) )
-    a[good] = 0.574 * x[good]**(1.61)
-    b[good] = -0.527 * x[good]**(1.61)
-    
-    ###############################
-    # Optical & Near IR
-
-    good = np.where( (x  >= 1.1) & (x < 3.3) )
-    y = x[good] - 1.82
-    
-    c1 = np.array([ 1.0 , 0.104,   -0.609,	0.701,  1.137, \
-                  -1.718,   -0.827,	1.647, -0.505 ])
-    c2 = np.array([ 0.0,  1.952,	2.908,   -3.989, -7.985, \
-                  11.102,	5.491,  -10.805,  3.347 ] )
-
-    a[good] = np.polyval(c1[::-1], y)
-    b[good] = np.polyval(c2[::-1], y)
-
-    ###############################
-    # Mid-UV
-    
-    good = np.where( (x >= 3.3) & (x < 8) )   
-    y = x[good]
-    F_a = np.zeros(np.size(good),float)
-    F_b = np.zeros(np.size(good),float)
-    good1 = np.where( y > 5.9 )	
-    
-    if np.size(good1) > 0:
-        y1 = y[good1] - 5.9
-        F_a[ good1] = -0.04473 * y1**2 - 0.009779 * y1**3
-        F_b[ good1] =   0.2130 * y1**2  +  0.1207 * y1**3
-
-    a[good] =  1.752 - 0.316*y - (0.104 / ( (y-4.67)**2 + 0.341 )) + F_a
-    b[good] = -3.090 + 1.825*y + (1.206 / ( (y-4.62)**2 + 0.263 )) + F_b
-    
-    ###############################
-    # Far-UV
-    
-    good = np.where( (x >= 8) & (x <= 11) )   
-    y = x[good] - 8.0
-    c1 = [ -1.073, -0.628,  0.137, -0.070 ]
-    c2 = [ 13.670,  4.257, -0.420,  0.374 ]
-    a[good] = np.polyval(c1[::-1], y)
-    b[good] = np.polyval(c2[::-1], y)
-
-    # Applying Extinction Correction
-    
-    a_v = r_v * ebv
-    a_lambda = a_v * (a + b/r_v)
-    
-    funred = flux * 10.0**(0.4*a_lambda)   
-
-    return funred #,a_lambda
-
-##################################################################################
-
-def nan_helper(y):
-    """
-    Helper to handle indices and logical indices of NaNs.
-
-    Input:
-        - y, 1d numpy array with possible NaNs
-    Output:
-        - nans, logical indices of NaNs
-        - index, a function, with signature indices= index(logical_indices),
-          to convert logical indices of NaNs to 'equivalent' indices
-    Example:
-        >>> # linear interpolation of NaNs
-        >>> nans, x= nan_helper(y)
-        >>> y[nans]= np.interp(x(nans), x(~nans), y[~nans])
-    """
-
-    return np.isnan(y), lambda z: z.nonzero()[0]
-
 def insert_nan(spec,ibad):
     """
     Inserts additional NaN values to neighboriing ibad pixels.
@@ -986,152 +1712,6 @@ def prepare_plot(lam_gal,galaxy,noise,ibad,flux_norm,fit_norm,run_dir):
     plt.close(fig)
     #
     return
-
-
-def initialize_pars(target, user_lines=None, remove_lines=False):
-    """
-    Initializes all free parameters for the fit based on user input and options.
-    """
-
-    # Initial conditions for some parameters
-    max_flux = np.nanmax(target.spec)*1.5
-    median_flux = np.nanmedian(target.spec)
-
-    # Padding on the edges; any line(s) within this many angstroms is omitted
-    # from the fit so problems do not occur with the fit
-    edge_pad = 10.0
-    par_input = {} # initialize an empty dictionary to store free parameter dicts
-    template_args = {'median_flux':median_flux, 'max_flux':max_flux}
-
-    for template in target.templates.values():
-        template.initialize_parameters(par_input, template_args)
-
-    # TODO: config file
-    # TODO: separate classes?
-    if target.options.comp_options.fit_poly:
-        if (target.options.poly_options.apoly.bool) and (target.options.poly_options.apoly.order >= 0):
-            if target.options.output_options.verbose:
-                print('\t- Fitting additive legendre polynomial component')
-            for n in range(1, int(target.options.poly_options.apoly.order)+1):
-                par_input['APOLY_COEFF_%d' % n] = {'init':0.0, 'plim':(-1.0e2,1.0e2),}
-        if (target.options.poly_options.mpoly.bool) and (target.options.poly_options.mpoly.order >= 0):
-            if target.options.output_options.verbose:
-                print('\t- Fitting multiplicative legendre polynomial component')
-            for n in range(1, int(target.options.poly_options.mpoly.order)+1):
-                par_input['MPOLY_COEFF_%d' % n] = {'init':0.0,'plim':(-1.0e2,1.0e2),}
-
-    # TODO: config file
-    if target.options.comp_options.fit_power:
-        #### Simple Power-Law (AGN continuum)
-        if target.options.power_options.type == 'simple':
-            if target.options.output_options.verbose:
-                print('\t- Fitting Simple AGN power-law continuum')
-            # AGN simple power-law amplitude
-            par_input['POWER_AMP'] = {'init':(0.5*median_flux), 'plim':(0,max_flux),}
-            # AGN simple power-law slope
-            par_input['POWER_SLOPE'] = {'init':-1.0, 'plim':(-6.0,6.0),}
-            
-        #### Smoothly-Broken Power-Law (AGN continuum)
-        if target.options.power_options.type == 'broken':
-            if target.options.output_options.verbose:
-                print('\t- Fitting Smoothly-Broken AGN power-law continuum.')
-            # AGN simple power-law amplitude
-            par_input['POWER_AMP'] = {'init':(0.5*median_flux), 'plim':(0,max_flux),}
-            # AGN simple power-law break wavelength
-            par_input['POWER_BREAK'] = {'init':(np.max(target.wave) - (0.5*(np.max(target.wave)-np.min(target.wave)))),
-                                        'plim':(np.min(target.wave), np.max(target.wave)),}
-            # AGN simple power-law slope 1 (blue side)
-            par_input['POWER_SLOPE_1'] = {'init':-1.0, 'plim':(-6.0,6.0),}
-            # AGN simple power-law slope 2 (red side)
-            par_input['POWER_SLOPE_2'] = {'init':-1.0, 'plim':(-6.0,6.0),}
-            # Power-law curvature parameter (Delta)
-            par_input['POWER_CURVATURE'] = {'init':0.10, 'plim':(0.01,1.0),}
-
-
-    # Emission Lines
-    line_list = user_lines if user_lines else target.options.user_lines if target.options.user_lines else line_list_default()
-    check_line_comp_options(target, line_list)
-    # Add the FWHM resolution and central pixel locations for each line so we don't have to 
-    # find them during the fit.
-    add_disp_res(target, line_list)
-    # TODO: do this after all the line par initialization so we don't have to edit it along the way
-    ncomp_dict = make_ncomp_dict(line_list)
-
-    # Generate line free parameters based on input line_list
-    line_par_input = initialize_line_pars(target, line_list)
-
-    param_keys = list(par_input.keys()) + list(line_par_input.keys())
-    # Check hard line constraints; returns updated line_list and line_par_input
-    check_hard_cons(target, line_list, param_keys, ncomp_dict)
-
-    # TODO: way to not have to run this twice?
-    # Re-Generate line free parameters based on revised line_list
-    line_par_input = initialize_line_pars(target, line_list)
-
-    # TODO: just add line pars directly to par_input?
-    # Append line_par_input to par_input
-    par_input = {**par_input, **line_par_input}
-
-    # The default line list is automatically generated from lines with multiple components.
-    # User can provide a combined line list, which can override the default.
-    combined_line_list = generate_comb_line_list(line_list,ncomp_dict,target.options.combined_lines)
-
-    # Check soft-constraints
-    # Default soft constraints
-    # Soft constraints: If you want to vary a free parameter relative to another free parameter (such as
-    # requiring that broad lines have larger widths than narrow lines), these are called "soft" constraints,
-    # or "inequality" constraints. 
-    # These are passed through a separate list of tuples which are used by the maximum likelihood constraints 
-    # and prior constraints by emcee.  Soft constraints have a very specific format following
-    # the scipy optimize SLSQP syntax: 
-    #
-    #				(parameter1 - parameter2) >= 0.0 OR (parameter1 >= parameter2)
-    #
-
-    soft_cons = target.options.user_constraints if target.options.user_constraints else []
-    soft_cons = check_soft_cons(soft_cons, par_input, verbose=target.options.output_options.verbose)
-
-    return par_input, line_list, combined_line_list, soft_cons, ncomp_dict
-
-
-def generate_comb_line_list(line_list,ncomp_dict,user_combined_lines):
-    """
-    Generate a list of 'combined lines' for lines with multiple components, for which 
-    velocity moments (integrated velocity and dispersion) and other quantities will 
-    be calculated during the fit. This is done automatically for lines that have a valid
-    "parent" explicitly defined, for which the parent line is the 1st component
-    """
-    if len(line_list) == 0: return {}
-
-    orig_line_list = ncomp_dict["NCOMP_1"]
-    combined_line_list = {}
-
-    for line_name, line_dict in line_list.items():
-        if (line_dict['ncomp'] <= 1) or ('parent' not in line_dict) or (line_dict['parent'] not in orig_line_list):
-            continue
-
-        parent = line_dict['parent']
-        comb_name = '%s_COMB' % parent
-        if comb_name not in combined_line_list:
-            combined_line_list[comb_name] = {'lines':[parent,]}
-        combined_line_list[comb_name]['lines'].append(line_name)
-        for attr in ['center', 'center_pix', 'disp_res_kms', 'line_profile']:
-            combined_line_list[comb_name][attr] = orig_line_list[parent][attr]
-
-    for comb_name, comb_lines in user_combined_lines.items():
-        # Check to make sure lines are in line list; only add the lines that are valid
-        valid_lines = [line for line in comb_lines if line in line_list.keys()]
-        if len(valid_lines) < 2: # need at least two valid lines to add a combined line
-            continue
-
-        combined_line_list[comb_name] = {
-            'lines': valid_lines,
-            'center': line_list[valid_lines[0]]['center'],
-            'center_pix': line_list[valid_lines[0]]['center_pix'],
-            'disp_res_kms': line_list[valid_lines[0]]['disp_res_kms'],
-        }
-
-    return combined_line_list
 
 
 # TODO: separate config file
@@ -1279,701 +1859,6 @@ def line_list_default():
     line_list = {**narrow_lines, **broad_lines, **absorp_lines}
 
     return line_list
-
-
-def check_line_comp_options(target,line_list):
-    """
-    Checks each entry in the complete (narrow, broad, absorption, and user) line list
-    and ensures all necessary keywords are input.  It also checks every line entry against the 
-    front-end component options (comp_options).  The only required keyword for a line entry is 
-    the "center" wavelength of the line.  If "amp", "disp", "voff", "h3" and "h4" (for Gauss-Hermite)
-    line profiles are missing, it assumes these are all "free" parameters in the fitting of that line. 
-    If "line_type" is not defined, it is assumed to be "na" (narrow).  If "line_profile" is not defined, 
-    it is assumed to be "gaussian". 
-
-    Line list hyper-parameters:
-    amp, amp_init, amp_plim
-    disp, disp_init, disp_plim
-    voff, voff_init, voff_plim
-    shape, shape_init, shape_plim,
-    h3, h4, h5, h6, h7, h8, h9, h10, _init, _plim
-    line_type
-    line_profile
-    ncomp
-    parent
-    label
-    """
-
-    comp_options = target.options.comp_options
-    verbose = target.options.output_options.verbose
-    edge_pad = 10 # TODO: config
-
-    # TODO: better handle types + 'user'
-    line_types = {
-        'na': 'narrow',
-        'br': 'broad',
-        'abs': 'absorp',
-    }
-    line_profiles = ['gaussian', 'lorentzian', 'gauss-hermite', 'voigt', 'laplace', 'uniform']
-    line_attrs = ['amp', 'disp', 'voff']
-
-    for line_name, line_dict in line_list.items():
-
-        if 'line_type' not in line_dict:
-            line_dict['line_type'] = 'user'
-
-        line_type_s = line_dict['line_type'] # short name
-        if (not line_type_s == 'user') and (not line_type_s in line_types):
-            print('Unsupported line type: %s' % line_type_s)
-            continue
-
-        line_type = line_types[line_type_s] if line_type_s in line_types else 'user'
-        is_user = line_type == 'user'
-        type_options = target.options[line_type+'_options']
-
-        # TODO: center is unit-configurable
-        if ('center' not in line_dict) or (not isinstance(line_dict['center'],(int,float))):
-            # TODO: just log and continue?
-            raise ValueError('\n Line list entry requires at least \'center\' wavelength (in Angstroms) to be defined as an int or float type\n')
-
-        # Check line in wavelength region
-        if (line_dict['center'] <= target.wave[0]+edge_pad) or (line_dict['center'] >= target.wave[-1]-edge_pad):
-            continue
-
-        # Check if we are fitting lines of this type
-        if not comp_options['fit_'+line_type]:
-            continue
-
-        if is_user:
-            if 'line_profile' not in line_dict:
-                line_dict['line_profile'] = 'gaussian' # TODO: default in config
-        else:
-            line_dict['line_profile'] = type_options['line_profile']
-
-        line_profile = line_dict['line_profile']
-        if line_profile not in line_profiles:
-            print('Unsupported line profile: %s' % line_profile)
-
-        for attr in line_attrs:
-            if attr not in line_dict:
-                line_dict[attr] = 'free'
-
-        # TODO: something else for these specialized line profiles?
-        if (not is_user) and (line_profile == 'gauss-hermite'):
-            # Gauss-Hermite higher-order moments for each narrow, broad, and absorp
-            if type_options['n_moments'] > 2:
-                for m in range(3, 3+(type_options['n_moments']-2)):
-                    attr = 'h%d'%m
-                    if attr not in line_dict:
-                        line_dict[attr] = 'free'
-
-            # If the line profile is Gauss-Hermite, but the number of higher-order moments is 
-            # less than or equal to 2 (for which the line profile is just Gaussian), remove any 
-            # unnecessary higher-order line parameters that may be in the line dictionary.
-            for m in range(type_options['n_moments']+1, 11):
-                attr = 'h%d'%m
-                line_dict.pop(attr, None)
-                line_dict.pop(attr+'_init', None)
-                line_dict.pop(attr+'_plim', None)
-
-
-        # Higher-order moments for laplace and uniform (h3 and h4) only for each narrow, broad, and absorp.
-        if line_profile in ['laplace','uniform']:
-            if 'h3' not in line_dict:
-                line_dict['h3'] = 'free'
-            if 'h4' not in line_dict:
-                line_dict['h4'] = 'free'
-
-        if line_profile not in ['gauss-hermite', 'laplace', 'uniform']:
-            for m in range(3,11,1):
-                attr = 'h%d'%m
-                line_dict.pop(attr, None)
-                line_dict.pop(attr+'_init', None)
-                line_dict.pop(attr+'_plim', None)
-
-
-        if line_profile == 'voigt':
-            if 'shape' not in line_dict:
-                line_dict['shape'] = 'free'
-        else:
-            line_dict.pop('shape', None)
-            line_dict.pop('shape_init', None)
-            line_dict.pop('shape_plim', None)
-
-        # line widths (narrow, broad, and absorption disp) are tied, respectively.
-        if comp_options.tie_line_disp:
-            for m in range(3, 3+type_options['n_moments']-2):
-                line_dict.pop('h%d'%m, None)
-            line_dict.pop('shape', None)
-
-            type_prefix = line_type_s.upper()
-            if line_type == 'user': type_prefix = 'NA' # default to narrow
-
-            line_dict['disp'] = type_prefix + '_DISP'
-            if line_profile == 'gauss-hermite':
-                for m in range(3, 3+type_options['n_moments']-2):
-                    line_dict['h%d'%m] = type_prefix + '_H%d'%m
-            elif line_profile == 'voigt':
-                line_dict['shape'] = type_prefix + '_SHAPE'
-            elif line_profile in ['laplace', 'uniform']:
-                line_dict['h3'] = type_prefix + '_H3'
-                line_dict['h4'] = type_prefix + '_H4'
-
-        # line velocity offsets (narrow, broad, and absorption voff) are tied, respectively.
-        if comp_options.tie_line_voff:
-            type_prefix = line_type_s.upper()
-            if line_type == 'user': type_prefix = 'NA' # default to narrow
-            line_dict['voff'] = type_prefix + '_VOFF'
-
-        if ('ncomp' not in line_dict) or (line_dict['ncomp'] <= 0):
-            line_dict['ncomp'] = 1
-
-        # Check parent keyword if exists against line list; will be used for generating combined lines
-        if ('parent' in line_dict) and (line_dict['parent'] not in line_list):
-            line_dict.pop('parent', None)
-
-
-    valid_keys = ['center','center_pix','disp_res_kms','disp_res_ang','amp','disp','voff','shape','line_type',
-                  'line_profile','amp_init','amp_plim','disp_init','disp_plim','voff_init','voff_plim',
-                  'shape_init','shape_plim','amp_prior','disp_prior','voff_prior','shape_prior',
-                  'label','ncomp','parent']
-
-    for line_type in line_types.values():
-        type_options = target.options[line_type+'_options']
-        for suffix in ['', '_init', '_plim', '_prior']:
-            valid_keys.extend(['h%d'%m for m in range(3, 3+type_options['n_moments']-2)])
-
-    for line_dict in line_list.values():
-        for key in line_dict.keys():
-            if key not in valid_keys:
-                raise ValueError('\n %s not a valid keyword for the line list!\n'%key)
-
-
-def add_disp_res(target, line_list):
-    # Perform linear interpolation on the disp_res array as a function of wavelength 
-    # We will use this to determine the dispersion resolution as a function of wavelenth for each 
-    # emission line so we can correct for the resolution at every iteration.
-    disp_res_ftn = interp1d(target.wave,target.disp_res,kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
-    # Interpolation function that maps x (in angstroms) to pixels so we can get the exact
-    # location in pixel space of the emission line.
-    x_pix = np.array(range(len(target.wave)))
-    pix_interp_ftn = interp1d(target.wave,x_pix,kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
-
-    # iterate through the line_list and add the keywords
-    for line_dict in line_list.values():
-        center = line_dict['center'] # line center in Angstroms
-        line_dict['center_pix'] = float(pix_interp_ftn(center)) # line center in pixels
-        disp_res_ang = float(disp_res_ftn(center)) # instrumental FWHM resolution in angstroms
-        line_dict['disp_res_ang'] = disp_res_ang
-        c = const.c.to('km/s').value
-        line_dict['disp_res_kms'] = (disp_res_ang/center)*c # instrumental FWHM resolution in km/s
-
-
-def make_ncomp_dict(line_list):
-    """
-    Make a dictionary of multiple components (ncomp).
-    """
-    # Check to make sure there is at least 1 parent line (ncomp = 1) in the line_list
-    # print([True if line_list[line]["ncomp"]==1 else False for line in line_list])
-
-    if len(line_list) == 0:
-        return {}
-
-    if np.all([line_list[line]['ncomp'] != 1 for line in line_list]):
-        raise ValueError('\n There must be at least one parent line (ncomp=1) for any line with ncomp>1')
-
-    max_ncomp = np.max([line_dict['ncomp'] for line_dict in line_list.values()])
-    ncomp_dict = {'NCOMP_%d'%i:{} for i in range(1,max_ncomp+1)}
-    
-    for line_name, line_dict in line_list.items():
-        ncomp = line_dict['ncomp']
-        ncomp_dict['NCOMP_%d'%ncomp][line_name] = line_dict
-
-    return ncomp_dict
-
-
-def initialize_line_pars(target, line_list):
-    """
-    This function initializes the initial guess, parameter limits (lower and upper), and 
-    priors if not explicily defined by the user in the line list for each line.
-
-    Special care is taken with tring to determine the location of the particular line
-    in terms of velocity.
-    """
-
-    c = const.c.to('km/s').value
-
-    # TODO: config file
-    # type_name, disp_init, disp_plim, h_init, h_plim, shape_init, shape_plim
-    line_types = {
-        'na': ('narrow', 250.0, (0.0,1200.0), 0.0, (-0.5,0.5), 0.0, (0.0,1.0),),
-        'br': ('broad', 2500.0, (500.0,15000.0), 0.0, (-0.5,0.5), 0.0, (0.0,1.0),),
-        'abs': ('absorp', 450.0, (0.1,2500.0), 0.0, (-0.5,0.5), 0.0, (0.0,1.0),),
-        'out': ('outflow', 100.0, (0.0,800.0), 0.0, (-0.5,0.5), 0.0, (0.0,1.0),),
-    }
-
-    # First we remove the continuum 
-    galaxy_csub = badass_tools.continuum_subtract(target.wave,target.spec,target.noise,sigma_clip=2.0,clip_iter=25,filter_size=[25,50,100,150,200,250,500],
-                   noise_scale=1.0,opt_rchi2=True,plot=False,
-                   fig_scale=8,fontsize=16,verbose=False)
-
-    try:
-        # normalize by noise
-        norm_csub = galaxy_csub/target.noise
-
-        peaks,_ = scipy.signal.find_peaks(norm_csub, height=2.0, width=3.0, prominence=1)
-        troughs,_ = scipy.signal.find_peaks(-norm_csub, height=2.0, width=3.0, prominence=1)
-        peak_wave = target.wave[peaks]
-        trough_wave = target.wave[troughs]
-    except:
-        if target.options.output_options.verbose:
-            print('\n Warning! Peak finding algorithm used for initial guesses of amplitude and velocity failed! Defaulting to user-defined locations...')
-        peak_wave = np.array([line_dict['center'] for line_dict in line_list.values() if line_dict['line_type'] in ['na','br']])
-        trough_wave = np.array([line_dict['center'] for line_dict in line_list.values() if line_dict['line_type'] in ['abs']])
-        if len(peak_wave) == 0:
-            peak_wave = np.array([0])
-        if len(trough_wave) == 0:
-            trough_wave = np.array([0])
-
-
-    def amp_hyperpars(line_type, line_center, voff_init, voff_plim, amp_factor):
-        """
-        Assigns the user-defined or default line amplitude initial guesses and limits.
-        """
-        line_center = float(line_center)
-
-        line_types = {
-            'na': ('narrow', peak_wave, 1),
-            'br': ('broad', peak_wave, 1),
-            'abs': ('absorp', trough_wave, -1),
-        }
-
-        type_options = target.options[line_types[line_type][0]+'_options']
-
-        if (line_type in line_types) and type_options['amp_plim']:
-            min_amp, max_amp = np.abs(np.min(type_options['amp_plim'])), np.abs(np.max(type_options['amp_plim']))
-        else:
-            min_amp, max_amp = 0.0, 2*np.nanmax(target.spec)
-
-        mf = line_types[line_type][2] # multiplicative factor (1 or -1) to handle troughs
-        feature_wave = line_types[line_type][1]
-
-        # calculate velocities of features around line center
-        feature_center = feature_wave[np.argmin(np.abs(feature_wave-line_center))] # feature in angstroms
-        feature_vel = (feature_center-line_center)/line_center*c # feature in velocity offset
-
-        center = line_center
-        # if velocity less than search_kms, calculate amplitude at that point
-        if (feature_vel >= voff_plim[0]) and (feature_vel <= voff_plim[1]):
-            center = feature_center
-
-        init_amp = target.spec[find_nearest(target.wave,center)[1]]
-        if (init_amp >= min_amp) and (init_amp <= max_amp):
-            return mf*init_amp/amp_factor, (min(mf*min_amp,mf*max_amp), max(mf*min_amp,mf*max_amp))
-        return mf*max_amp-mf*(max_amp-min_amp)/2.0/amp_factor, (min(mf*min_amp,mf*max_amp), max(mf*min_amp,mf*max_amp))
-
-
-    def disp_hyperpars(line_type,line_center,line_profile): # FWHM hyperparameters
-        """
-        Assigns the user-defined or default line width (dispersion)
-        initial guesses and limits.
-        """
-
-        # TODO: in config file
-        line_types = {
-            'na': ('narrow', 50.0, (0.001,300.0)),
-            'br': ('broad', 500.0, (300.0,3000.0)),
-            'abs': ('absorp', 50.0, (0.001,300.0))
-        }
-
-        default_init = line_types[line_type][1]
-        type_options = target.options[line_types[line_type][0] + '_options']
-
-        min_disp, max_disp = type_options['disp_plim'] if type_options['disp_plim'] else line_types[line_type][2]
-
-        if (default_init >= min_disp) and (default_init <= max_disp):
-            return default_init, (min_disp, max_disp)
-        return max_disp-(max_disp-min_disp)/2.0, (min_disp, max_disp)
-
-
-    def voff_hyperpars(line_type, line_center):
-        """
-        Assigns the user-defined or default line velocity offset (voff)
-        initial guesses and limits.
-        """
-
-        voff_default_init = 0.0
-
-        # TODO: in config file
-        line_types = {
-            'na': ('narrow', (-500,500), peak_wave),
-            'br': ('broad', (-1000,1000), peak_wave),
-            'abs': ('absorp', (-500,500), trough_wave)
-        }
-
-        if line_type not in line_types:
-            min_voff, max_voff = line_types['na'][1] # default narrow
-            if (min_voff <= voff_default_init) and (max_voff >= voff_default_init):
-                return voff_default_init, (min_voff, max_voff)
-            return max_voff - ((max_voff-min_voff)/2.0), (min_voff, max_voff)
-
-        type_options = target.options[line_types[line_type][0] + '_options']
-        min_voff, max_voff = line_types[line_type][1]
-        if type_options['voff_plim']:
-            min_voff, max_voff = type_options['voff_plim']
-
-        # calculate velocities of features around line center
-        feature_wave = line_types[line_type][2]
-        feature_ang = feature_wave[np.argmin(np.abs(feature_wave-line_center))] # feature in angstroms
-        feature_vel = (feature_ang-line_center)/line_center*c # feature in velocity offset
-        if (feature_vel >= min_voff) and (feature_vel <= max_voff):
-            return feature_vel, (min_voff, max_voff)
-        else:
-            return voff_default_init, (min_voff, max_voff)
-
-
-    def h_moment_hyperpars():
-        # Higher-order moments for Gauss-Hermite line profiles
-        # extends to Laplace and Uniform kernels
-        # TODO: config file
-        h_init = 0.0
-        h_lim  = (-0.5,0.5)
-        return h_init, h_lim
-
-
-    def shape_hyperpars(): # shape of the Voigt profile; if line_profile="voigt"
-        # TODO: config file
-        shape_init = 0.0
-        shape_lim = (0.0,1.0)
-        return shape_init, shape_lim    
-
-
-    line_par_input = {}
-
-    # We start with standard lines and options. These are added one-by-one. Then we check specific line options and then override any lines that have
-    # been already added. Params are added regardless of component options as long as the parameter is set to "free"
-    for line_name, line_dict in line_list.items():
-
-        line_type = line_dict['line_type']
-        line_center = line_dict['center']
-
-        # Velocity offsets determine both the intial guess in line velocity as well as amplitude, so it makes sense to perform the voff for each line first.
-        if (('voff' in line_dict) and (line_dict['voff'] == 'free')):
-            voff_default_init, voff_default_plim = voff_hyperpars(line_type, line_center)
-            line_par_input[line_name+'_VOFF'] = {'init': line_dict.get('voff_init', voff_default_init), 
-                                                 'plim':line_dict.get('voff_plim', voff_default_plim),
-                                                 'prior':line_dict.get('voff_prior', {'type':'gaussian'}),
-                                                }
-            if line_par_input[line_name+'_VOFF']['prior'] is None: line_par_input[line_name+'_VOFF'].pop('prior',None)
-
-            # Check to make sure init value is within limits of plim
-            if (line_par_input[line_name+'_VOFF']['init'] < line_par_input[line_name+'_VOFF']['plim'][0]) or (line_par_input[line_name+'_VOFF']['init'] > line_par_input[line_name+'_VOFF']['plim'][1]):
-                raise ValueError('\n Velocity offset (voff) initial value (voff_init) for %s outside of parameter limits (voff_plim)!\n' % (line_name))
-
-
-        if (('amp' in line_dict) and (line_dict['amp'] == 'free')):
-            # If amplitude parameter limits are already set in (narrow,broad,absorp)_options, then use those, otherwise, automatically generate them
-            amp_factor = 1
-            if 'ncomp' in line_dict:
-                # Get number of components that are in the line list for this line
-                total_ncomp = [1]
-                # If line is a parent line
-                if line_dict['ncomp'] == 1:
-                    for ld in line_list.values():
-                        if ('parent' in ld) and (ld['parent'] == line_name):
-                            total_ncomp.append(ld['ncomp'])
-
-                # if line is a child line
-                if 'parent' in line_dict:
-                    # Look in the line list for any other lines that have the same parent and append them
-                    for ld in line_list.values():
-                        if ('parent' in ld) and (ld['parent'] == line_dict['parent']):
-                            total_ncomp.append(ld['ncomp'])
-
-                amp_factor = np.max(total_ncomp)
-
-            # Amplitude is dependent on velocity offset from expected location, which we determined above.  If the amplitude is free but voff 
-            # is tied to another line, we must extract whatever tied voff is
-            # TODO: config file
-            voff_init = 0.0
-            voff_plim = (-500,500)
-            if ('voff' in line_dict) and (line_dict['voff'] == 'free'):
-                voff_init = line_par_input[line_name+'_VOFF']['init']
-                voff_plim = line_par_input[line_name+'_VOFF']['plim']
-
-            amp_default_init, amp_default_plim = amp_hyperpars(line_type, line_center, voff_init, voff_plim, amp_factor)
-            line_par_input[line_name+'_AMP'] = {'init': line_dict.get('amp_init', amp_default_init), 
-                                                'plim': line_dict.get('amp_plim', amp_default_plim),
-                                                'prior': line_dict.get('amp_prior'),
-                                               }
-            if line_par_input[line_name+'_AMP']['prior'] is None: line_par_input[line_name+'_AMP'].pop('prior',None)
-
-            # Check to make sure init value is within limits of plim
-            if (line_par_input[line_name+'_AMP']['init'] < line_par_input[line_name+'_AMP']['plim'][0]) or (line_par_input[line_name+'_AMP']['init'] > line_par_input[line_name+'_AMP']['plim'][1]):
-                raise ValueError('\n Amplitude (amp) initial value (amp_init) for %s outside of parameter limits (amp_plim)!\n' % (line_name))
-
-
-        if (('disp' in line_dict) and (line_dict['disp'] == 'free')):
-            disp_default_init, disp_default_plim = disp_hyperpars(line_type, line_center, line_dict['line_profile'])
-            line_par_input[line_name+'_DISP'] = {'init': line_dict.get('disp_init', disp_default_init), 
-                                                 'plim': line_dict.get('disp_plim', disp_default_plim),
-                                                 'prior':line_dict.get('disp_prior')
-                                                }
-            if line_par_input[line_name+'_DISP']['prior'] is None: line_par_input[line_name+'_DISP'].pop('prior',None)
-
-            # Check to make sure init value is within limits of plim
-            if (line_par_input[line_name+'_DISP']['init'] < line_par_input[line_name+'_DISP']['plim'][0]) or (line_par_input[line_name+'_DISP']['init'] > line_par_input[line_name+'_DISP']['plim'][1]):
-                raise ValueError('\n DISP (disp) initial value (disp_init) for %s outside of parameter limits (disp_plim)!\n' % (line_name))
-
-
-        if (line_dict['line_profile'] == 'gauss-hermite'):
-            type_options = target.options[line_types[line_type][0] + '_options']
-            n_moments = type_options['n_moments']
-
-            # TODO: combine with below
-            h_default_init, h_default_plim = h_moment_hyperpars()
-            for m in range(3,3+(n_moments-2)):
-                attr = 'h%d'%m
-                par_attr = '%s_H%d'%(line_name,m)
-                if (attr in line_dict) and (line_dict[attr] == 'free'):
-                    line_par_input[par_attr] = {'init': line_dict.get(attr+'_init', h_default_init),
-                                                'plim': line_dict.get(attr+'_plim', h_default_plim),
-                                                'prior': line_dict.get(attr+'_prior', {'type':'gaussian'})
-                                               }
-                if line_par_input[par_attr]['prior'] is None: line_par_input[par_attr].pop('prior',None)
-
-                # Check to make sure init value is within limits of plim
-                if (line_par_input[par_attr]['init'] < line_par_input[par_attr]['plim'][0]) or (line_par_input[par_attr]["init"] > line_par_input[par_attr]['plim'][1]):
-                    raise ValueError('\n Gauss-Hermite moment h%d initial value (h%d_init) for %s outside of parameter limits (h%d_plim)!\n' % (m,m,line_name,m))
-
-
-        if line_dict['line_profile'] in ['laplace','uniform']:
-            h_default_init, h_default_plim = h_moment_hyperpars()
-            for m in range(3,5):
-                attr = 'h%d'%m
-                par_attr = '%s_H%d'%(line_name,m)
-                if (attr in line_dict) and (line_dict[attr] == 'free'):
-                    line_par_input[par_attr] = {'init': line_dict.get(attr+'_init', h_default_init),
-                                                'plim': line_dict.get(attr+'_plim', h_default_plim),
-                                                'prior': line_dict.get(attr+'_prior', {'type':'halfnorm'})
-                                               }
-                if line_par_input[par_attr]['prior'] is None: line_par_input[par_attr].pop('prior',None)
-
-                # Check to make sure init value is within limits of plim
-                if (line_par_input[par_attr]['init'] < line_par_input[par_attr]['plim'][0]) or (line_par_input[par_attr]['init'] > line_par_input[par_attr]['plim'][1]):
-                    raise ValueError('\n Laplace or Uniform moment h%d initial value (h%d_init) for %s outside of parameter limits (h%d_plim)!\n' % (m,m,line_name,m))
-
-            # TODO: config file
-            # add exceptions for h4 in each line profile; laplace h4>=0, uniform h4<0
-            if line_dict['line_profile'] == 'laplace':
-                line_par_input['%s_H3'%line_name]['init'] = 0.01
-                line_par_input['%s_H3'%line_name]['plim'] = (-0.15,0.15)
-                line_par_input['%s_H4'%line_name]['init'] = 0.01
-                line_par_input['%s_H4'%line_name]['plim'] = (0,0.2)
-
-            if line_dict['line_profile'] == 'uniform':
-                line_par_input['%s_H4'%line_name]['init'] = -0.01
-                line_par_input['%s_H4'%line_name]['plim'] = (-0.3,-1e-4)
-
-
-        if ('shape' in line_dict) and (line_dict['shape'] == 'free'):
-            par_attr = '%s_SHAPE'%line_name
-            shape_default_init, shape_default_plim = shape_hyperpars()
-            line_par_input[par_attr] = {'init': line_dict.get('shape_init', shape_default_init),
-                                        'plim': line_dict.get('shape_plim', shape_default_plim),
-                                        'prior': line_dict.get('shape_prior')
-                                       }
-            if line_par_input[par_attr]['prior'] is None: line_par_input[par_attr].pop('prior',None)
-
-            # Check to make sure init value is within limits of plim
-            if (line_par_input[par_attr]['init'] < line_par_input[par_attr]['plim'][0]) or (line_par_input[par_attr]['init'] > line_par_input[par_attr]['plim'][1]):
-                raise ValueError('\n Voigt profile shape parameter (shape) initial value (shape_init) for %s outside of parameter limits (shape_plim)!\n' % (line_name))
-
-
-    # If tie_line_disp, we tie all widths (including any higher order moments) by respective line groups (Na, Br, Out, Abs)
-    comp_options = target.options.comp_options
-    if comp_options.tie_line_disp:
-        for line_type, type_attrs in line_types.items():
-            line_profile = comp_options[line_type+'_line_profile']
-            if (comp_options['fit_'+type_attrs[0]]) or (line_type in [line_dict['line_type'] for line_dict in line_list.values()]):
-                line_par_input[line_type.upper()+'_DISP'] = {'init': type_attrs[1], 'plim': type_attrs[2]}
-            if (line_profile == 'gauss-hermite') and (comp_options['n_moments'] > 2):
-                for m in range(3,3+comp_options['n_moments']-2):
-                    line_par_input[line_type.upper()+'_H%d'%m] = {'init': type_attrs[3], 'plim': type_attrs[4]}
-            if line_profile == 'voigt':
-                line_par_input[line_type.upper()+'_SHAPE'] = {'init': type_attrs[5], 'plim': type_attrs[6]}
-            if line_profile in ['laplace', 'uniform']:
-                for m in range(3,5):
-                    line_par_input[line_type.upper()+'_H%d'%m] = {'init': type_attrs[3], 'plim': type_attrs[4]}
-
-    # If tie_line_voff, we tie all velocity offsets (including any higher order moments) by respective line groups (Na, Br, Out, Abs)	
-    if comp_options.tie_line_voff:
-        for line_type, type_attrs in line_types.items():
-            if (comp_options['fit_'+type_attrs[0]]) or (line_type in [line_dict['line_type'] for line_dict in line_list.values()]):
-                # TODO: config file
-                line_par_input[line_type.upper()+'_VOFF'] = {'init': 0.0, 'plim': (-500.0,500.0), 'prior': {'type': 'gaussian'}}
-
-    return line_par_input
-
-
-def check_hard_cons(target, line_list, param_keys, ncomp_dict, remove_lines=False):
-    valid_keys = ['amp','disp','voff', 'shape'] + ['h%d'%m for m in range(3,11)]
-    param_dict = {par:0 for par in param_keys}
-    for line_name, line_dict in line_list.items():
-        for hpar, value in line_dict.items():
-            if (hpar not in valid_keys) or (value == 'free'):
-                continue
-
-            if isinstance(value, (int,float)):
-                line_dict[hpar] = float(value)
-                continue
-
-            # hpar value is an expression, make sure it's valid
-            if ne.validate(value, local_dict=param_dict) is not None:
-                if remove_lines:
-                    if target.options.output_options.verbose:
-                        print('\n WARNING: Hard-constraint %s not found in parameter list or could not be parsed; removing %s line from line list.\n' % (value,line_name))
-                    line_list.pop(line, None)
-                    for n, ndict in ncomp_dict.items():
-                        ndict.pop(line_name, None)
-                else:
-                    if target.options.output_options.verbose:
-                        print('Hard-constraint %s not found in parameter list or could not be parsed; converting to free parameter.\n' % value)
-                    line_dict[hpar] = 'free'
-                    for n, ndict in ncomp_dict.items():
-                        if line_name in ndict:
-                            ndict[line_name][hpar] = 'free'
-
-
-def check_soft_cons(soft_cons,line_par_input,verbose=True):
-    out_cons = []
-    line_par_dict = {k:v['init'] for k,v in line_par_input.items()}
-
-    # Check that soft cons can be parsed; if not, convert to free parameter
-    for con in soft_cons:
-        # validate returns None if successful
-        if any([ne.validate(c,local_dict=line_par_dict) for c in con]):
-            print('\n - %s soft constraint removed because one or more free parameters is not available.' % str(con))
-        else:
-            out_cons.append(con)
-
-    # Now check to see that initial values are obeyed; if not, throw exception and warning message
-    for con in out_cons:
-        val1 = ne.evaluate(con[0],local_dict=line_par_dict).item()
-        val2 = ne.evaluate(con[1],local_dict=line_par_dict).item()
-        if val1 < val2:
-            raise ValueError('\n The initial value for %s is less than the initial value for %s, but the constraint %s says otherwise.  Either remove the constraint or initialize the values appropriately.\n' % (con[0],con[1],con))
-
-    return out_cons
-
-
-
-# TODO: do something with:
-# Calculate R-Squared statistic of best fit
-# r2 = badass_test_suite.r_squared(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
-# Calculate rCHI2 statistic of best fit
-# rchi2 = badass_test_suite.r_chi_squared(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]),copy.deepcopy(mccomps["NOISE"][0]),len(_param_dict))
-# Calculate RMSE statistic of best fit
-# rmse = lowest_rmse#badass_test_suite.root_mean_squared_error(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
-# Calculate MAE statistic of best fit
-# mae = badass_test_suite.mean_abs_error(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
-
-def run_test_set(target, test_set, mlctx, test_title=None):
-
-    # test_set = [(label, [test_lines], {full_line_list}), ...]
-
-    # TODO: all test_labels are unique
-    # {label: {fit_results}), ...}
-    test_fit_results = {}
-
-    # [(label1, label2, {metrics}), ...]
-    test_metrics = []
-
-    for test_label, test_lines, full_line_list in test_set:
-
-        param_dict, line_list, combined_line_list, soft_cons, ncomp_dict = initialize_pars(target, user_lines=full_line_list)
-
-        # TODO: put rest of parameters in mlctx
-        # TODO: fix
-        mlctx.line_list = full_line_list
-        mlctx.combined_line_list = combined_line_list
-        mlctx.soft_cons = soft_cons
-        mcpars, mccomps, mcLL, lowest_rmse = max_likelihood(param_dict,mlctx,fit_type='init',fit_stat=target.options.fit_options.fit_stat,
-                                                output_model=False,test_outflows=True,n_basinhop=target.options.fit_options.n_basinhop,
-                                                reweighting=target.options.fit_options.reweighting,max_like_niter=0,
-                                                full_verbose=target.options.output_options.verbose,
-                                                verbose=target.options.output_options.verbose)
-
-        # Calculate degrees of freedom of fit; nu = n - m (n number of observations minus m degrees of freedom (free fitted parameters))
-        dof = len(target.wave)-len(param_dict)
-        if dof <= 0:
-            if target.options.output_options.verbose:
-                print('WARNING: Degrees-of-Freedom in fit is <= 0.  One should increase the test range and/or decrease the number of free parameters of the model appropriately')
-            dof = 1
-
-        if target.options.fit_options.reweighting:
-            rchi2 = badass_test_suite.r_chi_squared(mccomps['DATA'][0], mccomps['MODEL'][0], mccomps['NOISE'][0], len(param_dict))
-            aon = badass_test_suite.calculate_aon(test_lines, full_line_list, mccomps, target.noise*np.sqrt(rchi2))
-        else:
-            aon = badass_test_suite.calculate_aon(test_lines, full_line_list, mccomps, target.noise)
-
-        fit_results = {'mcpars':mcpars,'mccomps':mccomps,'mcLL':mcLL,'line_list':full_line_list,'dof':dof,'npar':len(param_dict),'rmse':lowest_rmse, 'aon':aon}
-        test_fit_results[test_label] = fit_results
-
-        if len(test_fit_results.keys()) == 1: # first run
-            prev_label, prev_results = test_label, fit_results
-            continue
-
-        # get metrics
-        resid_A = prev_results['mccomps']['RESID'][0,:][target.fit_mask]
-        resid_B = fit_results['mccomps']['RESID'][0,:][target.fit_mask]
-
-        # TODO: test suite util to get all metrics
-        metrics = {}
-
-        ddof = np.abs(prev_results['dof']-fit_results['dof'])
-        _,_,_,conf,_,_,_,_,_,_ = badass_test_suite.bayesian_AB_test(resid_B, resid_A, target.wave[target.fit_mask], target.noise[target.fit_mask], target.spec[target.fit_mask], np.arange(len(resid_A)), ddof, target.options.io_options.output_dir, plot=False)
-        metrics['BADASS'] = conf
-
-        ssr_ratio, ssr_A, ssr_B = badass_test_suite.ssr_test(resid_B, resid_A, target.options.io_options.output_dir)
-        metrics['SSR_RATIO'] = ssr_ratio
-
-        k_A, k_B = prev_results['npar'], fit_results['npar']
-        f_stat, f_pval, f_conf = badass_test_suite.anova_test(resid_B, resid_A, k_A, k_B, target.options.io_options.output_dir)
-        metrics['ANOVA'] = f_conf
-
-        metrics['F_RATIO'] = badass_test_suite.f_ratio(resid_B, resid_A)
-
-        chi2_B, chi2_A, chi2_ratio = badass_test_suite.chi2_metric(np.arange(len(resid_A)), fit_results['mccomps'], prev_results['mccomps'])
-        metrics['CHI2_RATIO'] = chi2_ratio
-
-        if target.options.test_options.plot_tests:
-            create_test_plot(target, test_fit_results, prev_label, test_label, test_title=test_title)
-
-        test_pass = badass_test_suite.thresholds_met(target.options.test_options, metrics, fit_results)
-        fit_results['pass'] = test_pass
-
-        test_metrics.append((prev_label, test_label, metrics))
-        ptbl = PrettyTable()
-        ptbl.field_names = ['TEST A', 'TEST B'] + list(metrics.keys()) + ['AON', 'PASS']
-        ptbl.add_row([prev_label, test_label] + ['%f'%v for v in metrics.values()] + ['%f'%aon, test_pass])
-        print(ptbl)
-
-        print('(Test %s)' % 'Passed' if test_pass else 'Failed')
-        if test_pass and target.options.test_options.auto_stop:
-            print('metric thresholds met, stopping')
-            break
-
-        prev_label, prev_results = test_label, fit_results
-
-    ptbl = PrettyTable()
-    ptbl.field_names = ['TEST A', 'TEST B'] + list(test_metrics[0][2].keys()) + ['AON', 'PASS']
-    for label_A, label_B, metrics in test_metrics:
-        ptbl.add_row([label_A, label_B] + ['%f'%v for v in metrics.values()] + ['%f'%test_fit_results[label_B]['aon'], test_fit_results[label_B]['pass']])
-    print('Test Results:')
-    print(ptbl)
-
-    return test_fit_results, test_metrics
 
 
 # TODO: move to plot utils
@@ -2384,7 +2269,7 @@ def max_likelihood(param_dict,mlctx,fit_type='init',fit_stat='ML',output_model=F
     mlctx.param_names = [key for key in param_dict]
     params = [param_dict[key]['init'] for key in param_dict]
     mlctx.bounds = [param_dict[key]['plim'] for key in param_dict]
-    lb, ub = zip(*mlctx.bounds) 
+    lb, ub = zip(*mlctx.bounds)
     param_bounds = op.Bounds(lb,ub,keep_feasible=True)
     n_free_pars = len(params) # number of free parameters
     # Extract parameters with priors; only non-uniform priors 
