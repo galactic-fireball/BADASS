@@ -126,6 +126,16 @@ class BadassRunContext:
         self.options = target.options
         self.verbose = self.options.output_options.verbose
 
+        self.force_best = False
+        self.force_thresh = np.inf
+
+        self.templates = None
+        self.param_dict = {}
+        self.line_list = []
+        self.combined_line_list = []
+        self.soft_cons = []
+        self.blob_pars = {}
+
 
     def run(self):
         if self.options.io_options.dust_cache != None:
@@ -286,23 +296,20 @@ class BadassRunContext:
 
         # Add the FWHM resolution and central pixel locations for each line so we don't have to find them during the fit.
         self.add_disp_res()
-        # TODO: do this after all the line par initialization so we don't have to edit it along the way
-        self.make_ncomp_dict()
 
         # Generate line free parameters based on input line_list
-        self.initialize_line_pars()
+        line_par_input = self.initialize_line_pars()
 
-        param_keys = list(par_input.keys()) + list(self.line_par_input.keys())
+        param_keys = list(par_input.keys()) + list(line_par_input.keys())
         # Check hard line constraints
         self.check_hard_cons(param_keys)
 
         # TODO: way to not have to run this twice?
         # Re-Generate line free parameters based on revised line_list
-        self.initialize_line_pars()
+        line_par_input = self.initialize_line_pars()
 
-        # TODO: just add line pars directly to par_input?
         # Append line_par_input to par_input
-        self.param_dict = {**par_input, **(self.line_par_input)}
+        self.param_dict = {**par_input, **line_par_input}
 
         # The default line list is automatically generated from lines with multiple components.
         # User can provide a combined line list, which can override the default.
@@ -509,31 +516,6 @@ class BadassRunContext:
             line_dict['disp_res_ang'] = disp_res_ang
             c = const.c.to('km/s').value
             line_dict['disp_res_kms'] = (disp_res_ang/center)*c # instrumental FWHM resolution in km/s
-
-
-    # TODO: re-evaluate if needed after line config revamp
-    def make_ncomp_dict(self):
-        """
-        Make a dictionary of multiple components (ncomp).
-        """
-        # Check to make sure there is at least 1 parent line (ncomp = 1) in the line_list
-        # print([True if line_list[line]["ncomp"]==1 else False for line in line_list])
-
-        if len(self.line_list) == 0:
-            self.ncomp_dict = {}
-            return
-
-        if np.all([self.line_list[line]['ncomp'] != 1 for line in self.line_list]):
-            raise ValueError('\n There must be at least one parent line (ncomp=1) for any line with ncomp>1')
-
-        max_ncomp = np.max([line_dict['ncomp'] for line_dict in self.line_list.values()])
-        ncomp_dict = {'NCOMP_%d'%i:{} for i in range(1,max_ncomp+1)}
-        
-        for line_name, line_dict in self.line_list.items():
-            ncomp = line_dict['ncomp']
-            ncomp_dict['NCOMP_%d'%ncomp][line_name] = line_dict
-
-        self.ncomp_dict = ncomp_dict
 
 
     def initialize_line_pars(self):
@@ -857,7 +839,7 @@ class BadassRunContext:
                     # TODO: config file
                     line_par_input[line_type.upper()+'_VOFF'] = {'init': 0.0, 'plim': (-500.0,500.0), 'prior': {'type': 'gaussian'}}
 
-        self.line_par_input = line_par_input
+        return line_par_input
 
 
     def check_hard_cons(self, param_keys, remove_lines=False):
@@ -878,34 +860,29 @@ class BadassRunContext:
                         if self.verbose:
                             print('\n WARNING: Hard-constraint %s not found in parameter list or could not be parsed; removing %s line from line list.\n' % (value,line_name))
                         self.line_list.pop(line, None)
-                        for n, ndict in self.ncomp_dict.items():
-                            ndict.pop(line_name, None)
                     else:
                         if self.verbose:
                             print('Hard-constraint %s not found in parameter list or could not be parsed; converting to free parameter.\n' % value)
                         line_dict[hpar] = 'free'
-                        for n, ndict in self.ncomp_dict.items():
-                            if line_name in ndict:
-                                ndict[line_name][hpar] = 'free'
 
 
     def check_soft_cons(self):
         out_cons = []
         soft_cons = self.options.user_constraints if self.options.user_constraints else []
-        line_par_dict = {k:v['init'] for k,v in self.line_par_input.items()}
+        expr_dict = {k:v['init'] for k,v in self.param_dict.items()}
 
         # Check that soft cons can be parsed; if not, convert to free parameter
         for con in soft_cons:
             # validate returns None if successful
-            if any([ne.validate(c,local_dict=line_par_dict) for c in con]):
+            if any([ne.validate(c,local_dict=expr_dict) for c in con]):
                 print('\n - %s soft constraint removed because one or more free parameters is not available.' % str(con))
             else:
                 out_cons.append(con)
 
         # Now check to see that initial values are obeyed; if not, throw exception and warning message
         for con in out_cons:
-            val1 = ne.evaluate(con[0],local_dict=line_par_dict).item()
-            val2 = ne.evaluate(con[1],local_dict=line_par_dict).item()
+            val1 = ne.evaluate(con[0],local_dict=expr_dict).item()
+            val2 = ne.evaluate(con[1],local_dict=expr_dict).item()
             if val1 < val2:
                 raise ValueError('\n The initial value for %s is less than the initial value for %s, but the constraint %s says otherwise.  Either remove the constraint or initialize the values appropriately.\n' % (con[0],con[1],con))
 
@@ -923,11 +900,10 @@ class BadassRunContext:
             self.combined_line_list = {}
             return
 
-        orig_line_list = self.ncomp_dict['NCOMP_1']
         combined_line_list = {}
 
         for line_name, line_dict in self.line_list.items():
-            if (line_dict['ncomp'] <= 1) or ('parent' not in line_dict) or (line_dict['parent'] not in orig_line_list):
+            if (line_dict['ncomp'] <= 1) or ('parent' not in line_dict) or (line_dict['parent'] not in self.line_list):
                 continue
 
             parent = line_dict['parent']
@@ -936,7 +912,7 @@ class BadassRunContext:
                 combined_line_list[comb_name] = {'lines':[parent,]}
             combined_line_list[comb_name]['lines'].append(line_name)
             for attr in ['center', 'center_pix', 'disp_res_kms', 'line_profile']:
-                combined_line_list[comb_name][attr] = orig_line_list[parent][attr]
+                combined_line_list[comb_name][attr] = self.line_list[parent][attr]
 
         for comb_name, comb_lines in self.options.combined_lines.items():
             # Check to make sure lines are in line list; only add the lines that are valid
@@ -1252,9 +1228,6 @@ class BadassRunContext:
             return r1 - r2
         cons = [{'type':'ineq', 'fun':eval_con, 'args':(param_names, con[0], con[1])} for con in self.soft_cons]
 
-        # Negative log-likelihood (to minimize the negative maximum)
-        nll = lambda *args: -lnprob(*args)
-
         # create a context class so fit_target attributes can be adjusted during fit
         #   without affecting the original target (in bactx)
         mlctx = Prodict({
@@ -1316,6 +1289,8 @@ class BadassRunContext:
                 print('\tFit Status: %s\n\tForce threshold: %0.4f\n\tLowest RMSE: %0.4f\n\tCurrent RMSE: %0.4f\n\tAccepted Count: %d\n\tBasinhop Count:%d'%(terminate,self.force_thresh,lowest_rmse,rmse,accepted_count,basinhop_count))
                 return terminate
 
+        # Negative log-likelihood (to minimize the negative maximum)
+        nll = lambda *args: -lnprob(*args)
 
         # TODO: eventually x0 can be self.param_dict.vals()
         # TODO: use wrapper function to put current param values in param_dict and then call lnprob with whole ctx
