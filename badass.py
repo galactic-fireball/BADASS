@@ -126,11 +126,20 @@ class BadassRunContext:
         self.options = target.options
         self.verbose = self.options.output_options.verbose
 
+        # The spectral data currently being fit
+        self.fit_wave = self.target.wave.copy()
+        self.fit_spec = self.target.spec.copy()
+        self.fit_noise = self.target.noise.copy()
+
         self.force_best = False
         self.force_thresh = np.inf
+        self.fit_type = 'init' # TODO: needed?
+        self.output_model = False # TODO: needed?
 
         self.templates = None
         self.param_dict = {}
+        self.prior_params = []
+        self.cur_params = {} # contains the parameter values of the current fit
         self.line_list = []
         self.combined_line_list = []
         self.soft_cons = []
@@ -236,8 +245,8 @@ class BadassRunContext:
         """
 
         # Initial conditions for some parameters
-        max_flux = np.nanmax(self.target.spec)*1.5
-        median_flux = np.nanmedian(self.target.spec)
+        max_flux = np.nanmax(self.fit_spec)*1.5
+        median_flux = np.nanmedian(self.fit_spec)
 
         # Padding on the edges; any line(s) within this many angstroms is omitted
         # from the fit so problems do not occur with the fit
@@ -1213,9 +1222,8 @@ class BadassRunContext:
 
         print('Performing max likelihood fitting')
 
-        # values to test at each step
-        params = [self.param_dict[key]['init'] for key in self.param_dict]
-        param_names = list(self.param_dict.keys())
+        self.prior_params = [key for key,val in self.param_dict.items() if ('prior' in val)]
+        self.cur_params = {k:v['init'] for k,v in self.param_dict.items()}
 
         bounds = [val['plim'] for key,val in self.param_dict.items()]
         lb, ub = zip(*bounds)
@@ -1226,28 +1234,10 @@ class BadassRunContext:
             r1 = ne.evaluate(expr1, local_dict=local_dict).item()
             r2 = ne.evaluate(expr2, local_dict=local_dict).item()
             return r1 - r2
-        cons = [{'type':'ineq', 'fun':eval_con, 'args':(param_names, con[0], con[1])} for con in self.soft_cons]
-
-        # create a context class so fit_target attributes can be adjusted during fit
-        #   without affecting the original target (in bactx)
-        mlctx = Prodict({
-            'bactx': self,
-            'fit_target': Prodict({
-                'wave': self.target.wave.copy(),
-                'spec': self.target.spec.copy(),
-                'noise': self.target.noise.copy(),
-            }),
-            'output_model': False, # TODO: remove
-            'fit_type': 'init', # TODO: remove
-            'param_names': param_names, # TODO: remove
-            'fit_stat': self.options.fit_options.fit_stat, # TODO: remove
-            'bounds': bounds, # TODO: remove
-            'prior_dict': {key:val for key,val in self.param_dict.items() if ('prior' in val)}, # TODO: remove
-        })
-
-        lowest_rmse = badass_test_suite.root_mean_squared_error(mlctx.fit_target.spec, np.zeros(len(mlctx.fit_target.spec)))
+        cons = [{'type':'ineq', 'fun':eval_con, 'args':(list(self.param_dict.keys()), con[0], con[1])} for con in self.soft_cons]
 
         n_basinhop = self.options.fit_options.n_basinhop
+        lowest_rmse = badass_test_suite.root_mean_squared_error(self.fit_spec, np.zeros(len(self.fit_spec)))
         callback_ftn = None
         if self.force_best:
             force_basinhop = n_basinhop
@@ -1273,7 +1263,7 @@ class BadassRunContext:
                 if accepted == 1:
                     accepted_count += 1
 
-                current_comps = fit_model(x, mlctx, fit_type='init', output_model=True)
+                _, current_comps = self.fit_model()
                 rmse = badass_test_suite.root_mean_squared_error(current_comps['DATA'], current_comps['MODEL'])
                 lowest_rmse = min(lowest_rmse, rmse)
 
@@ -1289,26 +1279,27 @@ class BadassRunContext:
                 print('\tFit Status: %s\n\tForce threshold: %0.4f\n\tLowest RMSE: %0.4f\n\tCurrent RMSE: %0.4f\n\tAccepted Count: %d\n\tBasinhop Count:%d'%(terminate,self.force_thresh,lowest_rmse,rmse,accepted_count,basinhop_count))
                 return terminate
 
-        # Negative log-likelihood (to minimize the negative maximum)
-        nll = lambda *args: -lnprob(*args)
 
-        # TODO: eventually x0 can be self.param_dict.vals()
-        # TODO: use wrapper function to put current param values in param_dict and then call lnprob with whole ctx
-        minimizer_args = {'args':(mlctx,), 'method':'SLSQP', 'bounds':param_bounds,'constraints':cons,'options':{'disp':False,}}
-        result = op.basinhopping(func=nll, x0=params, stepsize=1.0, interval=1, niter=2500, minimizer_kwargs=minimizer_args,
+        def lnprob_wrapper(fit_vals):
+            self.cur_params = dict(zip(self.cur_params.keys(), fit_vals))
+            return -self.lnprob()
+
+        minimizer_args = {'method':'SLSQP', 'bounds':param_bounds,'constraints':cons,'options':{'disp':False,}}
+        result = op.basinhopping(func=lnprob_wrapper, x0=list(self.cur_params.values()), stepsize=1.0, interval=1, niter=2500, minimizer_kwargs=minimizer_args,
                                  disp=self.verbose, niter_success=n_basinhop, callback=callback_ftn)
 
         par_best = result['x']
+        self.cur_params = dict(zip(self.cur_params.keys(), par_best))
         fun_result = result['fun']
-        mlctx.output_model = True
-        comp_dict = fit_model(par_best, mlctx)
+        self.output_model = True
+        _, comp_dict = self.fit_model()
 
         if self.options.fit_options.reweighting:
             print('Reweighting noise to achieve a reduced chi-squared ~ 1')
-            cur_rchi2 = badass_test_suite.r_chi_squared(comp_dict['DATA'], comp_dict['MODEL'], mlctx.fit_target.noise, len(par_best))
+            cur_rchi2 = badass_test_suite.r_chi_squared(comp_dict['DATA'], comp_dict['MODEL'], self.fit_noise, len(par_best))
             print('\tCurrent reduced chi-squared = %0.5f' % cur_rchi2)
-            mlctx.fit_target.noise = mlctx.fit_target.noise*np.sqrt(cur_rchi2)
-            new_rchi2 = badass_test_suite.r_chi_squared(comp_dict['DATA'], comp_dict['MODEL'], mlctx.fit_target.noise, len(par_best))
+            self.fit_noise = self.fit_noise*np.sqrt(cur_rchi2)
+            new_rchi2 = badass_test_suite.r_chi_squared(comp_dict['DATA'], comp_dict['MODEL'], self.fit_noise, len(par_best))
             print('\tNew reduced chi-squared = %0.5f' % new_rchi2)  
 
 
@@ -1316,7 +1307,7 @@ class BadassRunContext:
         max_like_niter = self.options.fit_options.max_like_niter
         iters = max_like_niter+1
         mc_attr_store = {}
-        for key in param_names:
+        for key in self.cur_params.keys():
             mc_attr_store[key] = np.zeros(iters)
 
         # TODO: make dict for 'name'-> calc_func
@@ -1350,39 +1341,37 @@ class BadassRunContext:
             7000.0: ['HOST_FRAC_7000', 'AGN_FRAC_7000'],
         }
         for wave, attrs in cont_lum_attrs.items():
-            if (mlctx.fit_target.wave[0] < wave) and (mlctx.fit_target.wave[-1] > wave):
+            if (self.fit_wave[0] < wave) and (self.fit_wave[-1] > wave):
                 for key in attrs:
                     mc_attr_store[key] = np.zeros(iters)
 
-        result_dict = dict(zip(param_names, par_best))
-        self.update_mc_store(0, mc_attr_store, mlctx, fun_result, result_dict, comp_dict)
-
+        self.update_mc_store(0, mc_attr_store, fun_result, comp_dict)
 
         if max_like_niter:
             print('Performing Monte Carlo bootstrapping')
+            orig_fit_spec = self.fit_spec.copy()
 
             for n in range(1, max_like_niter+1):
                 # Generate a simulated galaxy spectrum with noise added at each pixel
-                mcgal = np.random.normal(self.target.spec,mlctx.fit_target.noise)
+                mcgal = np.random.normal(self.target.spec, self.fit_noise)
                 # Get rid of any infs or nan if there are none; this will cause scipy.optimize to fail
                 mcgal[~np.isfinite(mcgal)] = np.nanmedian(mcgal)
-                mlctx.fit_target.spec = mcgal
-                mlctx.fit_type = 'init'
-                mlctx.output_model = False
+                self.fit_spec = mcgal
+                self.fit_type = 'init' # TODO: need?
+                self.output_model = False # TODO: need?
 
                 # TODO: eventually x0 can be self.param_dict.vals()
                 # TODO: use wrapper function to put current param values in param_dict and then call lnprob with whole ctx
-                resultmc = op.minimize(fun=nll, x0=par_best, args=(mlctx,), method='SLSQP', 
+                resultmc = op.minimize(fun=lnprob_wrapper, x0=par_best, method='SLSQP', 
                     bounds=param_bounds, constraints=cons, options={'maxiter':1000,'disp': False})
 
-                mlctx.output_model = True # TODO: needed?
+                self.fit_spec = orig_fit_spec
+                # self.output_model = True # TODO: needed?
                 par_best = resultmc['x']
+                self.cur_params = dict(zip(self.cur_params.keys(), par_best))
                 fun_result = resultmc['fun']
-                comp_dict = fit_model(par_best, mlctx)
-
-                result_dict = dict(zip(param_names, par_best))
-                self.update_mc_store(n, mc_attr_store, mlctx, fun_result, result_dict, comp_dict)
-
+                _, comp_dict = self.fit_model()
+                self.update_mc_store(n, mc_attr_store, fun_result, comp_dict)
 
         # TODO: separate function for creating fit_results_dict
         # TODO: class or other structure for storing mc_attr_store, fit_results_dict, etc.
@@ -1400,11 +1389,10 @@ class BadassRunContext:
             fit_results_dict[key] = {'med': mc_med, 'std': mc_std, 'flag': 0}
 
         # TODO: mark flags for other keys if med < 0 or std == 0
-        # TODO: just use param_dict
         # Mark any parameter flags
-        for key in param_names:
+        for key, val in self.param_dict.items():
             flag = 0
-            bounds = self.param_dict[key]['plim']
+            bounds = val['plim']
             if mc_std == 0: flag += 1
             if mc_med-mc_std <= bounds[0]: flag += 1
             if mc_med+mc_std >= bounds[1]: flag += 1
@@ -1447,9 +1435,10 @@ class BadassRunContext:
             return fit_results_dict, mccomps, mc_attr_store['LOG_LIKE'], lowest_rmse
 
         # Get best-fit components for maximum likelihood plot
-        mlctx.output_model = True
-        # TODO: eventually just use param_dict
-        comp_dict = fit_model([fit_results_dict[key]['med'] for key in param_names], mlctx)
+        # self.output_model = True # TODO: need?
+
+        self.cur_params = {k:fit_results_dict[k]['med'] for k in self.cur_params.keys()}
+        _, comp_dict = self.fit_model()
 
         # Plot results of maximum likelihood fit
         # TODO: add to plotting
@@ -1476,7 +1465,7 @@ class BadassRunContext:
         return fit_results_dict, comp_dict
 
 
-    def update_mc_store(self, n, mc_attr_store, mlctx, fun_result, result_dict, comp_dict):
+    def update_mc_store(self, n, mc_attr_store, fun_result, comp_dict):
 
         wave_comp = comp_dict['WAVE']
         flux_norm = self.target.options.fit_options.flux_norm
@@ -1487,12 +1476,13 @@ class BadassRunContext:
         cosmo = FlatLambdaCDM(self.target.options.fit_options.cosmology.H0, self.target.options.fit_options.cosmology.Om0)
         d_mpc = cosmo.luminosity_distance(self.target.z).value
         # TODO: use astropy units
-        d_cm  = d_mpc * 3.086E+24 # 1 Mpc = 3.086e+24 cm
+        d_cm = d_mpc * 3.086E+24 # 1 Mpc = 3.086e+24 cm
 
+        # TODO: in utils
         def flux_to_lum(flux):
             return 4*np.pi*(d_cm**2)*flux
 
-        for key, val in result_dict.items():
+        for key, val in self.cur_params.items():
             mc_attr_store[key][n] = val
 
         # continuum
@@ -1579,17 +1569,17 @@ class BadassRunContext:
             # compute number of pixels (NPIX) for each line in the line list;
             # this is done by determining the number of pixels of the line model
             # that are above the raw noise. 
-            mc_attr_store[line+'_NPIX'][n] = len(np.where(np.abs(line_comp) > mlctx.fit_target.noise)[0])
+            mc_attr_store[line+'_NPIX'][n] = len(np.where(np.abs(line_comp) > self.fit_noise)[0])
 
             # compute the signal-to-noise ratio (SNR) for each line;
             # this is done by calculating the maximum value of the line model 
             # above the MEAN value of the noise within the channels.
-            mc_attr_store[line+'_SNR'][n] = np.nanmax(np.abs(line_comp)) / np.nanmean(mlctx.fit_target.noise)
+            mc_attr_store[line+'_SNR'][n] = np.nanmax(np.abs(line_comp)) / np.nanmean(self.fit_noise)
 
             if not line in self.combined_line_list:
                 continue
 
-            vel = np.arange(len(mlctx.fit_target.wave))*self.target.velscale - blob_pars[line+'_LINE_VEL']
+            vel = np.arange(len(self.fit_wave))*self.target.velscale - blob_pars[line+'_LINE_VEL']
             full_profile = np.abs(line_comp)
             norm_profile = full_profile/np.sum(full_profile)
             voff = np.trapz(vel*norm_profile,vel)/simpson(norm_profile,vel)
@@ -1600,9 +1590,205 @@ class BadassRunContext:
 
         mc_attr_store['LOG_LIKE'][n] = fun_result
         mc_attr_store['R_SQUARED'][n] = badass_test_suite.r_squared(comp_dict['DATA'], comp_dict['MODEL'])
-        n_free_pars = len(mlctx.param_names)
-        mc_attr_store['RCHI_SQUARED'][n] = badass_test_suite.r_chi_squared(comp_dict['DATA'], comp_dict['MODEL'], mlctx.fit_target.noise, n_free_pars)
+        n_free_pars = len(self.cur_params)
+        mc_attr_store['RCHI_SQUARED'][n] = badass_test_suite.r_chi_squared(comp_dict['DATA'], comp_dict['MODEL'], self.fit_noise, n_free_pars)
 
+
+    def lnprob(self):
+        """
+        Log-probability function.
+        """
+
+        # TODO: needed?
+        if self.fit_type == 'final':
+            self.output_model = False
+
+        res = self.lnlike()
+
+        # MCMC fitting
+        if self.fit_type == 'final':
+            ll, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob = res
+            lp = self.lnprior()
+            if not np.isfinite(lp):
+                return -np.inf, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob, ll
+            return lp + ll, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob, ll
+
+        # Maximum Likelihood, etc. fitting
+        elif self.fit_type == 'init':
+            ll = res
+            if self.options.fit_options.fit_stat in ['ML']:
+                lp = self.lnprior()
+                if not np.isfinite(lp):
+                    return -np.inf
+                return lp + ll
+            return ll
+
+
+    # Maximum Likelihood (initial fitting), Prior, and log Probability functions
+    def lnlike(self):
+        """
+        Log-likelihood function.
+        """
+
+        res = self.fit_model()
+        fit_mask = self.target.fit_mask
+        fit_stat = self.options.fit_options.fit_stat
+
+        # TODO: make separate functions for ML, OLS, other fit stats
+        # Create model
+        if (self.fit_type == 'final') and (not self.output_model):
+            model, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob = res
+            if fit_stat == 'ML':
+                # Calculate log-likelihood
+                l = -0.5*(self.fit_spec[fit_mask]-model[fit_mask])**2/(self.fit_noise[fit_mask])**2 + np.log(2*np.pi*(self.fit_noise[fit_mask])**2)
+                l = np.sum(l, axis=0)
+            elif fit_stat == 'OLS':
+                # Since emcee looks for the maximum, but Least Squares requires a minimum
+                # we multiply by negative.
+                l = (self.fit_spec[fit_mask]-model[fit_mask])**2
+                l = -np.sum(l,axis=0)
+
+            return l, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob
+
+        # The maximum likelihood routine [by default] minimizes the negative likelihood
+        # Thus for fit_stat="OLS", the SSR must be multiplied by -1 to minimize it. 
+
+        model, comp_dict = res
+        if fit_stat == 'ML':
+            # Calculate log-likelihood
+            l = -0.5*(self.fit_spec[fit_mask]-model[fit_mask])**2/(self.fit_noise[fit_mask])**2 + np.log(2*np.pi*(self.fit_noise[fit_mask])**2)
+            l = np.sum(l, axis=0)
+        elif fit_stat == 'OLS':
+            l = (self.fit_spec[fit_mask]-model[fit_mask])**2
+            l = -np.sum(l,axis=0)
+        return l 
+
+
+    def lnprior(self):
+        """
+        Log-prior function.
+        """
+
+        lp_arr = []
+        for key, val in self.cur_params.items():
+            lower, upper = self.param_dict[key]['plim']
+            assert upper > lower
+            lp_arr.append(0.0 if lower <= val <= upper else -np.inf)
+
+        # Loop through soft constraints
+        for expr1, expr2 in self.soft_cons:
+            con_pass = ne.evaluate(expr1, local_dict=self.cur_params).item() - ne.evaluate(expr2, local_dict=self.cur_params).item() >= 0
+            lp_arr.append(0.0 if con_pass else -np.inf)
+
+        # Loop through parameters with priors on them 
+        prior_map = {'gaussian': lnprior_gaussian, 'halfnorm': lnprior_halfnorm, 'jeffreys': lnprior_jeffreys, 'flat': lnprior_flat}
+        p = [prior_map[self.param_dict[key]['prior']['type']](self.cur_params[key],**self.param_dict[key]) for key in self.prior_params]
+
+        lp_arr += p
+        return np.sum(lp_arr)
+
+
+    # The fit_model function controls the model for both the initial and MCMC fits.
+    def fit_model(self):
+        """
+        Constructs galaxy model.
+        """
+
+        host_model = np.copy(self.fit_spec)
+
+        # Initialize empty dict to store model components
+        comp_dict  = {} # used for fitting/likelihood calculation; sampled identically to the data
+
+
+        # Power-law Component
+        # TODO: Create a template model for the power-law continuum
+        if self.options.comp_options.fit_power:
+            if self.options.power_options.type == 'simple':
+                power = simple_power_law(self.fit_wave, self.cur_params['POWER_AMP'], self.cur_params['POWER_SLOPE'])
+            elif self.options.plot_options.type == 'broken':
+                power = broken_power_law(self.fit_wave, self.cur_params['POWER_AMP'], self.cur_params['POWER_BREAK'],
+                                         self.cur_params['POWER_SLOPE_1'], self.cur_params['POWER_SLOPE_2'],
+                                         self.cur_params['POWER_CURVATURE'])
+
+            # Subtract off continuum from galaxy, since we only want template weights to be fit
+            host_model = host_model - power
+            comp_dict['POWER'] = power
+
+
+        # Polynomial Components
+        # TODO: create a template
+        poly_options = self.options.poly_options
+        if self.options.comp_options.fit_poly:
+            if poly_options.apoly.bool:
+                nw = np.linspace(-1, 1, len(self.fit_wave))
+                coeff = np.empty(poly_options.apoly.order+1)
+                coeff[0] = 0.0
+                for n in range(1, len(coeff)):
+                    coeff[n] = self.cur_params['APOLY_COEFF_%d' % n]
+                apoly = np.polynomial.legendre.legval(nw, coeff)
+                host_model = host_model - apoly
+                comp_dict['APOLY'] = apoly
+
+            if poly_options.mpoly.bool:
+                nw = np.linspace(-1, 1, len(self.fit_wave))
+                coeff = np.empty(poly_options.mpoly.order+1)
+                for n in range(1, len(coeff)):
+                    coeff[n] = self.cur_params['MPOLY_COEFF_%d' % n]
+                mpoly = np.polynomial.legendre.legval(nw, coeff)
+                comp_dict['MPOLY'] = mpoly
+                host_model = host_model * mpoly
+
+
+        # Template Components
+        # TODO: host and losvd template components were processed after emission line components,
+        #       now they will be before; does this affect anything?
+        for template in self.templates.values():
+            # TODO: don't need to return comp_dict
+            comp_dict, host_model = template.add_components(self.cur_params, comp_dict, host_model)
+
+
+        # Emission Line Components
+        # Iteratively generate lines from the line list using the line_constructor()
+        for line in self.line_list:
+            # TODO: don't need to return comp_dict
+            comp_dict = line_constructor(self.fit_wave, self.cur_params, comp_dict, self.options.comp_options, line, self.line_list, self.target.velscale)
+            host_model = host_model - comp_dict[line]
+
+
+        # The final model
+        gmodel = np.sum((comp_dict[d] for d in comp_dict), axis=0)
+
+        # Add combined lines to comp_dict
+        for comb_line, line_dict in self.combined_line_list.items():
+            comp_dict[comb_line] = np.zeros(len(self.fit_wave))
+            for line_name in line_dict['lines']:
+                comp_dict[comb_line] += comp_dict[line_name]
+
+        # Add last components to comp_dict for plotting purposes
+        # Add galaxy, sigma, model, and residuals to comp_dict
+        # TODO: does this need to be done every fit_model call?
+        comp_dict['DATA']  = self.fit_spec
+        comp_dict['WAVE']  = self.fit_wave
+        comp_dict['NOISE'] = self.fit_noise
+        comp_dict['MODEL'] = gmodel
+        comp_dict['RESID'] = self.fit_spec-gmodel
+
+        # Fluxes & Equivalent Widths
+        # Equivalent widths of emission lines are stored in a dictionary and returned to emcee as metadata blob.
+        # Velocity interpolation function
+        # TODO: fix for mcmc
+        if (self.fit_type == 'final') and (not self.output_model):
+            fluxes, eqwidths, cont_fluxes, int_vel_disp = calc_mcmc_blob(p, fit_target.wave, comp_dict, bactx.options.comp_options, {**bactx.line_list, **bactx.combined_line_list}, bactx.combined_line_list, bactx.blob_pars, bactx.fit_mask, bactx.fit_stat, bactx.target.velscale)
+
+        # TODO: store in target or ctx
+        if self.fit_type == 'init': # Max likelihood fitting
+            return gmodel, comp_dict
+
+        if self.fit_type == 'line_test':
+            return comp_dict
+
+        if self.fit_type == 'final': # emcee
+            return gmodel, fluxes, eqwidths, cont_fluxes, int_vel_disp
 
 
 
@@ -2564,45 +2750,6 @@ def max_like_plot(lam_gal,comp_dict,line_list,params,param_names,fit_mask,fit_no
 
 #### Likelihood function #########################################################
 
-# Maximum Likelihood (initial fitting), Prior, and log Probability functions
-def lnlike(params,ctx):
-    """
-    Log-likelihood function.
-    """
-
-    res = fit_model(params, ctx)
-
-    fit_mask = ctx.bactx.target.fit_mask
-
-    # TODO: make separate functions for ML, OLS, other fit stats
-    # Create model
-    if (ctx.fit_type == 'final') and (not ctx.output_model):
-        model, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob = res
-        if ctx.fit_stat == 'ML':
-            # Calculate log-likelihood
-            l = -0.5*(ctx.fit_target.spec[fit_mask]-model[fit_mask])**2/(ctx.fit_target.noise[fit_mask])**2 + np.log(2*np.pi*(ctx.fit_target.noise[fit_mask])**2)
-            l = np.sum(l,axis=0)
-        elif ctx.fit_stat == 'OLS':
-            # Since emcee looks for the maximum, but Least Squares requires a minimum
-            # we multiply by negative.
-            l = (ctx.fit_target.spec[fit_mask]-model[fit_mask])**2
-            l = -np.sum(l,axis=0)
-
-        return l, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob
-
-    # The maximum likelihood routine [by default] minimizes the negative likelihood
-    # Thus for fit_stat="OLS", the SSR must be multiplied by -1 to minimize it. 
-
-    model, comp_dict = res
-    if ctx.fit_stat == 'ML':
-        # Calculate log-likelihood
-        l = -0.5*(ctx.fit_target.spec[fit_mask]-model[fit_mask])**2/(ctx.fit_target.noise[fit_mask])**2 + np.log(2*np.pi*(ctx.fit_target.noise[fit_mask])**2)
-        l = np.sum(l,axis=0)
-    elif ctx.fit_stat == 'OLS':
-        l = (ctx.fit_target.spec[fit_mask]-model[fit_mask])**2
-        l = -np.sum(l,axis=0)
-    return l 
-
 ##################################################################################
 
 #### Priors ######################################################################
@@ -2674,74 +2821,7 @@ def lnprior_flat(x,**kwargs):
     else:
         return -np.inf
 
-def lnprior(params,ctx):
-    """
-    Log-prior function.
-    """
 
-    # Create reference dictionary for numexpr
-    pdict = dict(zip(ctx.param_names, params))
-
-    # Loop through parameters
-    lp_arr = []
-    for i, param in enumerate(params):
-        lower, upper = ctx.bounds[i]
-        assert upper > lower
-        if lower <= param <= upper:
-            lp_arr.append(0.0)
-        else:
-            lp_arr.append(-np.inf)
-
-    # Loop through soft constraints
-    for soft_con in ctx.bactx.soft_cons:
-        if (ne.evaluate(soft_con[0],local_dict=pdict).item()-ne.evaluate(soft_con[1],local_dict=pdict).item() >= 0):
-            lp_arr.append(0.0)
-        else:
-            lp_arr.append(-np.inf)
-
-    # Loop through parameters with priors on them 
-    prior_map = {'gaussian': lnprior_gaussian, 'halfnorm': lnprior_halfnorm, 'jeffreys': lnprior_jeffreys, 'flat': lnprior_flat}
-    p = [prior_map[ctx.prior_dict[key]['prior']['type']](pdict[key],**ctx.prior_dict[key]) for key in ctx.prior_dict]
-
-    # If initial fit using maximum likelihood, do not return uniform priors (-inf), otherwise scipy.optimize.minimize() fails.
-    if ctx.fit_type == 'init':
-        lp_arr += p
-        return np.sum(lp_arr)
-    elif ctx.fit_type == 'final':
-        lp_arr += p
-        return np.sum(lp_arr)
-
-
-def lnprob(params,ctx):
-    """
-    Log-probability function.
-    """
-
-    if ctx.fit_type == 'final':
-        ctx.output_model = False
-
-    res = lnlike(params,ctx)
-
-    # MCMC fitting
-    if ctx.fit_type=='final':
-        ll, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob = res
-        lp = lnprior(params,ctx)
-        if not np.isfinite(lp):
-            return -np.inf, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob, ll
-        elif (np.isfinite(lp)==True):
-            return lp + ll, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob, ll
-
-    # Maximum Likelihood, etc. fitting
-    elif ctx.fit_type=='init':
-        ll = res
-        if ctx.fit_stat in ['ML']:
-            lp = lnprior(params,ctx)
-            if ~np.isfinite(lp):
-                return -np.inf
-            elif np.isfinite(lp):
-                return lp + ll
-        else:
-            return ll
 
 
 def line_constructor(lam_gal,free_dict,comp_dict,comp_options,line,line_list,velscale):
@@ -3031,126 +3111,6 @@ def calculate_w80(lam_gal, full_profile, disp_res, velscale, center ):
         w80 = 0.0
     #
     return w80
-
-
-# The fit_model function controls the model for both the initial and MCMC fits.
-def fit_model(params, ctx, galaxy=None, fit_type=None, output_model=None):
-    """
-    Constructs galaxy model.
-    """
-    if galaxy == None:
-        galaxy = ctx.fit_target.spec
-    if fit_type == None:
-        fit_type = ctx.fit_type
-    if output_model == None:
-        output_model = ctx.output_model
-
-    # TODO: need to be passed separately?
-    keys = ctx.param_names
-    values = params
-    p = dict(zip(keys, values))
-
-    bactx = ctx.bactx
-    fit_target = ctx.fit_target
-    host_model = np.copy(galaxy)
-    # Initialize empty dict to store model components
-    comp_dict  = {} # used for fitting/likelihood calculation; sampled identically to the data
-
-
-    # Power-law Component
-    # TODO: Create a template model for the power-law continuum
-    if bactx.options.comp_options.fit_power:
-        if bactx.options.power_options.type == 'simple':
-            power = simple_power_law(fit_target.wave,p['POWER_AMP'],p['POWER_SLOPE'])
-        elif bactx.options.plot_options.type == 'broken':
-            power = broken_power_law(fit_target.wave,p['POWER_AMP'],p['POWER_BREAK'],
-                                         p['POWER_SLOPE_1'],p['POWER_SLOPE_2'],
-                                         p['POWER_CURVATURE'])
-
-        # Subtract off continuum from galaxy, since we only want template weights to be fit
-        host_model = (host_model) - (power)
-        comp_dict['POWER'] = power
-
-
-    # Polynomial Components
-    # TODO: create a template
-    poly_options = bactx.options.poly_options
-    if bactx.options.comp_options.fit_poly:
-        if poly_options.apoly.bool:
-            nw = np.linspace(-1,1,len(fit_target.wave))
-            coeff = np.empty(poly_options.apoly.order+1)
-            for n in range(1,len(coeff)):
-                coeff[n] = p['APOLY_COEFF_%d' % n]
-            coeff[0] = 0.0
-            apoly = np.polynomial.legendre.legval(nw, coeff)
-            host_model = host_model - apoly
-            comp_dict['APOLY'] = apoly
-
-        if poly_options.mpoly.bool:
-            nw = np.linspace(-1,1,len(fit_target.wave))
-            coeff = np.empty(poly_options.mpoly.order+1)
-            for n in range(1,len(coeff)):
-                coeff[n] = p['MPOLY_COEFF_%d' % n]
-            mpoly = np.polynomial.legendre.legval(nw, coeff)
-            comp_dict['MPOLY'] = mpoly
-            host_model = host_model * mpoly
-
-
-    # Template Components
-    # TODO: host and losvd template components were processed after emission line components,
-    #       now they will be before; does this affect anything?
-    for template in bactx.templates.values():
-        comp_dict, host_model = template.add_components(p, comp_dict, host_model)
-
-
-    # Emission Line Components
-    # Iteratively generate lines from the line list using the line_constructor()
-    for line in bactx.line_list:
-        comp_dict = line_constructor(fit_target.wave,p,comp_dict,bactx.options.comp_options,line,bactx.line_list,bactx.target.velscale)
-        host_model = host_model - comp_dict[line]
-
-
-    # The final model
-    gmodel = np.sum((comp_dict[d] for d in comp_dict),axis=0)
-
-    # Add combined lines to comp_dict
-    for comb_line in bactx.combined_line_list:
-        comp_dict[comb_line] = np.zeros(len(fit_target.wave))
-        for indiv_line in bactx.combined_line_list[comb_line]['lines']:
-            comp_dict[comb_line]+=comp_dict[indiv_line]
-
-    line_list = {**bactx.line_list, **bactx.combined_line_list}
-
-    # Add last components to comp_dict for plotting purposes
-    # Add galaxy, sigma, model, and residuals to comp_dict
-    # TODO: does this need to be done every fit_model call?
-    comp_dict['DATA']  = fit_target.spec
-    comp_dict['WAVE']  = fit_target.wave
-    comp_dict['NOISE'] = fit_target.noise
-    comp_dict['MODEL'] = gmodel
-    comp_dict['RESID'] = fit_target.spec-gmodel
-
-    # Fluxes & Equivalent Widths
-    # Equivalent widths of emission lines are stored in a dictionary and returned to emcee as metadata blob.
-    # Velocity interpolation function
-    if (fit_type == 'final') and (not output_model):
-        fluxes, eqwidths, cont_fluxes, int_vel_disp = calc_mcmc_blob(p, fit_target.wave, comp_dict, bactx.options.comp_options, bactx.line_list, bactx.combined_line_list, bactx.blob_pars, bactx.fit_mask, bactx.fit_stat, bactx.target.velscale)
-
-    # TODO: store in target or ctx
-    if fit_type == 'init': # Max likelihood fitting
-        if output_model:
-            return comp_dict
-        else:
-            return gmodel, comp_dict
-
-    if fit_type == 'line_test':
-        return comp_dict
-
-    if fit_type == 'final': # emcee
-        if output_model:
-            return comp_dict
-        else:
-            return gmodel, fluxes, eqwidths, cont_fluxes, int_vel_disp
 
 
 # This function generates blob parameters for the MCMC routine,
