@@ -251,37 +251,13 @@ class BadassLogger:
         self.logger.info('\t* Balmer continuum template outside of fitting region and disabled.')
 
 
-    def log_max_like_fit(self, pdict, noise_std, resid_std):
+    def log_max_like_fit(self, result_dict, noise_std, resid_std):
         self.logger.info('### Maximum Likelihood Fitting Results ###')
         self.logger.info('-----------------------------------------------------------------------------------------------------------------')
-        if "std" in pdict[list(pdict.keys())[0]]:
-            self.logger.info('{0:<30}{1:<30}{2:<30}{3:<30}'.format('Parameter','Max. Like. Value','+/- 1-sigma', 'Flag') )
-        else:
-            self.logger.info('{0:<30}{1:<30}'.format('Parameter','Max. Like. Value') )
+        self.logger.info('{0:<30}{1:<30}{2:<30}{3:<30}'.format('Parameter','Max. Like. Value','+/- 1-sigma', 'Flag') )
         self.logger.info('-----------------------------------------------------------------------------------------------------------------')
-        # Sort into arrays
-        # TODO: different way to do this?
-        pname = []
-        med   = []
-        std   = []
-        flag  = [] 
-        for key in pdict:
-            pname.append(key)
-            med.append(pdict[key]['med'])
-            if "std" in pdict[list(pdict.keys())[0]]:
-                std.append(pdict[key]['std'])
-                flag.append(pdict[key]['flag'])
-        i_sort = np.argsort(pname)
-        pname = np.array(pname)[i_sort] 
-        med   = np.array(med)[i_sort] 
-        if "std" in pdict[list(pdict.keys())[0]]:
-            std   = np.array(std)[i_sort]   
-            flag  = np.array(flag)[i_sort]  
-        for i in range(0,len(pname),1):
-            if "std" in pdict[list(pdict.keys())[0]]:
-                self.logger.info('{0:<30}{1:<30.4f}{2:<30.4f}{3:<30}'.format(pname[i], med[i], std[i], flag[i]))
-            else:
-                self.logger.info('{0:<30}{1:<30.4f}'.format(pname[i], med[i]))
+        for pname, pdict in result_dict.items():
+            self.logger.info('{0:<30}{1:<30.4f}{2:<30.4f}{3:<30}'.format(pname, pdict['med'], pdict['std'], pdict['flag']))
         self.logger.info('{0:<30}{1:<30.4f}'.format('NOISE_STD.', noise_std ))
         self.logger.info('{0:<30}{1:<30.4f}'.format('RESID_STD', resid_std ))
         self.logger.info('-----------------------------------------------------------------------------------------------------------------')

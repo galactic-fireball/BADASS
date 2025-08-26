@@ -75,6 +75,7 @@ from utils.options import BadassOptions
 from input.input import BadassInput
 from utils.utils import time_convert, find_nearest
 from templates.common import initialize_templates
+import utils.plotting as plotting
 
 # plt.style.use('dark_background') # For cool tron-style dark plots
 import matplotlib
@@ -144,6 +145,7 @@ class BadassRunContext:
         self.soft_cons = []
         self.blob_pars = {}
 
+        self.mc_attr_store = {}
         self.fit_results = {}
         self.model = None
         self.comp_dict = {}
@@ -152,26 +154,14 @@ class BadassRunContext:
     def run(self):
         self.initialize_fit()
 
-        # Line testing is performed first for a better line list determination and number of multiple components
-        continue_fit = self.run_tests()
-        if not continue_fit:
+        # Line testing is performed first for a better line list determination and number of components
+        if not self.run_tests():
             return
 
-        # Max Likelihood Fitting
-        if self.verbose and np.isfinite(self.force_thresh):
-            print('Required Maximum Likelihood RMSE threshold: %0.4f' % (self.force_thresh))
-
-        self.max_likelihood()
-
-        # Make interactive HTML plot
-        if self.target.options.plot_options.plot_HTML:
-            # TODO: object name option
-            plotly_best_fit(self.target.options.io_options.output_dir,self.line_list,self.target.fit_mask,self.target.outdir)
-
-        if not target.options.mcmc_options.mcmc_fit:
-            print(' - Done fitting %s! \n' % self.target.options.io_options.output_dir)
-            sys.stdout.flush()
+        if not self.max_likelihood():
             return
+
+        # self.run_emcee()
 
 
     def initialize_fit(self):
@@ -1115,7 +1105,7 @@ class BadassRunContext:
         for test_label, test_lines, full_line_list in test_set:
 
             self.initialize_pars(user_lines=full_line_list)
-            mcpars, mccomps, mcLL, lowest_rmse = self.max_likelihood(test_outflows=True)
+            mcpars, mccomps, mcLL, lowest_rmse = self.max_likelihood(line_test=True)
 
             # Calculate degrees of freedom of fit; nu = n - m (n number of observations minus m degrees of freedom (free fitted parameters))
             dof = len(self.target.wave)-len(self.param_dict)
@@ -1192,9 +1182,7 @@ class BadassRunContext:
     skip_comps = ['DATA','WAVE','MODEL','NOISE','RESID','POWER','HOST_GALAXY','BALMER_CONT','APOLY','MPOLY',]
     cont_comps = ['POWER', 'HOST_GALAXY', 'BALMER_CONT', 'APOLY', 'MPOLY']
 
-    # TODO: change test_outflows name and handle differently
-    # TODO: split up function
-    def max_likelihood(self, test_outflows=False):
+    def max_likelihood(self, line_test=False):
 
         print('Performing max likelihood fitting')
 
@@ -1216,6 +1204,7 @@ class BadassRunContext:
         lowest_rmse = badass_test_suite.root_mean_squared_error(self.fit_spec, np.zeros(len(self.fit_spec)))
         callback_ftn = None
         if np.isfinite(self.force_thresh):
+            print('Required Maximum Likelihood RMSE threshold: %0.4f' % (self.force_thresh))
             force_basinhop = n_basinhop
             # TODO: config
             n_basinhop = 250 # Set to arbitrarily high threshold
@@ -1239,8 +1228,8 @@ class BadassRunContext:
                 if accepted == 1:
                     accepted_count += 1
 
-                _, current_comps = self.fit_model()
-                rmse = badass_test_suite.root_mean_squared_error(current_comps['DATA'], current_comps['MODEL'])
+                self.fit_model()
+                rmse = badass_test_suite.root_mean_squared_error(self.comp_dict['DATA'], self.comp_dict['MODEL'])
                 lowest_rmse = min(lowest_rmse, rmse)
 
                 accept_thresh = 0.001 # Define an acceptance threshold
@@ -1308,49 +1297,19 @@ class BadassRunContext:
         self.compile_mc_results()
 
         # TODO: handle differently
-        if test_outflows:
+        if line_test:
             mccomps = {k:v for k,v in self.mc_attr_store.items() if k in self.comp_dict.keys()}
             return self.fit_results, mccomps, self.mc_attr_store['LOG_LIKE'], lowest_rmse
-
 
         self.cur_params = {k:self.fit_results[k]['med'] for k in self.cur_params.keys()}
         self.fit_model()
 
-        # Plot results of maximum likelihood fit
-        # TODO: add to plotting
-        # sigma_resid, sigma_noise = max_like_plot(mlctx.target.wave,copy.deepcopy(comp_dict),mlctx.line_list,
-        #                                      [best_param_dict[key]['med'] for key in best_param_dict],
-        #                                      best_param_dict.keys(),mlctx.target.fit_mask,mlctx.target.fit_norm,mlctx.target.outdir)
+        self.write_max_like_results()
 
-        # TODO: add to logging
-        print('Maximum Likelihood Best-fit Parameters:')
-        print('--------------------------------------------------------------------------------------')
-        print('\n{0:<30}{1:<30}{2:<30}{3:<30}'.format('Parameter', 'Best-fit Value', '+/- 1-sigma','Flag'))
-        print('--------------------------------------------------------------------------------------')
-
-        # TODO: sort params
-        for param, param_dict in self.fit_results.items():
-            print('{0:<30}{1:<30.6f}{2:<30.6f}{3:<30}'.format(param, param_dict['med'], param_dict['std'], param_dict['flag']))
-
-        # print('{0:<30}{1:<30.6f}{2:<30}{3:<30}'.format('NOISE_STD', sigma_noise, ' ',' '))
-        # print('{0:<30}{1:<30.6f}{2:<30}{3:<30}'.format('RESID_STD', sigma_resid, ' ',' '))
-        print('--------------------------------------------------------------------------------------')
-
-        # mlctx.target.log.log_max_like_fit(pdict_rescaled,sigma_noise,sigma_resid)
-
-        # header_dict = {
-        #     'z_sdss': self.target.z,
-        #     'med_noise': np.nanmedian(self.target.noise),
-        #     'velscale': self.target.velscale,
-        #     'fit_norm': self.target.fit_norm,
-        #     'flux_norm': self.target.options.fit_options.flux_norm,
-        # }
-
-        # self.write_max_like_results(fit_results, comp_dict, header_dict,self.target.fit_mask,self.target.fit_norm,self.target.outdir)
+        return self.target.options.mcmc_options.mcmc_fit
 
 
     def init_mc_store(self, iters):
-        self.mc_attr_store = {}
         for key in self.cur_params.keys():
             self.mc_attr_store[key] = np.zeros(iters)
 
@@ -1457,49 +1416,49 @@ class BadassRunContext:
 
         for wave in [1350, 3000, 5100]:
             tot_attr = 'L_CONT_TOT_%d'%wave
-            if not tot_attr in mc_attr_store:
+            if not tot_attr in self.mc_attr_store:
                 continue
             index_attr = 'INDEX_%d'%wave
 
             # Total Luminosities
             flux = total_cont[blob_pars[index_attr]]*flux_norm*fit_norm
-            mc_attr_store[tot_attr][n] = np.log10(flux_to_lum(flux)*wave)
+            self.mc_attr_store[tot_attr][n] = np.log10(flux_to_lum(flux)*wave)
 
             # AGN Luminosities
             agn_attr = 'L_CONT_AGN_%d'%wave
             flux = agn_cont[blob_pars[index_attr]]*flux_norm*fit_norm
-            mc_attr_store[agn_attr][n] = np.log10(flux_to_lum(flux)*wave)
+            self.mc_attr_store[agn_attr][n] = np.log10(flux_to_lum(flux)*wave)
 
             # Host Luminosities
             host_attr = 'L_CONT_HOST_%d'%wave
             flux = host_cont[blob_pars[index_attr]]*flux_norm*fit_norm
-            mc_attr_store[host_attr][n] = np.log10(flux_to_lum(flux)*wave)
+            self.mc_attr_store[host_attr][n] = np.log10(flux_to_lum(flux)*wave)
 
         for wave in [4000, 7000]:
             host_attr = 'HOST_FRAC_%d'%wave
-            if not host_attr in mc_attr_store:
+            if not host_attr in self.mc_attr_store:
                 continue
 
             agn_attr = 'AGN_FRAC_%d'%wave
             index_attr = 'INDEX_%d'%wave
-            mc_attr_store[host_attr][n] = host_cont[blob_pars[index_attr]]/total_cont[blob_pars[index_attr]]
-            mc_attr_store[agn_attr][n] = agn_cont[blob_pars[index_attr]]/total_cont[blob_pars[index_attr]]
+            self.mc_attr_store[host_attr][n] = host_cont[blob_pars[index_attr]]/total_cont[blob_pars[index_attr]]
+            self.mc_attr_store[agn_attr][n] = agn_cont[blob_pars[index_attr]]/total_cont[blob_pars[index_attr]]
 
 
         for line, line_dict in {**self.line_list,**self.combined_line_list}.items():
             line_comp = self.comp_dict[line]
-            mc_attr_store[line+'_FWHM'][n] = combined_fwhm(wave_comp, np.abs(line_comp), line_dict['disp_res_kms'], self.target.velscale)
-            mc_attr_store[line+'_W80'][n] = calculate_w80(wave_comp, np.abs(line_comp), line_dict['disp_res_kms'], self.target.velscale, line_dict['center'])
+            self.mc_attr_store[line+'_FWHM'][n] = combined_fwhm(wave_comp, np.abs(line_comp), line_dict['disp_res_kms'], self.target.velscale)
+            self.mc_attr_store[line+'_W80'][n] = calculate_w80(wave_comp, np.abs(line_comp), line_dict['disp_res_kms'], self.target.velscale, line_dict['center'])
 
             # compute number of pixels (NPIX) for each line in the line list;
             # this is done by determining the number of pixels of the line model
             # that are above the raw noise. 
-            mc_attr_store[line+'_NPIX'][n] = len(np.where(np.abs(line_comp) > self.fit_noise)[0])
+            self.mc_attr_store[line+'_NPIX'][n] = len(np.where(np.abs(line_comp) > self.fit_noise)[0])
 
             # compute the signal-to-noise ratio (SNR) for each line;
             # this is done by calculating the maximum value of the line model 
             # above the MEAN value of the noise within the channels.
-            mc_attr_store[line+'_SNR'][n] = np.nanmax(np.abs(line_comp)) / np.nanmean(self.fit_noise)
+            self.mc_attr_store[line+'_SNR'][n] = np.nanmax(np.abs(line_comp)) / np.nanmean(self.fit_noise)
 
             if not line in self.combined_line_list:
                 continue
@@ -1508,15 +1467,15 @@ class BadassRunContext:
             full_profile = np.abs(line_comp)
             norm_profile = full_profile/np.sum(full_profile)
             voff = np.trapz(vel*norm_profile,vel)/simpson(norm_profile,vel)
-            mc_attr_store[line+'_VOFF'][n] = voff if np.isfinite(voff) else 0.0
+            self.mc_attr_store[line+'_VOFF'][n] = voff if np.isfinite(voff) else 0.0
 
             disp = np.sqrt(np.trapz(vel**2*norm_profile,vel)/np.trapz(norm_profile,vel) - (voff**2))
-            mc_attr_store[line+'_DISP'][n] = disp if np.isfinite(disp) else 0.0
+            self.mc_attr_store[line+'_DISP'][n] = disp if np.isfinite(disp) else 0.0
 
-        mc_attr_store['LOG_LIKE'][n] = fun_result
-        mc_attr_store['R_SQUARED'][n] = badass_test_suite.r_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'])
+        self.mc_attr_store['LOG_LIKE'][n] = fun_result
+        self.mc_attr_store['R_SQUARED'][n] = badass_test_suite.r_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'])
         n_free_pars = len(self.cur_params)
-        mc_attr_store['RCHI_SQUARED'][n] = badass_test_suite.r_chi_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'], self.fit_noise, n_free_pars)
+        self.mc_attr_store['RCHI_SQUARED'][n] = badass_test_suite.r_chi_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'], self.fit_noise, n_free_pars)
 
 
     def compile_mc_results(self):
@@ -1568,96 +1527,72 @@ class BadassRunContext:
             fwhm_corr = np.nanmax((0.0, np.sqrt(fwhm_dict['med']**2-(2.3548*disp_res)**2)))
             self.fit_results[line_name+'_FWHM_CORR'] = {'med': fwhm_corr, 'std': fwhm_dict['std'], 'flag': fwhm_dict['flag']}
 
-            w80_dict = fit_results[line_name+'_W80']
+            w80_dict = self.fit_results[line_name+'_W80']
             w80_corr = np.nanmax((0.0, np.sqrt(w80_dict['med']**2-(2.567*disp_res)**2)))
             self.fit_results[line_name+'_W80_CORR'] = {'med': w80_corr, 'std': w80_dict['std'], 'flag': w80_dict['flag']}
 
 
     def write_max_like_results(self):
-        """
-        Write maximum likelihood fit results to FITS table
-        """
+        # Write maximum likelihood fit results to FITS table
 
-        result_dict = copy.deepcopy(result_dict)
-        comp_dict = copy.deepcopy(comp_dict)
+        # TODO: need to copy? just let them be rescaled
+        result_dict = copy.deepcopy(self.fit_results)
+        comp_dict = copy.deepcopy(self.comp_dict)
 
-        # Re-scale amplitudes
+        # Rescale amplitudes
         for p in result_dict:
-            if p[-4:]=="_AMP":
-                result_dict[p]["med"] = result_dict[p]["med"]*fit_norm
-                result_dict[p]["std"] = result_dict[p]["std"]*fit_norm
+            if p[-4:] == '_AMP':
+                result_dict[p]['med'] = result_dict[p]['med']*self.target.fit_norm
+                result_dict[p]['std'] = result_dict[p]['std']*self.target.fit_norm
 
-        # Re-scale components
+        # Rescale components
         for key in comp_dict:
-            if key not in ["WAVE"]:
-                comp_dict[key] *= fit_norm
+            if key not in ['WAVE']:
+                comp_dict[key] *= self.target.fit_norm
 
+        result_dict = dict(sorted(result_dict.items()))
 
-        par_names = []
-        par_best  = []
-        sig       = []
-        for key in result_dict:
-            par_names.append(key)
-            par_best.append(result_dict[key]['med'])
-            if "std" in result_dict[key]:
-                sig.append(result_dict[key]['std'])
+        sigma_noise = np.nanmedian(comp_dict['NOISE'][self.target.fit_mask])
+        sigma_resid = np.nanstd(comp_dict['DATA'][self.target.fit_mask]-comp_dict['MODEL'][self.target.fit_mask])
+        self.target.log.log_max_like_fit(result_dict, sigma_noise, sigma_resid)
 
-        # Sort the fit results
-        i_sort  = np.argsort(par_names)
-        par_names = np.array(par_names)[i_sort] 
-        par_best  = np.array(par_best)[i_sort]  
-        sig   = np.array(sig)[i_sort]   
-
-        # Write best-fit parameters to FITS table
-        col1 = fits.Column(name='parameter', format='30A', array=par_names)
-        col2 = fits.Column(name='best_fit' , format='E'  , array=par_best)
-        if "std" in result_dict[par_names[0]]:
-            col3 = fits.Column(name='sigma' , format='E'  , array=sig)
-        
-        if "std" in result_dict[par_names[0]]:
-            cols = fits.ColDefs([col1,col2,col3])
-        else: 
-            cols = fits.ColDefs([col1,col2])
+        # Write best-fit parameters
+        col1 = fits.Column(name='parameter', format='30A', array=list(result_dict.keys()))
+        col2 = fits.Column(name='best_fit', format='E', array=[v['med'] for v in result_dict.values()])
+        col3 = fits.Column(name='sigma', format='E', array=[v['std'] for v in result_dict.values()])
+        cols = fits.ColDefs([col1,col2,col3])
         table_hdu = fits.BinTableHDU.from_columns(cols)
-        # Header information
+
         hdr = fits.Header()
-        if binnum is not None:
-            header_dict['binnum'] = binnum
-        for key in header_dict:
-            hdr[key] = header_dict[key]
-        empty_primary = fits.PrimaryHDU(header=hdr)
-        hdu = fits.HDUList([empty_primary, table_hdu])
+        hdr['z_sdss'] = self.target.z
+        hdr['med_noise'] = np.nanmedian(self.target.noise)
+        hdr['velscale'] = self.target.velscale
+        hdr['fit_norm'] = self.target.fit_norm
+        hdr['flux_norm'] = self.target.options.fit_options.flux_norm
 
-        if spaxelx is not None and spaxely is not None:
-            hdu2 = fits.BinTableHDU.from_columns(fits.ColDefs([
-                fits.Column(name='spaxelx', array=spaxelx, format='E'),
-                fits.Column(name='spaxely', array=spaxely, format='E')
-            ]))
-            hdu.append(hdu2)
+        primary = fits.PrimaryHDU(header=hdr)
+        hdu = fits.HDUList([primary, table_hdu])
+        hdu.writeto(self.target.outdir.joinpath('log', 'par_table.fits'), overwrite=True)
 
-        hdu.writeto(run_dir.joinpath('log', 'par_table.fits'), overwrite=True)
-        del hdu
-        # Write best-fit components to FITS file
+        # Write best-fit components
         cols = []
-        # Construct a column for each parameter and chain
-        for key in comp_dict:
-            cols.append(fits.Column(name=key, format='E', array=comp_dict[key]))
-        # Add fit mask to cols
-        mask = np.zeros(len(comp_dict["WAVE"]),dtype=bool)
-        mask[fit_mask] = True
-        cols.append(fits.Column(name="MASK", format='E', array=mask))
-        # Write to fits
+        for key, val in comp_dict.items():
+            cols.append(fits.Column(name=key, format='E', array=val))
+
+        mask = np.zeros(len(comp_dict['WAVE']), dtype=bool)
+        mask[self.target.fit_mask] = True
+        cols.append(fits.Column(name='MASK', format='E', array=mask))
+
         cols = fits.ColDefs(cols)
         hdu = fits.BinTableHDU.from_columns(cols)
-        hdu.writeto(run_dir.joinpath('log', 'best_model_components.fits'), overwrite=True)
-        #
-        return 
+        hdu.writeto(self.target.outdir.joinpath('log', 'best_model_components.fits'), overwrite=True)
+
+        plotting.plot_ml_results(self)
+        print('Done ML fitting %s! \n' % self.target.options.io_options.output_dir)
 
 
     def lnprob(self):
-        """
-        Log-probability function.
-        """
+        # Log-probability function
 
         res = self.lnlike()
 
@@ -1680,11 +1615,8 @@ class BadassRunContext:
             return ll
 
 
-    # Maximum Likelihood (initial fitting), Prior, and log Probability functions
     def lnlike(self):
-        """
-        Log-likelihood function.
-        """
+        # Log-likelihood function
 
         self.fit_model()
         fit_mask = self.target.fit_mask
@@ -1719,9 +1651,7 @@ class BadassRunContext:
 
 
     def lnprior(self):
-        """
-        Log-prior function.
-        """
+        # Log-prior function
 
         lp_arr = []
         for key, val in self.cur_params.items():
@@ -1744,11 +1674,10 @@ class BadassRunContext:
 
     # The fit_model function controls the model for both the initial and MCMC fits.
     def fit_model(self):
-        """
-        Constructs galaxy model.
-        """
-
+        # Constructs galaxy model
         host_model = np.copy(self.fit_spec)
+
+        self.comp_dict = {}
 
         # Power-law Component
         # TODO: Create a template model for the power-law continuum
@@ -1821,7 +1750,7 @@ class BadassRunContext:
         self.comp_dict['WAVE']  = self.fit_wave
         self.comp_dict['NOISE'] = self.fit_noise
         self.comp_dict['MODEL'] = self.model
-        self.comp_dict['RESID'] = self.fit_spec-gmodel
+        self.comp_dict['RESID'] = self.fit_spec-self.model
 
         # Fluxes & Equivalent Widths
         # Equivalent widths of emission lines are stored in a dictionary and returned to emcee as metadata blob.
@@ -2630,162 +2559,7 @@ def add_tied_parameters(pdict,line_list):
     return pdict
 
 
-def max_like_plot(lam_gal,comp_dict,line_list,params,param_names,fit_mask,fit_norm,run_dir):
 
-        def poly_label(kind):
-            if kind=="apoly":
-                order = len([p for p in param_names if p.startswith("APOLY_")])-1
-            if kind=="mpoly":
-                order = len([p for p in param_names if p.startswith("MPOLY_")])-1
-            #
-            ordinal = lambda n: "%d%s" % (n,"tsnrhtdd"[(n//10%10!=1)*(n%10<4)*n%10::4])
-            return ordinal(order)
-
-        def calc_new_center(center,voff):
-            """
-            Calculated new center shifted 
-            by some velocity offset.
-            """
-            c = 299792.458 # speed of light (km/s)
-            new_center = (voff*center)/c + center
-            return new_center
-
-        # Put params in dictionary
-        p = dict(zip(param_names,params))
-
-        # Rescale all components by fit_norm
-        for key in comp_dict:
-            if key not in ["WAVE"]:
-                comp_dict[key] *= fit_norm
-
-        # Maximum Likelihood plot
-        fig = plt.figure(figsize=(14,6)) 
-        gs = gridspec.GridSpec(4, 1)
-        gs.update(wspace=0.0, hspace=0.0) # set the spacing between axes. 
-        ax1  = plt.subplot(gs[0:3,0])
-        ax2  = plt.subplot(gs[3,0])
-
-        for key in comp_dict:
-            if (key=='DATA'):
-                ax1.plot(comp_dict['WAVE'],comp_dict['DATA'],linewidth=0.5,color='white',label='Data',zorder=0)
-            elif (key=='MODEL'):
-                ax1.plot(lam_gal,comp_dict[key], color='xkcd:bright red', linewidth=1.0, label='Model', zorder=15)
-            elif (key=='HOST_GALAXY'):
-                ax1.plot(comp_dict['WAVE'], comp_dict['HOST_GALAXY'], color='xkcd:bright green', linewidth=0.5, linestyle='-', label='Host/Stellar')
-
-            elif (key=='POWER'):
-                ax1.plot(comp_dict['WAVE'], comp_dict['POWER'], color='xkcd:red' , linewidth=0.5, linestyle='--', label='AGN Cont.')
-
-            elif (key=='APOLY'):
-                ax1.plot(comp_dict['WAVE'], comp_dict['APOLY'], color='xkcd:bright purple' , linewidth=0.5, linestyle='-', label='%s-order Add. Poly.' % (poly_label("apoly")))
-            elif (key=='MPOLY'):
-                ax1.plot(comp_dict['WAVE'], comp_dict['MPOLY'], color='xkcd:lavender' , linewidth=0.5, linestyle='-', label='%s-order Mult. Poly.' % (poly_label("mpoly")))
-
-            elif (key in ['NA_OPT_FEII_TEMPLATE','BR_OPT_FEII_TEMPLATE']):
-                ax1.plot(comp_dict['WAVE'], comp_dict['NA_OPT_FEII_TEMPLATE'], color='xkcd:yellow', linewidth=0.5, linestyle='-' , label='Narrow FeII')
-                ax1.plot(comp_dict['WAVE'], comp_dict['BR_OPT_FEII_TEMPLATE'], color='xkcd:orange', linewidth=0.5, linestyle='-' , label='Broad FeII')
-
-            elif (key in ['F_OPT_FEII_TEMPLATE','S_OPT_FEII_TEMPLATE','G_OPT_FEII_TEMPLATE','Z_OPT_FEII_TEMPLATE']):
-                if key=='F_OPT_FEII_TEMPLATE':
-                    ax1.plot(comp_dict['WAVE'], comp_dict['F_OPT_FEII_TEMPLATE'], color='xkcd:yellow', linewidth=0.5, linestyle='-' , label='F-transition FeII')
-                elif key=='S_OPT_FEII_TEMPLATE':
-                    ax1.plot(comp_dict['WAVE'], comp_dict['S_OPT_FEII_TEMPLATE'], color='xkcd:mustard', linewidth=0.5, linestyle='-' , label='S-transition FeII')
-                elif key=='G_OPT_FEII_TEMPLATE':
-                    ax1.plot(comp_dict['WAVE'], comp_dict['G_OPT_FEII_TEMPLATE'], color='xkcd:orange', linewidth=0.5, linestyle='-' , label='G-transition FeII')
-                elif key=='Z_OPT_FEII_TEMPLATE':
-                    ax1.plot(comp_dict['WAVE'], comp_dict['Z_OPT_FEII_TEMPLATE'], color='xkcd:rust', linewidth=0.5, linestyle='-' , label='Z-transition FeII')
-            elif (key=='UV_IRON_TEMPLATE'):
-                ax1.plot(comp_dict['WAVE'], comp_dict['UV_IRON_TEMPLATE'], color='xkcd:bright purple', linewidth=0.5, linestyle='-' , label='UV Iron'	 )
-            elif (key=='BALMER_CONT'):
-                ax1.plot(comp_dict['WAVE'], comp_dict['BALMER_CONT'], color='xkcd:bright green', linewidth=0.5, linestyle='--' , label='Balmer Continuum'	 )
-            # Plot emission lines by cross-referencing comp_dict with line_list
-            if (key in line_list):
-                if (line_list[key]["line_type"]=="na"):
-                    ax1.plot(comp_dict['WAVE'], comp_dict[key], color='xkcd:cerulean', linewidth=0.5, linestyle='-', label='Narrow/Core Comp.')
-                if (line_list[key]["line_type"]=="br"):
-                    ax1.plot(comp_dict['WAVE'], comp_dict[key], color='xkcd:bright teal', linewidth=0.5, linestyle='-', label='Broad Comp.')
-                if (line_list[key]["line_type"]=="out"):
-                    ax1.plot(comp_dict['WAVE'], comp_dict[key], color='xkcd:bright pink', linewidth=0.5, linestyle='-', label='Outflow Comp.')
-                if (line_list[key]["line_type"]=="abs"):
-                    ax1.plot(comp_dict['WAVE'], comp_dict[key], color='xkcd:pastel red', linewidth=0.5, linestyle='-', label='Absorption Comp.')
-                if (line_list[key]["line_type"]=="user"):
-                    ax1.plot(comp_dict['WAVE'], comp_dict[key], color='xkcd:electric lime', linewidth=0.5, linestyle='-', label='Other')
-
-        # Plot bad pixels
-        ibad = [i for i in range(len(lam_gal)) if i not in fit_mask]
-        if (len(ibad)>0):# and (len(ibad[0])>1):
-            bad_wave = [(lam_gal[m],lam_gal[m+1]) for m in ibad if ((m+1)<len(lam_gal))]
-            ax1.axvspan(bad_wave[0][0],bad_wave[0][0],alpha=0.25,color='xkcd:lime green',label="bad pixels")
-            for i in bad_wave[1:]:
-                ax1.axvspan(i[0],i[0],alpha=0.25,color='xkcd:lime green')
-
-        ax1.set_xticklabels([])
-        ax1.set_xlim(np.min(lam_gal)-10,np.max(lam_gal)+10)
-        # ax1.set_ylim(-0.5*np.nanmedian(comp_dict['MODEL']),np.max([comp_dict['DATA'],comp_dict['MODEL']]))
-        ax1.set_ylabel(r'$f_\lambda$ ($10^{-17}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)',fontsize=10)
-        # Residuals
-        sigma_resid = np.nanstd(comp_dict['DATA'][fit_mask]-comp_dict['MODEL'][fit_mask])
-        sigma_noise = np.nanmedian(comp_dict['NOISE'][fit_mask])
-        ax2.plot(lam_gal,(comp_dict['NOISE']*3.0),linewidth=0.5,color="xkcd:bright orange",label='$\sigma_{\mathrm{noise}}=%0.4f$' % (sigma_noise))
-        ax2.plot(lam_gal,(comp_dict['RESID']*3.0),linewidth=0.5,color="white",label='$\sigma_{\mathrm{resid}}=%0.4f$' % (sigma_resid))
-        ax1.axhline(0.0,linewidth=1.0,color='white',linestyle='--')
-        ax2.axhline(0.0,linewidth=1.0,color='white',linestyle='--')
-        # Axes limits 
-        ax_low = np.nanmin([ax1.get_ylim()[0],ax2.get_ylim()[0]])
-        ax_upp = np.nanmax(comp_dict['DATA'][fit_mask])+(3.0 * np.nanmedian(comp_dict['NOISE'][fit_mask])) #np.nanmax([ax1.get_ylim()[1], ax2.get_ylim()[1]])
-        # if np.isfinite(sigma_resid):
-        #    ax_upp += 3.0 * sigma_resid
-
-        minimum = [np.nanmin(comp_dict[comp][np.where(np.isfinite(comp_dict[comp]))[0]]) for comp in comp_dict
-                   if comp_dict[comp][np.isfinite(comp_dict[comp])[0]].size > 0]
-        if len(minimum) > 0:
-            minimum = np.nanmin(minimum)
-        else:
-            minimum = 0.0
-        ax1.set_ylim(np.nanmin([0.0,minimum]),ax_upp)
-        ax1.set_xlim(np.min(lam_gal),np.max(lam_gal))
-        ax2.set_ylim(ax_low,ax_upp)
-        ax2.set_xlim(np.min(lam_gal),np.max(lam_gal))
-        # Axes labels
-        ax2.set_yticklabels(np.round(np.array(ax2.get_yticks()/3.0)))
-        ax2.set_ylabel(r'$\Delta f_\lambda$',fontsize=12)
-        ax2.set_xlabel(r'Wavelength, $\lambda\;(\mathrm{\AA})$',fontsize=12)
-        handles, labels = ax1.get_legend_handles_labels()
-        by_label = dict(zip(labels, handles))
-        ax1.legend(by_label.values(), by_label.keys(),loc='upper right',fontsize=8)
-        ax2.legend(loc='upper right',fontsize=8)
-
-        # Emission line annotations
-        # Gather up emission line center wavelengths and labels (if available, removing any duplicates)
-        line_labels = []
-        for line in line_list:
-            if "label" in line_list[line]:
-                line_labels.append([line,line_list[line]["label"]])
-        line_labels = set(map(tuple, line_labels))   
-        for label in line_labels:
-            center = line_list[label[0]]["center"]
-            if (line_list[label[0]]["voff"]=="free"):
-                voff = p[label[0]+"_VOFF"]
-            elif (line_list[label[0]]["voff"]!="free"):
-                voff   =  ne.evaluate(line_list[label[0]]["voff"],local_dict = p).item()
-            xloc = calc_new_center(center,voff)
-            offset_factor = 0.05
-            yloc = np.max([comp_dict["DATA"][find_nearest(lam_gal,xloc)[1]],comp_dict["MODEL"][find_nearest(lam_gal,xloc)[1]]])+(offset_factor*np.max(comp_dict["DATA"]))
-            ax1.annotate(label[1], xy=(xloc, yloc),  xycoords='data',
-            xytext=(xloc, yloc), textcoords='data',
-            horizontalalignment='center', verticalalignment='bottom',
-            color='xkcd:white',fontsize=6,
-            )
-        # Title
-        ax1.set_title(r'%s'%run_dir.name.replace('_', '\\_'),fontsize=12)
-
-        # Save figure
-        plt.savefig(run_dir.joinpath('max_likelihood_fit.pdf'))
-        # Close plot
-        fig.clear()
-        plt.close()
-
-        return sigma_resid, sigma_noise
 
 
 #### Likelihood function #########################################################
@@ -5340,161 +5114,6 @@ def plot_best_model(param_dict,
     hdu.writeto(run_dir.joinpath('log', 'best_model_components.fits'), overwrite=True)
     
     return comp_dict
-
-
-def plotly_best_fit(objname,line_list,fit_mask,run_dir):
-    """
-    Generates an interactive HTML plot of the best fit model
-    using plotly.
-    """
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-    # Open the best_fit_components file
-    hdu = fits.open(run_dir.joinpath("log", "best_model_components.fits") )
-    tbdata = hdu[1].data	 # FITS table data is stored on FITS extension 1
-    cols = [i.name for i in tbdata.columns]
-    hdu.close()
-
-    # Create a figure with subplots
-    fig = make_subplots(rows=2, cols=1, row_heights=(3,1) )
-    # tracenames = []
-    # Plot
-    for comp in cols:
-        if comp=="DATA":
-            tracename = "Data"
-            fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata["DATA"] , mode="lines", line=go.scatter.Line(color="white", width=1), name=tracename, legendrank=1, showlegend=True), row=1, col=1)
-        if comp=="MODEL":
-            tracename="Model"
-            fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata["MODEL"], mode="lines", line=go.scatter.Line(color="red"  , width=1), name=tracename, legendrank=2, showlegend=True), row=1, col=1)
-        if comp=="NOISE":
-            tracename="Noise"
-            fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata["NOISE"], mode="lines", line=go.scatter.Line(color="#FE00CE"  , width=1), name=tracename, legendrank=3, showlegend=True), row=1, col=1)
-        # Continuum components
-        if comp=="HOST_GALAXY":
-            tracename="Host Galaxy"
-            fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata["HOST_GALAXY"], mode="lines", line=go.scatter.Line(color="lime", width=1), name=tracename, legendrank=4, showlegend=True), row=1, col=1)
-        if comp=="POWER":
-            tracename="Power-law"
-            fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata["POWER"], mode="lines", line=go.scatter.Line(color="red", width=1, dash="dash"), name=tracename, legendrank=5, showlegend=True), row=1, col=1)
-        if comp=="BALMER_CONT":
-            tracename="Balmer cont."
-            fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata["BALMER_CONT"], mode="lines", line=go.scatter.Line(color="lime", width=1, dash="dash"), name=tracename, legendrank=6, showlegend=True), row=1, col=1)
-        # FeII componentes
-        if comp=="UV_IRON_TEMPLATE":
-            tracename="UV Iron"
-            fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata["UV_IRON_TEMPLATE"], mode="lines", line=go.scatter.Line(color="#AB63FA", width=1), name=tracename, legendrank=7, showlegend=True), row=1, col=1)
-        if comp=="NA_OPT_FEII_TEMPLATE":
-            tracename="Narrow FeII"
-            fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata["NA_OPT_FEII_TEMPLATE"], mode="lines", line=go.scatter.Line(color="rgb(255,255,51)", width=1), name=tracename, legendrank=7, showlegend=True), row=1, col=1)
-        if comp=="BR_OPT_FEII_TEMPLATE":
-            tracename="Broad FeII"
-            fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata["BR_OPT_FEII_TEMPLATE"], mode="lines", line=go.scatter.Line(color="#FF7F0E", width=1), name=tracename, legendrank=8, showlegend=True), row=1, col=1)
-        if comp=='F_OPT_FEII_TEMPLATE':
-            tracename="F-transition FeII"
-            fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata["F_OPT_FEII_TEMPLATE"], mode="lines", line=go.scatter.Line(color="rgb(255,255,51)", width=1), name=tracename, legendrank=7, showlegend=True), row=1, col=1)
-        if comp=='S_OPT_FEII_TEMPLATE':
-            tracename="S-transition FeII"
-            fig.add_trace(go.Scatter( x = tbdata["waVe"], y = tbdata["S_OPT_FEII_TEMPLATE"], mode="lines", line=go.scatter.Line(color="rgb(230,171,2)", width=1), name=tracename, legendrank=8, showlegend=True), row=1, col=1)
-        if comp=='G_OPT_FEII_TEMPLATE':
-            tracename="G-transition FeII"
-            fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata["G_OPT_FEII_TEMPLATE"], mode="lines", line=go.scatter.Line(color="#FF7F0E", width=1), name=tracename, legendrank=9, showlegend=True), row=1, col=1)
-        if comp=='Z_OPT_FEII_TEMPLATE':
-            tracename="Z-transition FeII"
-            fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata["Z_OPT_FEII_TEMPLATE"], mode="lines", line=go.scatter.Line(color="rgb(217,95,2)", width=1), name=tracename, legendrank=10, showlegend=True), row=1, col=1)
-        # Line components
-        if comp in line_list:
-            if line_list[comp]["line_type"]=="na":
-                  # tracename="narrow line"
-                fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata[comp], mode="lines", line=go.scatter.Line(color="#00B5F7", width=1), name=comp, legendgroup="narrow lines",legendgrouptitle_text="narrow lines", legendrank=11,), row=1, col=1)
-                  # tracenames.append(tracename)
-            if line_list[comp]["line_type"]=="br":
-                  # tracename="broad line"
-                fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata[comp], mode="lines", line=go.scatter.Line(color="#22FFA7", width=1), name=comp, legendgroup="broad lines",legendgrouptitle_text="broad lines", legendrank=13,), row=1, col=1)
-                  # tracenames.append(tracename)
-            if line_list[comp]["line_type"]=="out":
-                  # tracename="outflow line"
-                fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata[comp], mode="lines", line=go.scatter.Line(color="#FC0080", width=1), name=comp, legendgroup="outflow lines",legendgrouptitle_text="outflow lines", legendrank=14,), row=1, col=1)
-                  # tracenames.append(tracename)
-            if line_list[comp]["line_type"]=="abs":
-                  # tracename="absorption line"
-                fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata[comp], mode="lines", line=go.scatter.Line(color="#DA16FF", width=1), name=comp, legendgroup="absorption lines",legendgrouptitle_text="absorption lines", legendrank=15,), row=1, col=1)
-                  # tracenames.append(tracename)
-            if line_list[comp]["line_type"]=="user":
-                  # tracename="absorption line"
-                fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata[comp], mode="lines", line=go.scatter.Line(color="rgb(153,201,59)", width=1), name=comp, legendgroup="user lines",legendgrouptitle_text="user lines", legendrank=16,), row=1, col=1)
-                  # tracenames.append(tracename)
-        
-    fig.add_hline(y=0.0, line=dict(color="gray", width=2), row=1, col=1)  
-    
-    # Plot bad pixels
-    # lam_gal = tbdata["WAVE"]
-    # ibad = [i for i in range(len(lam_gal)) if i not in fit_mask]
-    # if (len(ibad)>0):# and (len(ibad[0])>1):
-    # 	bad_wave = [(lam_gal[m],lam_gal[m+1]) for m in ibad if ((m+1)<len(lam_gal))]
-    # 	# ax1.axvspan(bad_wave[0][0],bad_wave[0][0],alpha=0.25,color='xkcd:lime green',label="bad pixels")
-    # 	fig.add_vrect(
-    # 					x0=bad_wave[0][0], x1=bad_wave[0][0],
-    # 					fillcolor="rgb(179,222,105)", opacity=0.25,
-    # 					layer="below", line_width=0,name="bad pixels",
-    # 					),
-    # 	for i in bad_wave[1:]:
-    # 		# ax1.axvspan(i[0],i[0],alpha=0.25,color='xkcd:lime green')
-    # 		fig.add_vrect(
-    # 						x0=i[0], x1=i[1],
-    # 						fillcolor="rgb(179,222,105)", opacity=0.25,
-    # 						layer="below", line_width=0,name="bad pixels",
-    # 					),
-        
-        
-    # Residuals
-    fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata["RESID"], mode="lines", line=go.scatter.Line(color="white"  , width=1), name="Residuals", showlegend=False), row=2, col=1)
-    fig.add_trace(go.Scatter( x = tbdata["WAVE"], y = tbdata["NOISE"], mode="lines", line=go.scatter.Line(color="#FE00CE"  , width=1), name="Noise", showlegend=False, legendrank=3,), row=2, col=1)
-    # Figure layout, size, margins
-    fig.update_layout(
-        autosize=False,
-        width=1700,
-        height=800,
-        margin=dict(
-            l=100,
-            r=100,
-            b=100,
-            t=100,
-            pad=1
-        ),
-        title= objname,
-        font_family="Times New Roman",
-        font_size=16,
-        font_color="white",
-        legend_title_text="Components",
-        legend_bgcolor="black",
-        paper_bgcolor="black",
-        plot_bgcolor="black",
-    )
-    # Update x-axis properties
-    fig.update_xaxes(title=r"$\Large\lambda_{\rm{rest}}\;\left[Å\right]$", linewidth=0.5, linecolor="gray", mirror=True, 
-                     gridwidth=1, gridcolor="#222A2A", zerolinewidth=2, zerolinecolor="#222A2A",
-                     row=1, col=1)
-    fig.update_xaxes(title=r"$\Large\lambda_{\rm{rest}}\;\left[Å\right]$", linewidth=0.5, linecolor="gray", mirror=True,
-                     gridwidth=1, gridcolor="#222A2A", zerolinewidth=2, zerolinecolor="#222A2A",
-                     row=2, col=1)
-    # Update y-axis properties
-    fig.update_yaxes(title=r"$\Large f_\lambda\;\left[\rm{erg}\;\rm{cm}^{-2}\;\rm{s}^{-1}\;Å^{-1}\right]$", linewidth=0.5, linecolor="gray",  mirror=True,
-                     gridwidth=1, gridcolor="#222A2A", zerolinewidth=2, zerolinecolor="#222A2A",
-                     row=1, col=1)
-    fig.update_yaxes(title=r"$\Large\Delta f_\lambda$", linewidth=0.5, linecolor="gray", mirror=True,
-                     gridwidth=1, gridcolor="#222A2A", zerolinewidth=2, zerolinecolor="#222A2A",
-                     row=2, col=1)
-        
-    fig.update_xaxes(matches='x')
-    # fig.update_yaxes(matches='y')
-    # fig.show()
-    
-    # Write to HTML
-    fig.write_html(run_dir.joinpath("%s_bestfit.html" % objname),include_mathjax="cdn")
-    # Write to PDF
-    # fig.write_image(run_dir.joinpath("%s_bestfit.pdf" % objname))
-
-    return
 
 
 def write_log(output_val,output_type,run_dir):
