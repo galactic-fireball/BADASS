@@ -123,6 +123,7 @@ def run_BADASS(inputs, **kwargs):
 
 
 # TODO: move logger to here instead of target
+# TODO: make sure all attrs are initialized
 class BadassRunContext:
     def __init__(self, target):
         self.target = target
@@ -1153,7 +1154,7 @@ class BadassRunContext:
             metrics['CHI2_RATIO'] = chi2_ratio
 
             if self.target.options.test_options.plot_tests:
-                create_test_plot(self.target, test_fit_results, prev_label, test_label, test_title=test_title)
+                plotting.create_test_plot(self.target, test_fit_results, prev_label, test_label, test_title=test_title)
 
             test_pass = badass_test_suite.thresholds_met(self.target.options.test_options, metrics, fit_results)
             fit_results['pass'] = test_pass
@@ -2212,135 +2213,6 @@ def prepare_plot(lam_gal,galaxy,noise,ibad,flux_norm,fit_norm,run_dir):
     plt.close(fig)
     #
     return
-
-
-# TODO: move to plot utils
-def create_test_plot(target, fit_results, label_A, label_B, test_title=None):
-
-    test_A_fit = fit_results[label_A]
-    test_A_comps = {key:val[0] for key,val in test_A_fit['mccomps'].items()}
-    test_A_wave = test_A_comps['WAVE']
-    test_B_fit = fit_results[label_B]
-    test_B_comps = {key:val[0] for key,val in test_B_fit['mccomps'].items()}
-    test_B_wave = test_B_comps['WAVE']
-
-    fig = plt.figure(figsize=(14,11))
-    gs = gridspec.GridSpec(9,1)
-    test_A_axes = (fig.add_subplot(gs[0:3,0]), fig.add_subplot(gs[3:4,0]))
-    test_B_axes = (fig.add_subplot(gs[5:8,0]), fig.add_subplot(gs[8:9,0]))
-    gs.update(wspace=0.0, hspace=0.0)
-
-    linewidth_default = 0.5
-    linestyle_default = '-'
-
-    order = len([p for p in test_B_fit['mcpars'] if p.startswith('APOLY_')]) - 1
-    apoly_label = '%d%s-order Add Poly' % (order,'tsnrhtdd'[(order//10%10!=1)*(order%10<4)*order%10::4])
-    order = len([p for p in test_B_fit['mcpars'] if p.startswith('MPOLY_')]) - 1
-    mpoly_label = '%d%s-order Mult Poly' % (order,'tsnrhtdd'[(order//10%10!=1)*(order%10<4)*order%10::4])
-
-    # Common values between tests
-    # (label, key, color, linewidth, linestyle)
-    plot_vals = [
-        ('Data', 'DATA', 'white', linewidth_default, linestyle_default),
-        ('Host/Stellar', 'HOST_GALAXY', 'xkcd:bright green', linewidth_default, linestyle_default),
-        ('AGN Cont', 'POWER', 'xkcd:red', linewidth_default, '--'),
-        (apoly_label, 'APOLY', 'xkcd:bright purple', linewidth_default, linestyle_default),
-        (mpoly_label, 'MPOLY', 'xkcd:lavender', linewidth_default, linestyle_default),
-        ('Narrow FeII', 'NA_OPT_FEII_TEMPLATE', 'xkcd:yellow', linewidth_default, linestyle_default),
-        ('Broad FeII', 'BR_OPT_FEII_TEMPLATE', 'xkcd:orange', linewidth_default, linestyle_default),
-        ('F-transition FeII', 'F_OPT_FEII_TEMPLATE', 'xkcd:yellow', linewidth_default, linestyle_default),
-        ('S-transition FeII', 'F_OPT_FEII_TEMPLATE', 'xkcd:mustard', linewidth_default, linestyle_default),
-        ('G-transition FeII', 'F_OPT_FEII_TEMPLATE', 'xkcd:orange', linewidth_default, linestyle_default),
-        ('Z-transition FeII', 'F_OPT_FEII_TEMPLATE', 'xkcd:rust', linewidth_default, linestyle_default),
-        ('UV Iron', 'UV_IRON_TEMPLATE', 'xkcd:bright purple', linewidth_default, linestyle_default),
-        ('Balmer Continuum', 'BALMER_CONT', 'xkcd:bright green', linewidth_default, '--'),
-        ('Model', 'MODEL', 'xkcd:bright red', 1.0, linestyle_default), # make last so it is on top of others
-    ]
-
-    for label, key, color, linewidth, linestyle in plot_vals:
-        if (key not in test_A_comps) or (key not in test_B_comps):
-            continue
-        test_A_axes[0].plot(test_A_wave, test_A_comps[key], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
-        test_B_axes[0].plot(test_B_wave, test_B_comps[key], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
-
-    # {line_type: (label, color)}
-    line_vals = {
-        'na': ('Narrow/Core Comp', 'xkcd:cerulean'),
-        'br': ('Broad Comp', 'xkcd:bright teal'),
-        'abs': ('Absorption Comp', 'xkcd:pastel red'),
-        'user': ('Other', 'xkcd:electric lime'),
-    }
-
-    # TODO: reduce dup code
-    for line_name, line_dict in test_A_fit['line_list'].items():
-        label, color = line_vals[line_dict['line_type']]
-        test_A_axes[0].plot(test_A_wave, test_A_comps[line_name], color=color, linewidth=0.5, linestyle='-', label=label)
-
-    for line_name, line_dict in test_B_fit['line_list'].items():
-        label, color = line_vals[line_dict['line_type']]
-        test_B_axes[0].plot(test_B_wave, test_B_comps[line_name], color=color, linewidth=0.5, linestyle='-', label=label)
-
-    for comp_dict, ax in [(test_A_comps,test_A_axes),(test_B_comps,test_B_axes)]:
-        ax[0].set_xticklabels([])
-        ax[0].set_xlim(np.min(comp_dict['WAVE'])-10, np.max(comp_dict['WAVE'])+10)
-        ax[0].set_ylabel('Normalized Flux',fontsize=10)
-
-        sigma_resid = np.nanstd(comp_dict['DATA']-comp_dict['MODEL'])
-        sigma_noise = np.nanmedian(comp_dict['NOISE'])
-        ax[1].plot(comp_dict['WAVE'], comp_dict['NOISE']*3.0, linewidth=0.5, color='xkcd:bright orange', label=r'$\sigma_{\mathrm{noise}}=%0.4f$' % sigma_noise)
-        ax[1].plot(comp_dict['WAVE'], comp_dict['RESID']*3.0, linewidth=0.5, color='white', label=r'$\sigma_{\mathrm{resid}}=%0.4f$' % sigma_resid)
-        ax[1].axhline(0.0, linewidth=1.0, color='white', linestyle='--')
-
-        ax_low = np.min([ax[0].get_ylim()[0], ax[1].get_ylim()[0]])
-        ax_upp = np.max([ax[0].get_ylim()[1], ax[1].get_ylim()[1]])
-        if np.isfinite(sigma_resid): ax_upp += 3.0 * sigma_resid
-
-        minimum = np.nanmin([np.nanmin(vals) for vals in comp_dict.values()])
-        if (not np.isfinite(minimum)) or (np.isnan(minimum)): minimum = 0.0
-
-        ax[0].set_ylim(np.nanmin([0.0, minimum]), ax_upp)
-        ax[0].set_xlim(np.min(comp_dict['WAVE']), np.max(comp_dict['WAVE']))
-        ax[1].set_ylim(ax_low, ax_upp)
-        ax[1].set_xlim(np.min(comp_dict['WAVE']), np.max(comp_dict['WAVE']))
-
-        ax[1].set_yticklabels(np.round(np.array(ax[1].get_yticks()/3.0)))
-        ax[1].set_ylabel(r'$\Delta f_\lambda$', fontsize=12)
-        ax[1].set_xlabel(r'Wavelength, $\lambda\;(\mathrm{\AA})$', fontsize=12)
-
-        handles, labels = ax[0].get_legend_handles_labels()
-        unique_labels = dict(zip(labels, handles))
-        ax[0].legend(unique_labels.values(), unique_labels.keys(), loc='upper right', fontsize=8)
-        ax[1].legend(loc='upper right', fontsize=8)
-
-
-    def calc_new_center(center, voff):
-        return (voff*center)/const.c.to('km/s').value + center
-
-    for test_label, comp_dict, ax in ((label_A, test_A_comps, test_A_axes), (label_B, test_B_comps, test_B_axes)):
-        line_list = fit_results[test_label]['line_list']
-        for line_name, line_dict in line_list.items():
-            if 'label' not in line_dict:
-                continue
-
-            voff = fit_results[test_label]['mcpars'].get('%s_VOFF'%line_name, {}).get('med',np.nan)
-            if voff == np.nan:
-                continue
-
-            xloc = calc_new_center(line_dict['center'], voff)
-            idx = find_nearest(comp_dict['WAVE'], xloc)[1]
-            yloc = np.max([comp_dict['DATA'][idx], comp_dict['MODEL'][idx]])*1.05
-
-            ax[0].annotate(line_dict['label'], xy=(xloc,yloc), xycoords='data', xytext=(xloc,yloc), textcoords='data', horizontalalignment='center', verticalalignment='center', color='xkcd:white', fontsize=6)
-
-    test_A_axes[0].set_title(r'$\textrm{TEST%s: %s}$'%(' '+test_title.replace('_', '\\_') if test_title else '', label_A), fontsize=16)
-    test_B_axes[0].set_title(r'$\textrm{TEST%s: %s}$'%(' '+test_title.replace('_', '\\_') if test_title else '', label_B), fontsize=16)
-
-    fig.tight_layout()
-    plot_dir = target.outdir.joinpath('test_plots')
-    plot_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(plot_dir.joinpath('test%s_%s_vs_%s'%('_'+test_title if test_title else '', label_A, label_B)), bbox_inches='tight', dpi=300)
-    plt.close()
-
 
 
 def isFloat(num):
