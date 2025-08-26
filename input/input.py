@@ -7,6 +7,9 @@ from utils.logger import BadassLogger
 from utils.pca import pca_reconstruction
 from utils.utils import emline_masker, metal_masker
 
+# TODO: account for user_mask
+# TODO: make sure all input classes have consistent attrs
+
 class BadassInput():
 
     def common_postinit(self, input_data, options):

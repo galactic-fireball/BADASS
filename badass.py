@@ -155,6 +155,7 @@ class BadassRunContext:
 
 
     def run(self):
+        plotting.create_input_plot(self)
         self.initialize_fit()
 
         # Line testing is performed first for a better line list determination and number of components
@@ -2158,61 +2159,6 @@ def insert_nan(spec,ibad):
         return spec
     except:
         return spec
-
-
-# TODO: in plotting util
-# TODO: call from input classes
-def prepare_plot(lam_gal,galaxy,noise,ibad,flux_norm,fit_norm,run_dir):
-    # Plot the galaxy fitting region
-    fig = plt.figure(figsize=(14,8))
-    ax1 = fig.add_subplot(2,1,1)
-    ax2 = fig.add_subplot(2,1,2)
-    fontsize = 16
-
-    ### Un-normalized spectrum #########################################################################
-
-    ax1.step(lam_gal,galaxy*fit_norm,label='Object Fit Region',linewidth=0.5, color='xkcd:bright aqua')
-    ax1.step(lam_gal,noise*fit_norm,label='$1\sigma$ Uncertainty',linewidth=0.5,color='xkcd:bright orange')
-    ax1.axhline(0.0,color='white',linewidth=0.5,linestyle='--')
-    # Plot bad pixels
-    if (len(ibad)>0):# and (len(ibad[0])>1):
-        bad_wave = [(lam_gal[m],lam_gal[m+1]) for m in ibad if ((m+1)<len(lam_gal))]
-        ax1.axvspan(bad_wave[0][0],bad_wave[0][0],alpha=0.25,color='xkcd:lime green',label="bad pixels")
-        for i in bad_wave[1:]:
-            ax1.axvspan(i[0],i[0],alpha=0.25,color='xkcd:lime green')
-
-    
-    ax1.set_title(r'Input Spectrum',fontsize=fontsize)
-    ax1.set_xlabel(r'$\lambda_{\rm{rest}}$ ($\mathrm{\AA}$)',fontsize=fontsize)
-    ax1.set_ylabel(r'$f_\lambda$ ($10^{%d}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)' % (np.log10(flux_norm)),fontsize=fontsize)
-    ax1.set_xlim(np.min(lam_gal),np.max(lam_gal))
-    ax1.legend(loc='best')
-
-    ### Normalized spectrum ############################################################################
-
-    ax2.step(lam_gal,galaxy,label='Object Fit Region',linewidth=0.5, color='xkcd:bright aqua')
-    ax2.step(lam_gal,noise,label='$1\sigma$ Uncertainty',linewidth=0.5,color='xkcd:bright orange')
-    ax2.axhline(0.0,color='white',linewidth=0.5,linestyle='--')
-    # Plot bad pixels
-    if (len(ibad)>0):# and (len(ibad[0])>1):
-        bad_wave = [(lam_gal[m],lam_gal[m+1]) for m in ibad if ((m+1)<len(lam_gal))]
-        ax1.axvspan(bad_wave[0][0],bad_wave[0][0],alpha=0.25,color='xkcd:lime green',label="bad pixels")
-        for i in bad_wave[1:]:
-            ax1.axvspan(i[0],i[0],alpha=0.25,color='xkcd:lime green')
-    
-    ax2.set_title(r'Fitted Spectrum',fontsize=fontsize)
-    ax2.set_xlabel(r'$\lambda_{\rm{rest}}$ ($\mathrm{\AA}$)',fontsize=fontsize)
-    ax2.set_ylabel(r'$\textrm{Normalized Flux}$',fontsize=fontsize)
-    ax2.set_xlim(np.min(lam_gal),np.max(lam_gal))
-    #
-    plt.tight_layout()
-    plt.savefig(run_dir.joinpath('input_spectrum.pdf'))
-    ax1.clear()
-    ax2.clear()
-    fig.clear()
-    plt.close(fig)
-    #
-    return
 
 
 def isFloat(num):

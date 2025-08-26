@@ -11,6 +11,53 @@ from utils.utils import find_nearest
 def calc_new_center(center, voff):
         return (voff*center)/const.c.to('km/s').value + center
 
+
+def create_input_plot(ctx):
+    fig = plt.figure(figsize=(14,8))
+    ax1 = fig.add_subplot(2,1,1)
+    ax2 = fig.add_subplot(2,1,2)
+    fontsize = 16
+
+    ### Un-normalized spectrum
+
+    ax1.step(ctx.fit_wave, ctx.fit_spec*ctx.target.fit_norm, label='Object Fit Region', linewidth=0.5, color='xkcd:bright aqua')
+    ax1.step(ctx.fit_wave, ctx.fit_noise*ctx.target.fit_norm, label=r'$1\sigma$ Uncertainty', linewidth=0.5, color='xkcd:bright orange')
+    ax1.axhline(0.0, color='white', linewidth=0.5, linestyle='--')
+
+    # TODO: change to masked_pixels
+    if (hasattr(ctx.target, 'ibad')) and (len(ctx.target.ibad) > 0):
+        for m in ibad:
+            ax1.axvspan(ctx.fit_wave[m], ctx.fit_wave[m], alpha=0.25, color='xkcd:lime green')
+        ax1.axvspan(0, 0, alpha=0.25, color='xkcd:lime green', label='bad pixels')
+
+    ax1.set_title(r'Input Spectrum', fontsize=fontsize)
+    ax1.set_xlabel(r'$\lambda_{\rm{rest}}$ ($\mathrm{\AA}$)', fontsize=fontsize)
+    ax1.set_ylabel(r'$f_\lambda$ ($10^{%d}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)' % (np.log10(ctx.options.fit_options.flux_norm)), fontsize=fontsize)
+    ax1.set_xlim(np.min(ctx.fit_wave), np.max(ctx.fit_wave))
+    ax1.legend(loc='best')
+
+    ### Normalized spectrum
+
+    ax2.step(ctx.fit_wave, ctx.fit_spec, label='Object Fit Region', linewidth=0.5, color='xkcd:bright aqua')
+    ax2.step(ctx.fit_wave, ctx.fit_noise, label=r'$1\sigma$ Uncertainty', linewidth=0.5, color='xkcd:bright orange')
+    ax2.axhline(0.0, color='white', linewidth=0.5, linestyle='--')
+
+    # TODO: change to masked_pixels
+    if (hasattr(ctx.target, 'ibad')) and (len(ctx.target.ibad) > 0):
+        for m in ibad:
+            ax1.axvspan(ctx.fit_wave[m], ctx.fit_wave[m], alpha=0.25, color='xkcd:lime green')
+        ax1.axvspan(0, 0, alpha=0.25, color='xkcd:lime green', label='bad pixels')
+    
+    ax2.set_title(r'Fitted Spectrum', fontsize=fontsize)
+    ax2.set_xlabel(r'$\lambda_{\rm{rest}}$ ($\mathrm{\AA}$)', fontsize=fontsize)
+    ax2.set_ylabel(r'$\textrm{Normalized Flux}$', fontsize=fontsize)
+    ax2.set_xlim(np.min(ctx.fit_wave),np.max(ctx.fit_wave))
+
+    plt.tight_layout()
+    plt.savefig(ctx.target.outdir.joinpath('input_spectrum.pdf'))
+    plt.close(fig)
+
+
 def create_test_plot(target, fit_results, label_A, label_B, test_title=None):
 
     test_A_fit = fit_results[label_A]
