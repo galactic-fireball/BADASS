@@ -131,10 +131,9 @@ class BadassRunContext:
         self.fit_spec = self.target.spec.copy()
         self.fit_noise = self.target.noise.copy()
 
-        self.force_best = False
+        self.start_time = None
         self.force_thresh = np.inf
         self.fit_type = 'init' # TODO: needed?
-        self.output_model = False # TODO: needed?
 
         self.templates = None
         self.param_dict = {}
@@ -145,8 +144,37 @@ class BadassRunContext:
         self.soft_cons = []
         self.blob_pars = {}
 
+        self.fit_results = {}
+        self.model = None
+        self.comp_dict = {}
+
 
     def run(self):
+        self.initialize_fit()
+
+        # Line testing is performed first for a better line list determination and number of multiple components
+        continue_fit = self.run_tests()
+        if not continue_fit:
+            return
+
+        # Max Likelihood Fitting
+        if self.verbose and np.isfinite(self.force_thresh):
+            print('Required Maximum Likelihood RMSE threshold: %0.4f' % (self.force_thresh))
+
+        self.max_likelihood()
+
+        # Make interactive HTML plot
+        if self.target.options.plot_options.plot_HTML:
+            # TODO: object name option
+            plotly_best_fit(self.target.options.io_options.output_dir,self.line_list,self.target.fit_mask,self.target.outdir)
+
+        if not target.options.mcmc_options.mcmc_fit:
+            print(' - Done fitting %s! \n' % self.target.options.io_options.output_dir)
+            sys.stdout.flush()
+            return
+
+
+    def initialize_fit(self):
         if self.options.io_options.dust_cache != None:
             IrsaDust.cache_location = str(dust_cache)
 
@@ -159,23 +187,17 @@ class BadassRunContext:
 
         sys.stdout.flush()
         # Start a timer to record the total runtime
-        start_time = time.time()
+        self.start_time = time.time()
 
         self.target.log.log_fit_information()
         # TODO: the templates ctx is BadassRunContext
         self.templates = initialize_templates(self.target)
 
-        # TODO: need?
         # TODO: input from past line test or user config
         # Set force_thresh to np.inf. This will get overridden if the user does the line test
         self.force_thresh = badass_test_suite.root_mean_squared_error(self.target.spec, np.full_like(self.target.spec,np.nanmedian(self.target.spec)))
-
-        # TODO: do differently
-        if (self.force_thresh/self.force_thresh==1):
-            self.force_best=True
-        else:
-            self.force_best=False 
-            self.force_thresh=np.inf
+        if not np.isfinite(self.force_thresh):
+            self.force_thresh = np.inf
 
         # Initialize free parameters (all components, lines, etc.)
         self.target.log.info('\n Initializing parameters...')
@@ -189,57 +211,11 @@ class BadassRunContext:
             self.target.log.output_free_pars(self.line_list, self.param_dict, self.soft_cons)
         self.target.log.output_line_list(self.line_list, self.soft_cons)
 
-        self.get_blob_pars()
+        self.set_blob_pars()
         self.target.log.output_options()
 
-        # Line testing is meant to be performed prior to max like and MCMC to allow for a better line list determination (number of multiple components)
-        continue_fit = self.run_tests()
 
-        # TODO: honor continue_fit
-
-        # Max Likelihood Fitting
-        # TODO: move all to separate function
-
-        if (self.force_thresh/self.force_thresh==1):
-            self.force_best=True
-        else:
-            self.force_best=False 
-            self.force_thresh=np.inf
-
-        if self.verbose and self.force_best:
-            print("\n Required Maximum Likelihood RMSE threshold: %0.4f \n" % (self.force_thresh))
-
-        # TODO: remove, used anywhere?
-        outflow_test_options = False
-
-        result_dict, comp_dict = self.max_likelihood()
-
-        # if not target.options.mcmc_options.mcmc_fit:
-        # If not performing MCMC fitting, terminate BADASS here and write 
-        # parameters, uncertainties, and components to a fits file
-        # Write final parameters to file
-        # Header information
-        header_dict = {}
-        header_dict["z_sdss"] = self.target.z
-        header_dict["med_noise"] = np.nanmedian(self.target.noise)
-        header_dict["velscale"]  = self.target.velscale
-        header_dict["fit_norm"]  = self.target.fit_norm
-        header_dict["flux_norm"] = self.target.options.fit_options.flux_norm
-
-        # TODO: remove, add to ifu inputs
-        binnum = spaxelx = spaxely = None
-        write_max_like_results(copy.deepcopy(result_dict),copy.deepcopy(comp_dict),header_dict,self.target.fit_mask,self.target.fit_norm,self.target.outdir,binnum,spaxelx,spaxely)
-        
-        # Make interactive HTML plot 
-        if self.target.options.plot_options.plot_HTML:
-            # TODO: object name option
-            plotly_best_fit(self.target.options.io_options.output_dir,self.line_list,self.target.fit_mask,self.target.outdir)
-
-        print(' - Done fitting %s! \n' % self.target.options.io_options.output_dir)
-        sys.stdout.flush()
-
-
-    def initialize_pars(self, user_lines=None, remove_lines=False):
+    def initialize_pars(self, user_lines=None):
         """
         Initializes all free parameters for the fit based on user input and options.
         """
@@ -939,7 +915,7 @@ class BadassRunContext:
         self.combined_line_list = combined_line_list
 
 
-    def get_blob_pars(self):
+    def set_blob_pars(self):
         """
         The blob-parameter dictionary is a dictionary for any non-free "blob" parameters for values that need 
         to be calculated during the fit. For MCMC, these equate to non-fitted parameters like fluxes, equivalent widths, 
@@ -1055,7 +1031,7 @@ class BadassRunContext:
                     break
 
         self.line_list = new_line_list
-        self.force_thresh = force_thresh
+        self.force_thresh = force_thresh if np.isfinite(force_thresh) else np.inf
 
         # TODO: fix to limit number of times initialize_pars needs to be called
         # TODO: instead of user_lines, use whatever line_list is set in the context
@@ -1239,7 +1215,7 @@ class BadassRunContext:
         n_basinhop = self.options.fit_options.n_basinhop
         lowest_rmse = badass_test_suite.root_mean_squared_error(self.fit_spec, np.zeros(len(self.fit_spec)))
         callback_ftn = None
-        if self.force_best:
+        if np.isfinite(self.force_thresh):
             force_basinhop = n_basinhop
             # TODO: config
             n_basinhop = 250 # Set to arbitrarily high threshold
@@ -1291,61 +1267,20 @@ class BadassRunContext:
         par_best = result['x']
         self.cur_params = dict(zip(self.cur_params.keys(), par_best))
         fun_result = result['fun']
-        self.output_model = True
-        _, comp_dict = self.fit_model()
+        self.fit_model()
 
         if self.options.fit_options.reweighting:
             print('Reweighting noise to achieve a reduced chi-squared ~ 1')
-            cur_rchi2 = badass_test_suite.r_chi_squared(comp_dict['DATA'], comp_dict['MODEL'], self.fit_noise, len(par_best))
+            cur_rchi2 = badass_test_suite.r_chi_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'], self.fit_noise, len(par_best))
             print('\tCurrent reduced chi-squared = %0.5f' % cur_rchi2)
             self.fit_noise = self.fit_noise*np.sqrt(cur_rchi2)
-            new_rchi2 = badass_test_suite.r_chi_squared(comp_dict['DATA'], comp_dict['MODEL'], self.fit_noise, len(par_best))
-            print('\tNew reduced chi-squared = %0.5f' % new_rchi2)  
+            new_rchi2 = badass_test_suite.r_chi_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'], self.fit_noise, len(par_best))
+            print('\tNew reduced chi-squared = %0.5f' % new_rchi2)
 
 
-        # TODO: separate function for initializing mc_attr_store
         max_like_niter = self.options.fit_options.max_like_niter
-        iters = max_like_niter+1
-        mc_attr_store = {}
-        for key in self.cur_params.keys():
-            mc_attr_store[key] = np.zeros(iters)
-
-        # TODO: make dict for 'name'-> calc_func
-        comp_attrs = ['FLUX', 'LUM', 'EW',]
-        for key, val in comp_dict.items():
-            mc_attr_store[key] = np.zeros((iters, len(val)))
-            if not key in self.skip_comps:
-                for attr in comp_attrs:
-                    mc_attr_store[key+'_'+attr] = np.zeros(iters)
-
-        cll_attrs = ['DISP', 'VOFF',]
-        for key in self.combined_line_list.keys():
-            for attr in cll_attrs:
-                mc_attr_store[key+'_'+attr] = np.zeros(iters)
-
-        all_attrs = ['FWHM', 'W80', 'NPIX', 'SNR',]
-        for key in (list(self.combined_line_list.keys())+list(self.line_list.keys())):
-            for attr in all_attrs:
-                mc_attr_store[key+'_'+attr] = np.zeros(iters)
-
-        mc_attr_store['LOG_LIKE'] = np.zeros(iters)
-        mc_attr_store['R_SQUARED'] = np.zeros(iters)
-        mc_attr_store['RCHI_SQUARED'] = np.zeros(iters)
-
-        # TODO: store elsewhere; unit agnostic
-        cont_lum_attrs = {
-            1350.0: ['L_CONT_AGN_1350', 'L_CONT_HOST_1350', 'L_CONT_TOT_1350'],
-            3000.0: ['L_CONT_AGN_3000', 'L_CONT_HOST_3000', 'L_CONT_TOT_3000'],
-            4000.0: ['HOST_FRAC_4000', 'AGN_FRAC_4000'],
-            5100.0: ['L_CONT_AGN_5100', 'L_CONT_HOST_5100', 'L_CONT_TOT_5100'],
-            7000.0: ['HOST_FRAC_7000', 'AGN_FRAC_7000'],
-        }
-        for wave, attrs in cont_lum_attrs.items():
-            if (self.fit_wave[0] < wave) and (self.fit_wave[-1] > wave):
-                for key in attrs:
-                    mc_attr_store[key] = np.zeros(iters)
-
-        self.update_mc_store(0, mc_attr_store, fun_result, comp_dict)
+        self.init_mc_store(max_like_niter+1)
+        self.update_mc_store(0, fun_result)
 
         if max_like_niter:
             print('Performing Monte Carlo bootstrapping')
@@ -1358,87 +1293,28 @@ class BadassRunContext:
                 mcgal[~np.isfinite(mcgal)] = np.nanmedian(mcgal)
                 self.fit_spec = mcgal
                 self.fit_type = 'init' # TODO: need?
-                self.output_model = False # TODO: need?
 
-                # TODO: eventually x0 can be self.param_dict.vals()
-                # TODO: use wrapper function to put current param values in param_dict and then call lnprob with whole ctx
-                resultmc = op.minimize(fun=lnprob_wrapper, x0=par_best, method='SLSQP', 
-                    bounds=param_bounds, constraints=cons, options={'maxiter':1000,'disp': False})
+                resultmc = op.minimize(fun=lnprob_wrapper, x0=list(self.cur_params.values()), method='SLSQP', 
+                                       bounds=param_bounds, constraints=cons, options={'maxiter':1000,'disp': False})
 
+                # return original spectrum for fitting model
                 self.fit_spec = orig_fit_spec
-                # self.output_model = True # TODO: needed?
                 par_best = resultmc['x']
                 self.cur_params = dict(zip(self.cur_params.keys(), par_best))
                 fun_result = resultmc['fun']
-                _, comp_dict = self.fit_model()
-                self.update_mc_store(n, mc_attr_store, fun_result, comp_dict)
+                self.fit_model()
+                self.update_mc_store(n, fun_result)
 
-        # TODO: separate function for creating fit_results_dict
-        # TODO: class or other structure for storing mc_attr_store, fit_results_dict, etc.
-        # TODO: error handling to make sure all mc_attr_store keys are included
-        # TODO: custom conditions for flags and do that elsewhere
-        fit_results_dict = {}
-
-        for key, vals in mc_attr_store.items():
-            if key in comp_dict.keys():
-                continue
-            mc_med = np.nanmedian(vals)
-            if ~np.isfinite(mc_med): mc_med = 0
-            mc_std = np.nanstd(vals)
-            if ~np.isfinite(mc_std): mc_std = 0
-            fit_results_dict[key] = {'med': mc_med, 'std': mc_std, 'flag': 0}
-
-        # TODO: mark flags for other keys if med < 0 or std == 0
-        # Mark any parameter flags
-        for key, val in self.param_dict.items():
-            flag = 0
-            bounds = val['plim']
-            if mc_std == 0: flag += 1
-            if mc_med-mc_std <= bounds[0]: flag += 1
-            if mc_med+mc_std >= bounds[1]: flag += 1
-            fit_results_dict[key]['flag'] = flag
-
-        # Add tied parameters
-        med_dict = {key:key_dict['med'] for key,key_dict in fit_results_dict.items()}
-        target_pars = ['amp', 'disp', 'voff', 'shape', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9', 'h10']
-        for line_name, line_dict in self.line_list.items():
-            for par_name, expr in line_dict.items():
-                if (expr == 'free') or (not par_name in target_pars):
-                    continue
-
-                med = ne.evaluate(expr, local_dict=med_dict).item()
-                expr_stds = np.array([key_dict['std'] for key,key_dict in fit_results_dict.items() if key in expr], dtype=float)
-                std = np.sqrt(np.sum(expr_stds**2))
-                fit_results_dict[line_name+'_'+par_name.upper()] = {'med': med, 'std': std, 'flag': 0}
-
-        # Add dispersion resolution (in km/s) for each line
-        for line_name, line_dict in {**self.line_list,**self.combined_line_list}.items():
-            disp_res = line_dict['disp_res_kms']
-            fit_results_dict[line_name+'_DISP_RES'] = {'med': disp_res, 'std': np.nan, 'flag': 0}
-
-            disp_dict = fit_results_dict[line_name+'_DISP']
-            disp_corr = np.nanmax((0.0, np.sqrt(disp_dict['med']**2-disp_res**2)))
-            fit_results_dict[line_name+'_DISP_CORR'] = {'med': disp_corr, 'std': disp_dict['std'], 'flag': disp_dict['flag']}
-
-            fwhm_dict = fit_results_dict[line_name+'_FWHM']
-            fwhm_corr = np.nanmax((0.0, np.sqrt(fwhm_dict['med']**2-(2.3548*disp_res)**2)))
-            fit_results_dict[line_name+'_FWHM_CORR'] = {'med': fwhm_corr, 'std': fwhm_dict['std'], 'flag': fwhm_dict['flag']}
-
-            w80_dict = fit_results_dict[line_name+'_W80']
-            w80_corr = np.nanmax((0.0, np.sqrt(w80_dict['med']**2-(2.567*disp_res)**2)))
-            fit_results_dict[line_name+'_W80_CORR'] = {'med': w80_corr, 'std': w80_dict['std'], 'flag': w80_dict['flag']}
-
+        self.compile_mc_results()
 
         # TODO: handle differently
         if test_outflows:
-            mccomps = {k:v for k,v in mc_attr_store.items() if k in comp_dict.keys()}
-            return fit_results_dict, mccomps, mc_attr_store['LOG_LIKE'], lowest_rmse
+            mccomps = {k:v for k,v in self.mc_attr_store.items() if k in self.comp_dict.keys()}
+            return self.fit_results, mccomps, self.mc_attr_store['LOG_LIKE'], lowest_rmse
 
-        # Get best-fit components for maximum likelihood plot
-        # self.output_model = True # TODO: need?
 
-        self.cur_params = {k:fit_results_dict[k]['med'] for k in self.cur_params.keys()}
-        _, comp_dict = self.fit_model()
+        self.cur_params = {k:self.fit_results[k]['med'] for k in self.cur_params.keys()}
+        self.fit_model()
 
         # Plot results of maximum likelihood fit
         # TODO: add to plotting
@@ -1453,7 +1329,7 @@ class BadassRunContext:
         print('--------------------------------------------------------------------------------------')
 
         # TODO: sort params
-        for param, param_dict in fit_results_dict.items():
+        for param, param_dict in self.fit_results.items():
             print('{0:<30}{1:<30.6f}{2:<30.6f}{3:<30}'.format(param, param_dict['med'], param_dict['std'], param_dict['flag']))
 
         # print('{0:<30}{1:<30.6f}{2:<30}{3:<30}'.format('NOISE_STD', sigma_noise, ' ',' '))
@@ -1462,12 +1338,61 @@ class BadassRunContext:
 
         # mlctx.target.log.log_max_like_fit(pdict_rescaled,sigma_noise,sigma_resid)
 
-        return fit_results_dict, comp_dict
+        # header_dict = {
+        #     'z_sdss': self.target.z,
+        #     'med_noise': np.nanmedian(self.target.noise),
+        #     'velscale': self.target.velscale,
+        #     'fit_norm': self.target.fit_norm,
+        #     'flux_norm': self.target.options.fit_options.flux_norm,
+        # }
+
+        # self.write_max_like_results(fit_results, comp_dict, header_dict,self.target.fit_mask,self.target.fit_norm,self.target.outdir)
 
 
-    def update_mc_store(self, n, mc_attr_store, fun_result, comp_dict):
+    def init_mc_store(self, iters):
+        self.mc_attr_store = {}
+        for key in self.cur_params.keys():
+            self.mc_attr_store[key] = np.zeros(iters)
 
-        wave_comp = comp_dict['WAVE']
+        # TODO: make dict for 'name'-> calc_func
+        comp_attrs = ['FLUX', 'LUM', 'EW',]
+        for key, val in self.comp_dict.items():
+            self.mc_attr_store[key] = np.zeros((iters, len(val)))
+            if not key in self.skip_comps:
+                for attr in comp_attrs:
+                    self.mc_attr_store[key+'_'+attr] = np.zeros(iters)
+
+        cll_attrs = ['DISP', 'VOFF',]
+        for key in self.combined_line_list.keys():
+            for attr in cll_attrs:
+                self.mc_attr_store[key+'_'+attr] = np.zeros(iters)
+
+        all_attrs = ['FWHM', 'W80', 'NPIX', 'SNR',]
+        for key in (list(self.combined_line_list.keys())+list(self.line_list.keys())):
+            for attr in all_attrs:
+                self.mc_attr_store[key+'_'+attr] = np.zeros(iters)
+
+        self.mc_attr_store['LOG_LIKE'] = np.zeros(iters)
+        self.mc_attr_store['R_SQUARED'] = np.zeros(iters)
+        self.mc_attr_store['RCHI_SQUARED'] = np.zeros(iters)
+
+        # TODO: store elsewhere; unit agnostic
+        cont_lum_attrs = {
+            1350.0: ['L_CONT_AGN_1350', 'L_CONT_HOST_1350', 'L_CONT_TOT_1350'],
+            3000.0: ['L_CONT_AGN_3000', 'L_CONT_HOST_3000', 'L_CONT_TOT_3000'],
+            4000.0: ['HOST_FRAC_4000', 'AGN_FRAC_4000'],
+            5100.0: ['L_CONT_AGN_5100', 'L_CONT_HOST_5100', 'L_CONT_TOT_5100'],
+            7000.0: ['HOST_FRAC_7000', 'AGN_FRAC_7000'],
+        }
+        for wave, attrs in cont_lum_attrs.items():
+            if (self.fit_wave[0] < wave) and (self.fit_wave[-1] > wave):
+                for key in attrs:
+                    self.mc_attr_store[key] = np.zeros(iters)
+
+
+    def update_mc_store(self, n, fun_result):
+
+        wave_comp = self.comp_dict['WAVE']
         flux_norm = self.target.options.fit_options.flux_norm
         fit_norm = self.target.fit_norm
         blob_pars = self.blob_pars
@@ -1483,17 +1408,17 @@ class BadassRunContext:
             return 4*np.pi*(d_cm**2)*flux
 
         for key, val in self.cur_params.items():
-            mc_attr_store[key][n] = val
+            self.mc_attr_store[key][n] = val
 
         # continuum
         cont = np.zeros(len(wave_comp))
         for key in self.cont_comps:
-            if not key in comp_dict:
+            if not key in self.comp_dict:
                 continue
-            cont += comp_dict[key]
+            cont += self.comp_dict[key]
 
-        for key, val in comp_dict.items():
-            mc_attr_store[key][n,:] = val
+        for key, val in self.comp_dict.items():
+            self.mc_attr_store[key][n,:] = val
             if key in self.skip_comps:
                 continue
 
@@ -1503,32 +1428,32 @@ class BadassRunContext:
             # Correct for redshift (integrate over observed wavelength, not rest)
             flux = np.trapz(val, wave_comp)*(1.0+self.target.z)
             flux = np.abs(flux)*flux_norm*fit_norm
-            mc_attr_store[key+'_FLUX'][n] = np.log10(flux)
+            self.mc_attr_store[key+'_FLUX'][n] = np.log10(flux)
 
             # LUM
-            mc_attr_store[key+'_LUM'][n] = np.log10(flux_to_lum(flux))
+            self.mc_attr_store[key+'_LUM'][n] = np.log10(flux_to_lum(flux))
 
             # EW
             ew = np.trapz(val/cont, wave_comp)*(1.0+self.target.z)
-            mc_attr_store[key+'_EW'][n] = ew if np.isfinite(ew) else 0.0
+            self.mc_attr_store[key+'_EW'][n] = ew if np.isfinite(ew) else 0.0
 
 
         # TODO: store key arrays elsewhere
         total_cont = np.zeros(len(wave_comp))
         for key in ['POWER', 'HOST_GALAXY', 'BALMER_CONT', 'APOLY', 'MPOLY']:
-            if not key in comp_dict:
+            if not key in self.comp_dict:
                 continue
-            total_cont += comp_dict[key]
+            total_cont += self.comp_dict[key]
         agn_cont = np.zeros(len(wave_comp))
         for key in ['POWER', 'BALMER_CONT', 'APOLY', 'MPOLY']:
-            if not key in comp_dict:
+            if not key in self.comp_dict:
                 continue
-            agn_cont += comp_dict[key]
+            agn_cont += self.comp_dict[key]
         host_cont = np.zeros(len(wave_comp))
         for key in ['HOST_GALAXY', 'APOLY', 'MPOLY']:
-            if not key in comp_dict:
+            if not key in self.comp_dict:
                 continue
-            host_cont += comp_dict[key]
+            host_cont += self.comp_dict[key]
 
         for wave in [1350, 3000, 5100]:
             tot_attr = 'L_CONT_TOT_%d'%wave
@@ -1562,7 +1487,7 @@ class BadassRunContext:
 
 
         for line, line_dict in {**self.line_list,**self.combined_line_list}.items():
-            line_comp = comp_dict[line]
+            line_comp = self.comp_dict[line]
             mc_attr_store[line+'_FWHM'][n] = combined_fwhm(wave_comp, np.abs(line_comp), line_dict['disp_res_kms'], self.target.velscale)
             mc_attr_store[line+'_W80'][n] = calculate_w80(wave_comp, np.abs(line_comp), line_dict['disp_res_kms'], self.target.velscale, line_dict['center'])
 
@@ -1589,19 +1514,150 @@ class BadassRunContext:
             mc_attr_store[line+'_DISP'][n] = disp if np.isfinite(disp) else 0.0
 
         mc_attr_store['LOG_LIKE'][n] = fun_result
-        mc_attr_store['R_SQUARED'][n] = badass_test_suite.r_squared(comp_dict['DATA'], comp_dict['MODEL'])
+        mc_attr_store['R_SQUARED'][n] = badass_test_suite.r_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'])
         n_free_pars = len(self.cur_params)
-        mc_attr_store['RCHI_SQUARED'][n] = badass_test_suite.r_chi_squared(comp_dict['DATA'], comp_dict['MODEL'], self.fit_noise, n_free_pars)
+        mc_attr_store['RCHI_SQUARED'][n] = badass_test_suite.r_chi_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'], self.fit_noise, n_free_pars)
+
+
+    def compile_mc_results(self):
+        # TODO: class or other structure for storing mc_attr_store, fit_results, etc.
+        # TODO: error handling to make sure all mc_attr_store keys are included
+        # TODO: custom conditions for flags and do that elsewhere
+        for key, vals in self.mc_attr_store.items():
+            if key in self.comp_dict.keys():
+                continue
+            mc_med = np.nanmedian(vals)
+            if ~np.isfinite(mc_med): mc_med = 0
+            mc_std = np.nanstd(vals)
+            if ~np.isfinite(mc_std): mc_std = 0
+            self.fit_results[key] = {'med': mc_med, 'std': mc_std, 'flag': 0}
+
+        # TODO: mark flags for other keys if med < 0 or std == 0
+        # Mark any parameter flags
+        for key, val in self.param_dict.items():
+            flag = 0
+            bounds = val['plim']
+            if mc_std == 0: flag += 1
+            if mc_med-mc_std <= bounds[0]: flag += 1
+            if mc_med+mc_std >= bounds[1]: flag += 1
+            self.fit_results[key]['flag'] = flag
+
+        # Add tied parameters
+        med_dict = {key:key_dict['med'] for key,key_dict in self.fit_results.items()}
+        target_pars = ['amp', 'disp', 'voff', 'shape', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9', 'h10']
+        for line_name, line_dict in self.line_list.items():
+            for par_name, expr in line_dict.items():
+                if (expr == 'free') or (not par_name in target_pars):
+                    continue
+
+                med = ne.evaluate(expr, local_dict=med_dict).item()
+                expr_stds = np.array([key_dict['std'] for key,key_dict in self.fit_results.items() if key in expr], dtype=float)
+                std = np.sqrt(np.sum(expr_stds**2))
+                self.fit_results[line_name+'_'+par_name.upper()] = {'med': med, 'std': std, 'flag': 0}
+
+        # Add dispersion resolution (in km/s) for each line
+        for line_name, line_dict in {**self.line_list,**self.combined_line_list}.items():
+            disp_res = line_dict['disp_res_kms']
+            self.fit_results[line_name+'_DISP_RES'] = {'med': disp_res, 'std': np.nan, 'flag': 0}
+
+            disp_dict = self.fit_results[line_name+'_DISP']
+            disp_corr = np.nanmax((0.0, np.sqrt(disp_dict['med']**2-disp_res**2)))
+            self.fit_results[line_name+'_DISP_CORR'] = {'med': disp_corr, 'std': disp_dict['std'], 'flag': disp_dict['flag']}
+
+            fwhm_dict = self.fit_results[line_name+'_FWHM']
+            fwhm_corr = np.nanmax((0.0, np.sqrt(fwhm_dict['med']**2-(2.3548*disp_res)**2)))
+            self.fit_results[line_name+'_FWHM_CORR'] = {'med': fwhm_corr, 'std': fwhm_dict['std'], 'flag': fwhm_dict['flag']}
+
+            w80_dict = fit_results[line_name+'_W80']
+            w80_corr = np.nanmax((0.0, np.sqrt(w80_dict['med']**2-(2.567*disp_res)**2)))
+            self.fit_results[line_name+'_W80_CORR'] = {'med': w80_corr, 'std': w80_dict['std'], 'flag': w80_dict['flag']}
+
+
+    def write_max_like_results(self):
+        """
+        Write maximum likelihood fit results to FITS table
+        """
+
+        result_dict = copy.deepcopy(result_dict)
+        comp_dict = copy.deepcopy(comp_dict)
+
+        # Re-scale amplitudes
+        for p in result_dict:
+            if p[-4:]=="_AMP":
+                result_dict[p]["med"] = result_dict[p]["med"]*fit_norm
+                result_dict[p]["std"] = result_dict[p]["std"]*fit_norm
+
+        # Re-scale components
+        for key in comp_dict:
+            if key not in ["WAVE"]:
+                comp_dict[key] *= fit_norm
+
+
+        par_names = []
+        par_best  = []
+        sig       = []
+        for key in result_dict:
+            par_names.append(key)
+            par_best.append(result_dict[key]['med'])
+            if "std" in result_dict[key]:
+                sig.append(result_dict[key]['std'])
+
+        # Sort the fit results
+        i_sort  = np.argsort(par_names)
+        par_names = np.array(par_names)[i_sort] 
+        par_best  = np.array(par_best)[i_sort]  
+        sig   = np.array(sig)[i_sort]   
+
+        # Write best-fit parameters to FITS table
+        col1 = fits.Column(name='parameter', format='30A', array=par_names)
+        col2 = fits.Column(name='best_fit' , format='E'  , array=par_best)
+        if "std" in result_dict[par_names[0]]:
+            col3 = fits.Column(name='sigma' , format='E'  , array=sig)
+        
+        if "std" in result_dict[par_names[0]]:
+            cols = fits.ColDefs([col1,col2,col3])
+        else: 
+            cols = fits.ColDefs([col1,col2])
+        table_hdu = fits.BinTableHDU.from_columns(cols)
+        # Header information
+        hdr = fits.Header()
+        if binnum is not None:
+            header_dict['binnum'] = binnum
+        for key in header_dict:
+            hdr[key] = header_dict[key]
+        empty_primary = fits.PrimaryHDU(header=hdr)
+        hdu = fits.HDUList([empty_primary, table_hdu])
+
+        if spaxelx is not None and spaxely is not None:
+            hdu2 = fits.BinTableHDU.from_columns(fits.ColDefs([
+                fits.Column(name='spaxelx', array=spaxelx, format='E'),
+                fits.Column(name='spaxely', array=spaxely, format='E')
+            ]))
+            hdu.append(hdu2)
+
+        hdu.writeto(run_dir.joinpath('log', 'par_table.fits'), overwrite=True)
+        del hdu
+        # Write best-fit components to FITS file
+        cols = []
+        # Construct a column for each parameter and chain
+        for key in comp_dict:
+            cols.append(fits.Column(name=key, format='E', array=comp_dict[key]))
+        # Add fit mask to cols
+        mask = np.zeros(len(comp_dict["WAVE"]),dtype=bool)
+        mask[fit_mask] = True
+        cols.append(fits.Column(name="MASK", format='E', array=mask))
+        # Write to fits
+        cols = fits.ColDefs(cols)
+        hdu = fits.BinTableHDU.from_columns(cols)
+        hdu.writeto(run_dir.joinpath('log', 'best_model_components.fits'), overwrite=True)
+        #
+        return 
 
 
     def lnprob(self):
         """
         Log-probability function.
         """
-
-        # TODO: needed?
-        if self.fit_type == 'final':
-            self.output_model = False
 
         res = self.lnlike()
 
@@ -1630,13 +1686,12 @@ class BadassRunContext:
         Log-likelihood function.
         """
 
-        res = self.fit_model()
+        self.fit_model()
         fit_mask = self.target.fit_mask
         fit_stat = self.options.fit_options.fit_stat
 
         # TODO: make separate functions for ML, OLS, other fit stats
-        # Create model
-        if (self.fit_type == 'final') and (not self.output_model):
+        if self.fit_type == 'final':
             model, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob = res
             if fit_stat == 'ML':
                 # Calculate log-likelihood
@@ -1653,13 +1708,12 @@ class BadassRunContext:
         # The maximum likelihood routine [by default] minimizes the negative likelihood
         # Thus for fit_stat="OLS", the SSR must be multiplied by -1 to minimize it. 
 
-        model, comp_dict = res
         if fit_stat == 'ML':
             # Calculate log-likelihood
-            l = -0.5*(self.fit_spec[fit_mask]-model[fit_mask])**2/(self.fit_noise[fit_mask])**2 + np.log(2*np.pi*(self.fit_noise[fit_mask])**2)
+            l = -0.5*(self.fit_spec[fit_mask]-self.model[fit_mask])**2/(self.fit_noise[fit_mask])**2 + np.log(2*np.pi*(self.fit_noise[fit_mask])**2)
             l = np.sum(l, axis=0)
         elif fit_stat == 'OLS':
-            l = (self.fit_spec[fit_mask]-model[fit_mask])**2
+            l = (self.fit_spec[fit_mask]-self.model[fit_mask])**2
             l = -np.sum(l,axis=0)
         return l 
 
@@ -1696,10 +1750,6 @@ class BadassRunContext:
 
         host_model = np.copy(self.fit_spec)
 
-        # Initialize empty dict to store model components
-        comp_dict  = {} # used for fitting/likelihood calculation; sampled identically to the data
-
-
         # Power-law Component
         # TODO: Create a template model for the power-law continuum
         if self.options.comp_options.fit_power:
@@ -1712,7 +1762,7 @@ class BadassRunContext:
 
             # Subtract off continuum from galaxy, since we only want template weights to be fit
             host_model = host_model - power
-            comp_dict['POWER'] = power
+            self.comp_dict['POWER'] = power
 
 
         # Polynomial Components
@@ -1727,7 +1777,7 @@ class BadassRunContext:
                     coeff[n] = self.cur_params['APOLY_COEFF_%d' % n]
                 apoly = np.polynomial.legendre.legval(nw, coeff)
                 host_model = host_model - apoly
-                comp_dict['APOLY'] = apoly
+                self.comp_dict['APOLY'] = apoly
 
             if poly_options.mpoly.bool:
                 nw = np.linspace(-1, 1, len(self.fit_wave))
@@ -1735,7 +1785,7 @@ class BadassRunContext:
                 for n in range(1, len(coeff)):
                     coeff[n] = self.cur_params['MPOLY_COEFF_%d' % n]
                 mpoly = np.polynomial.legendre.legval(nw, coeff)
-                comp_dict['MPOLY'] = mpoly
+                self.comp_dict['MPOLY'] = mpoly
                 host_model = host_model * mpoly
 
 
@@ -1744,52 +1794,42 @@ class BadassRunContext:
         #       now they will be before; does this affect anything?
         for template in self.templates.values():
             # TODO: don't need to return comp_dict
-            comp_dict, host_model = template.add_components(self.cur_params, comp_dict, host_model)
+            self.comp_dict, host_model = template.add_components(self.cur_params, self.comp_dict, host_model)
 
 
         # Emission Line Components
         # Iteratively generate lines from the line list using the line_constructor()
         for line in self.line_list:
             # TODO: don't need to return comp_dict
-            comp_dict = line_constructor(self.fit_wave, self.cur_params, comp_dict, self.options.comp_options, line, self.line_list, self.target.velscale)
-            host_model = host_model - comp_dict[line]
+            self.comp_dict = line_constructor(self.fit_wave, self.cur_params, self.comp_dict, self.options.comp_options, line, self.line_list, self.target.velscale)
+            host_model = host_model - self.comp_dict[line]
 
 
         # The final model
-        gmodel = np.sum((comp_dict[d] for d in comp_dict), axis=0)
+        self.model = np.sum((self.comp_dict[d] for d in self.comp_dict), axis=0)
 
         # Add combined lines to comp_dict
         for comb_line, line_dict in self.combined_line_list.items():
-            comp_dict[comb_line] = np.zeros(len(self.fit_wave))
+            self.comp_dict[comb_line] = np.zeros(len(self.fit_wave))
             for line_name in line_dict['lines']:
-                comp_dict[comb_line] += comp_dict[line_name]
+                self.comp_dict[comb_line] += self.comp_dict[line_name]
 
         # Add last components to comp_dict for plotting purposes
         # Add galaxy, sigma, model, and residuals to comp_dict
         # TODO: does this need to be done every fit_model call?
-        comp_dict['DATA']  = self.fit_spec
-        comp_dict['WAVE']  = self.fit_wave
-        comp_dict['NOISE'] = self.fit_noise
-        comp_dict['MODEL'] = gmodel
-        comp_dict['RESID'] = self.fit_spec-gmodel
+        self.comp_dict['DATA']  = self.fit_spec
+        self.comp_dict['WAVE']  = self.fit_wave
+        self.comp_dict['NOISE'] = self.fit_noise
+        self.comp_dict['MODEL'] = self.model
+        self.comp_dict['RESID'] = self.fit_spec-gmodel
 
         # Fluxes & Equivalent Widths
         # Equivalent widths of emission lines are stored in a dictionary and returned to emcee as metadata blob.
         # Velocity interpolation function
         # TODO: fix for mcmc
-        if (self.fit_type == 'final') and (not self.output_model):
-            fluxes, eqwidths, cont_fluxes, int_vel_disp = calc_mcmc_blob(p, fit_target.wave, comp_dict, bactx.options.comp_options, {**bactx.line_list, **bactx.combined_line_list}, bactx.combined_line_list, bactx.blob_pars, bactx.fit_mask, bactx.fit_stat, bactx.target.velscale)
-
-        # TODO: store in target or ctx
-        if self.fit_type == 'init': # Max likelihood fitting
-            return gmodel, comp_dict
-
-        if self.fit_type == 'line_test':
-            return comp_dict
-
-        if self.fit_type == 'final': # emcee
+        if self.fit_type == 'final':
+            fluxes, eqwidths, cont_fluxes, int_vel_disp = calc_mcmc_blob(p, fit_target.wave, self.comp_dict, bactx.options.comp_options, {**bactx.line_list, **bactx.combined_line_list}, bactx.combined_line_list, bactx.blob_pars, bactx.fit_mask, bactx.fit_stat, bactx.target.velscale)
             return gmodel, fluxes, eqwidths, cont_fluxes, int_vel_disp
-
 
 
 def ignore_this(): 
@@ -5301,88 +5341,6 @@ def plot_best_model(param_dict,
     
     return comp_dict
 
-
-def write_max_like_results(result_dict,comp_dict,header_dict,fit_mask,fit_norm,run_dir,
-                           binnum=None,spaxelx=None,spaxely=None):
-    """
-    Write maximum likelihood fit results to FITS table
-    if MCMC is not performed. 
-    """
-    # for key in result_dict:
-    # 	print(key, result_dict[key])
-    # Extract elements from dictionaries
-
-    # Re-scale amplitudes
-    for p in result_dict:
-        if p[-4:]=="_AMP":
-            result_dict[p]["med"] = result_dict[p]["med"]*fit_norm
-            result_dict[p]["std"] = result_dict[p]["std"]*fit_norm
-
-    # Re-scale components
-    for key in comp_dict:
-        if key not in ["WAVE"]:
-            comp_dict[key] *= fit_norm
-
-
-    par_names = []
-    par_best  = []
-    sig	      = []
-    for key in result_dict:
-        par_names.append(key)
-        par_best.append(result_dict[key]['med'])
-        if "std" in result_dict[key]:
-            sig.append(result_dict[key]['std'])
-
-    # Sort the fit results
-    i_sort	= np.argsort(par_names)
-    par_names = np.array(par_names)[i_sort] 
-    par_best  = np.array(par_best)[i_sort]  
-    sig   = np.array(sig)[i_sort]   
-
-    # Write best-fit parameters to FITS table
-    col1 = fits.Column(name='parameter', format='30A', array=par_names)
-    col2 = fits.Column(name='best_fit' , format='E'  , array=par_best)
-    if "std" in result_dict[par_names[0]]:
-        col3 = fits.Column(name='sigma'	, format='E'  , array=sig)
-    
-    if "std" in result_dict[par_names[0]]:
-        cols = fits.ColDefs([col1,col2,col3])
-    else: 
-        cols = fits.ColDefs([col1,col2])
-    table_hdu = fits.BinTableHDU.from_columns(cols)
-    # Header information
-    hdr = fits.Header()
-    if binnum is not None:
-        header_dict['binnum'] = binnum
-    for key in header_dict:
-        hdr[key] = header_dict[key]
-    empty_primary = fits.PrimaryHDU(header=hdr)
-    hdu = fits.HDUList([empty_primary, table_hdu])
-
-    if spaxelx is not None and spaxely is not None:
-        hdu2 = fits.BinTableHDU.from_columns(fits.ColDefs([
-            fits.Column(name='spaxelx', array=spaxelx, format='E'),
-            fits.Column(name='spaxely', array=spaxely, format='E')
-        ]))
-        hdu.append(hdu2)
-
-    hdu.writeto(run_dir.joinpath('log', 'par_table.fits'), overwrite=True)
-    del hdu
-    # Write best-fit components to FITS file
-    cols = []
-    # Construct a column for each parameter and chain
-    for key in comp_dict:
-        cols.append(fits.Column(name=key, format='E', array=comp_dict[key]))
-    # Add fit mask to cols
-    mask = np.zeros(len(comp_dict["WAVE"]),dtype=bool)
-    mask[fit_mask] = True
-    cols.append(fits.Column(name="MASK", format='E', array=mask))
-    # Write to fits
-    cols = fits.ColDefs(cols)
-    hdu = fits.BinTableHDU.from_columns(cols)
-    hdu.writeto(run_dir.joinpath('log', 'best_model_components.fits'), overwrite=True)
-    #
-    return 
 
 def plotly_best_fit(objname,line_list,fit_mask,run_dir):
     """
