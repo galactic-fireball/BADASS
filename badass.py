@@ -76,6 +76,7 @@ from input.input import BadassInput
 from utils.utils import time_convert, find_nearest
 from templates.common import initialize_templates
 import utils.plotting as plotting
+from line_lists.optical_qso import optical_qso_default
 
 # plt.style.use('dark_background') # For cool tron-style dark plots
 import matplotlib
@@ -266,7 +267,7 @@ class BadassRunContext:
 
 
         # Emission Lines
-        self.line_list = user_lines if user_lines else self.options.user_lines if self.options.user_lines else line_list_default()
+        self.line_list = user_lines if user_lines else self.options.user_lines if self.options.user_lines else optical_qso_default()
         self.add_line_comps()
 
         # Add the FWHM resolution and central pixel locations for each line so we don't have to find them during the fit.
@@ -2209,153 +2210,6 @@ def prepare_plot(lam_gal,galaxy,noise,ibad,flux_norm,fit_norm,run_dir):
     plt.close(fig)
     #
     return
-
-
-# TODO: separate config file
-def line_list_default():
-    """
-    Below we define the "default" emission lines in BADASS.  
-    
-    The easiest way to disable any particular line is to simply comment out the line of interest.
-        
-    There are five types of line: Narrow, Broad, Outflow, Absorption, and User.  The Narrow, Broad, 
-    Outflow, and Absorption lines are built into BADASS, whereas the User lines are added on the 
-    front-end Jupyter interface.  
-    
-    Hard constraints: if you want to hold a parameter value to a constant scalar value, or to the 
-    value of another parameter, this is called a "hard" constraint, because the parameter is no 
-    longer free, help to a specific value.  To implement a hard constraint, BADASS parses string 
-    input from the amp, disp, voff, h3, h4, and shape keywords for each line.  Be warned, however, 
-    to tie a parameter to another paramter, requires you to know the name of the parameter in question. 
-    If BADASS encounters an error in parsing hard constraint string input, it will automatically convert
-    the paramter to a "free" parameter instead of raising an error.
-    """
-    # Default narrow lines
-    narrow_lines ={
-
-        ### Region 8 (< 2000 Å)
-        "NA_LY_ALPHA"  :{"center":1215.240, "amp":"free", "disp":"free", "voff":"free", "line_type":"na"},
-        "NA_CIV_1549"  :{"center":1549.480, "amp":"free", "disp":"free", "voff":"free", "line_type":"na"},
-        "NA_CIII_1908" :{"center":1908.734, "amp":"free", "disp":"free", "voff":"free", "line_type":"na"},
-
-        ##############################################################################################################################################################################################################################################
-
-        ### Region 7 (2000 Å - 3500 Å)
-        "NA_MGII_2799" :{"center":2799.117, "amp":"free", "disp":"free"				, "voff":"free"			   , "line_type":"na","label":r"Mg II"},
-        "NA_HEII_3203" :{"center":3203.100, "amp":"free", "disp":"free"				, "voff":"free"			   , "line_type":"na","label":r"He II"},
-        "NA_NEV_3346"  :{"center":3346.783, "amp":"free", "disp":"free"				, "voff":"free"			   , "line_type":"na","label":r"[Ne V]"},
-        "NA_NEV_3426"  :{"center":3426.863, "amp":"free", "disp":"NA_NEV_3346_DISP"	, "voff":"NA_NEV_3346_VOFF", "line_type":"na","label":r"[Ne V]"},
-
-        ##############################################################################################################################################################################################################################################
-
-        ### Region 6 (3500 Å - 4400 Å):
-        "NA_OII_3727"  :{"center":3727.092, "amp":"free", "disp":"NA_OII_3729_DISP"   , "voff":"NA_OII_3729_VOFF"  , "line_type":"na","label":r"[O II]"},
-        "NA_OII_3729"  :{"center":3729.875, "amp":"free", "disp":"free"				  , "voff":"free"			   , "line_type":"na"},
-        "NA_NEIII_3869":{"center":3869.857, "amp":"free", "disp":"free"				  , "voff":"free"			   , "line_type":"na","label":r"[Ne III]"}, # Coronal Line
-        "NA_HEI_3889"  :{"center":3888.647, "amp":"free", "disp":"free"				  , "voff":"free"			   , "line_type":"na","label":r"He I"},
-        "NA_NEIII_3968":{"center":3968.593, "amp":"free", "disp":"NA_NEIII_3869_DISP" , "voff":"NA_NEIII_3869_VOFF", "line_type":"na","label":r"[Ne III]"}, # Coronal Line
-        "NA_H_DELTA"   :{"center":4102.900, "amp":"free", "disp":"NA_H_GAMMA_DISP"	  , "voff":"NA_H_GAMMA_VOFF"   , "line_type":"na","label":r"H$\delta$"},
-        "NA_H_GAMMA"   :{"center":4341.691, "amp":"free", "disp":"free" 			  , "voff":"free"			   , "line_type":"na","label":r"H$\gamma$"},
-        "NA_OIII_4364" :{"center":4364.436, "amp":"free", "disp":"NA_H_GAMMA_DISP"	  , "voff":"NA_H_GAMMA_VOFF"   , "line_type":"na","label":r"[O III]"},
-
-
-        ##############################################################################################################################################################################################################################################
-
-        ### Region 5 (4400 Å - 5500 Å)
-        # "NA_HEI_4471"  :{"center":4471.479, "amp":"free", "disp":"free", "voff":"free", "line_type":"na","label":r"He I"},
-        "NA_HEII_4687" :{"center":4687.021, "amp":"free", "disp":"free", "voff":"free", "line_type":"na","label":r"He II"},
-
-        "NA_H_BETA"	   :{"center":4862.691, "amp":"free"				   , "disp":"NA_OIII_5007_DISP", "voff":"free"			   ,"h3":"NA_OIII_5007_H3","h4":"NA_OIII_5007_H4", "line_type":"na" ,"label":r"H$\beta$"},
-        "NA_OIII_4960" :{"center":4960.295, "amp":"(NA_OIII_5007_AMP/2.98)", "disp":"NA_OIII_5007_DISP", "voff":"NA_OIII_5007_VOFF","h3":"NA_OIII_5007_H3","h4":"NA_OIII_5007_H4", "line_type":"na" ,"label":r"[O III]"},
-        "NA_OIII_5007" :{"center":5008.240, "amp":"free"				   , "disp":"free"			   , "voff":"free"   	   ,"h3":"free"           ,"h4":"free"     , "line_type":"na" ,"label":r"[O III]"},
-
-        # "na_unknown_1":{"center":4500., "line_type":"na", "line_profile":"gaussian"},
-        ##############################################################################################################################################################################################################################################
-
-        ### Region 4 (5500 Å - 6200 Å)
-        "NA_FEVI_5638" :{"center":5637.600, "amp":"free", "disp":"NA_FEVI_5677_DISP" , "voff":"NA_FEVI_5677_VOFF" , "line_type":"na","label":r"[Fe VI]"}, # Coronal Line
-        "NA_FEVI_5677" :{"center":5677.000, "amp":"free", "disp":"free"				 , "voff":"free"			  , "line_type":"na","label":r"[Fe VI]"}, # Coronal Line
-        "NA_FEVII_5720":{"center":5720.700, "amp":"free", "disp":"NA_FEVII_6087_DISP", "voff":"NA_FEVII_6087_VOFF", "line_type":"na","label":r"[Fe VII]"}, # Coronal Line
-        "NA_HEI_5876"  :{"center":5875.624, "amp":"free", "disp":"free"				 , "voff":"free"			  , "line_type":"na","label":r"He I"},
-        "NA_FEVII_6087":{"center":6087.000, "amp":"free", "disp":"free"				 , "voff":"free"			  , "line_type":"na","label":r"[Fe VII]"}, # Coronal Line
-
-        ##############################################################################################################################################################################################################################################
-
-        ### Region 3 (6200 Å - 6800 Å)
-
-        "NA_OI_6302"   :{"center":6302.046, "amp":"free"				, "disp":"NA_NII_6585_DISP" , "voff":"NA_NII_6585_VOFF"	, "line_type":"na","label":r"[O I]"},
-        "NA_SIII_6312" :{"center":6312.060, "amp":"free"				, "disp":"NA_NII_6585_DISP" , "voff":"free"    , "line_type":"na","label":r"[S III]"},
-        "NA_OI_6365"   :{"center":6365.535, "amp":"NA_OI_6302_AMP/3.0"	, "disp":"NA_NII_6585_DISP" , "voff":"NA_NII_6585_VOFF"	, "line_type":"na","label":r"[O I]"},
-        "NA_FEX_6374"  :{"center":6374.510, "amp":"free"				, "disp":"NA_NII_6585_DISP"	, "voff":"free"				, "line_type":"na","label":r"[Fe X]"}, # Coronal Line
-        #
-        "NA_NII_6549"  :{"center":6549.859, "amp":"NA_NII_6585_AMP/2.93"	, "disp":"NA_NII_6585_DISP", "voff":"NA_NII_6585_VOFF", "line_type":"na","label":r"[N II]"},
-        "NA_H_ALPHA"   :{"center":6564.632, "amp":"free"					, "disp":"NA_NII_6585_DISP", "voff":"NA_NII_6585_VOFF", "line_type":"na","label":r"H$\alpha$"},
-        "NA_NII_6585"  :{"center":6585.278, "amp":"free"					, "disp":"free"			   , "voff":"free"			  , "line_type":"na","label":r"[N II]"},
-        "NA_SII_6718"  :{"center":6718.294, "amp":"free"					, "disp":"NA_NII_6585_DISP", "voff":"NA_NII_6585_VOFF", "line_type":"na","label":r"[S II]"},
-        "NA_SII_6732"  :{"center":6732.668, "amp":"free"					, "disp":"NA_NII_6585_DISP", "voff":"NA_NII_6585_VOFF", "line_type":"na","label":r"[S II]"},
-
-        ##############################################################################################################################################################################################################################################
-
-        ### Region 2 (6800 Å - 8000 Å)
-        "NA_HEI_7062"   :{"center":7065.196, "amp":"free", "disp":"free"			, "voff":"free"			   , "line_type":"na","label":r"He I"},
-        "NA_ARIII_7135" :{"center":7135.790, "amp":"free", "disp":"free"			, "voff":"free"			   , "line_type":"na","label":r"[Ar III]"},
-        "NA_OII_7319"   :{"center":7319.990, "amp":"free", "disp":"NA_OII_7331_DISP", "voff":"NA_OII_7331_VOFF", "line_type":"na","label":r"[O II]"},
-        "NA_OII_7331"   :{"center":7330.730, "amp":"free", "disp":"free"			, "voff":"free"			   , "line_type":"na","label":r"[O II]"},
-        "NA_NIIII_7890" :{"center":7889.900, "amp":"free", "disp":"free"			, "voff":"free"			   , "line_type":"na","label":r"[Ni III]"},
-        "NA_FEXI_7892"  :{"center":7891.800, "amp":"free", "disp":"free"			, "voff":"free"			   , "line_type":"na","label":r"[Fe XI]"},
-
-        ##############################################################################################################################################################################################################################################
-
-        ### Region 1 (8000 Å - 9000 Å)
-        "NA_HEII_8236"  :{"center":8236.790, "amp":"free", "disp":"free"			 , "voff":"free"			 , "line_type":"na","label":r"He II"},
-        "NA_OI_8446"	:{"center":8446.359, "amp":"free", "disp":"free"			 , "voff":"free"			 , "line_type":"na","label":r"O I"},
-        "NA_FEII_8616"  :{"center":8616.950, "amp":"free", "disp":"NA_FEII_8891_DISP", "voff":"NA_FEII_8891_VOFF", "line_type":"na","label":r"[Fe II]"},
-        "NA_FEII_8891"  :{"center":8891.910, "amp":"free", "disp":"free"			 , "voff":"free"			 , "line_type":"na","label":r"[Fe II]"},
-
-        ##############################################################################################################################################################################################################################################
-
-    }
-
-    # Default Broad lines
-    broad_lines = {
-        ### Region 8 (< 2000 Å)
-        "BR_OVI_1034"  :{"center":1033.820, "amp":"free", "disp":"free", "voff":"free", "line_type":"br","label":r"O VI"},
-        "BR_LY_ALPHA"  :{"center":1215.240, "amp":"free",  "disp":"free", "voff":"free", "line_type":"br","label":r"Ly$\alpha$"},
-        "BR_NV_1241"   :{"center":1240.810, "amp":"free", "disp":"free", "voff":"free", "line_type":"br","label":r"N V"},
-        "BR_OI_1305"   :{"center":1305.530, "amp":"free", "disp":"free", "voff":"free", "line_type":"br","label":r"O I"},
-        "BR_CII_1335"  :{"center":1335.310, "amp":"free", "disp":"free", "voff":"free", "line_type":"br","label":r"C II"},
-        "BR_SIIV_1398" :{"center":1397.610, "amp":"free", "disp":"free", "voff":"free", "line_type":"br","label":r"Si IV + O IV"},
-        "BR_SIIV+OIV"  :{"center":1399.800, "amp":"free", "disp":"free", "voff":"free", "line_type":"br","label":r"Si IV + O IV"},
-        "BR_CIV_1549"  :{"center":1549.480, "amp":"free", "disp":"free", "voff":"free", "line_type":"br","label":r"C IV"},
-        "BR_HEII_1640" :{"center":1640.400, "amp":"free", "disp":"free", "voff":"free", "line_type":"br","label":r"He II"},
-        "BR_CIII_1908" :{"center":1908.734, "amp":"free", "disp":"free", "voff":"free", "line_type":"br","label":r"C III]"},
-
-        ### Region 7 (2000 Å - 3500 Å)
-        "BR_CII_2326"  :{"center":2326.000, "amp":"free", "disp":"free", "voff":"free", "line_profile":"gaussian", "line_type":"br","label":r"C II]"},
-        "BR_FEIII_UV47":{"center":2418.000, "amp":"free", "disp":"free", "voff":"free", "line_profile":"gaussian", "line_type":"br","label":r"Fe III"},
-        "BR_MGII_2799" :{"center":2799.117, "amp":"free", "disp":"free", "voff":"free", "line_type":"br","label":r"Mg II"},
-
-        ### Region 6 (3500 Å - 4400 Å):
-        "BR_H_DELTA"   :{"center":4102.900, "amp":"free", "disp":"free", "voff":"free", "line_type":"br"},
-        "BR_H_GAMMA"   :{"center":4341.691, "amp":"free", "disp":"free", "voff":"free", "line_type":"br"},
-
-        ### Region 5 (4400 Å - 5500 Å)
-        "BR_H_BETA"   :{"center":4862.691, "amp":"free", "disp":"free", "voff":"free", "line_type":"br"},
-
-        ### Region 3 (6200 Å - 6800 Å)
-        "BR_H_ALPHA"  :{"center":6564.632, "amp":"free", "disp":"free", "voff":"free", "line_type":"br"},
-
-    }
-
-    # Default Absorption Lines
-    absorp_lines = {
-        "ABS_NAI_5897":{"center":5897.558, "amp":"free", "disp":"free", "voff":"free", "line_type":"abs","label":r"Na D"},
-    }
-    #
-    # Combine all line lists into single list
-    line_list = {**narrow_lines, **broad_lines, **absorp_lines}
-
-    return line_list
 
 
 # TODO: move to plot utils
