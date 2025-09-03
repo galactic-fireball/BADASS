@@ -33,7 +33,6 @@ from os import path
 import os
 import shutil
 import sys
-from astropy.stats import mad_std
 from scipy.special import wofz
 import emcee
 from astroquery.irsa_dust import IrsaDust
@@ -73,7 +72,7 @@ from prodict import Prodict
 
 from utils.options import BadassOptions
 from input.input import BadassInput
-from utils.utils import time_convert, find_nearest
+import utils.utils as ba_utils
 from templates.common import initialize_templates
 import utils.plotting as plotting
 from line_utils.line_lists.optical_qso import optical_qso_default
@@ -86,14 +85,14 @@ import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning) 
 warnings.filterwarnings("ignore", category=UserWarning) 
 
-__author__	   = "Remington O. Sexton (USNO), Sara M. Doan (GMU), Michael A. Reefe (GMU), William Matzko (GMU), Nicholas Darden (UCR)"
+__author__     = "Remington O. Sexton (USNO), Sara M. Doan (GMU), Michael A. Reefe (GMU), William Matzko (GMU), Nicholas Darden (UCR)"
 __copyright__  = "Copyright (c) 2023 Remington Oliver Sexton"
-__credits__	   = ["Remington O. Sexton (GMU/USNO)", "Sara M. Doan (GMU)", "Michael A. Reefe (GMU)", "William Matzko (GMU)", "Nicholas Darden (UCR)"]
-__license__	   = "MIT"
-__version__	   = "10.2.0"
+__credits__    = ["Remington O. Sexton (GMU/USNO)", "Sara M. Doan (GMU)", "Michael A. Reefe (GMU)", "William Matzko (GMU)", "Nicholas Darden (UCR)"]
+__license__    = "MIT"
+__version__    = "10.2.0"
 __maintainer__ = "Remington O. Sexton"
-__email__	   = "remington.o.sexton.civ@us.navy.mil"
-__status__	   = "Release"
+__email__      = "remington.o.sexton.civ@us.navy.mil"
+__status__     = "Release"
 
 ##########################################################################################################
 
@@ -160,7 +159,6 @@ class BadassRunContext:
         self.comp_dict = {}
 
         self.chain_df = None
-        self.mcmc_blobs = []
 
 
     def run(self):
@@ -583,7 +581,7 @@ class BadassRunContext:
             if (feature_vel >= voff_plim[0]) and (feature_vel <= voff_plim[1]):
                 center = feature_center
 
-            init_amp = self.target.spec[find_nearest(self.target.wave,center)[1]]
+            init_amp = self.target.spec[ba_utils.find_nearest(self.target.wave,center)[1]]
             if (init_amp >= min_amp) and (init_amp <= max_amp):
                 return mf*init_amp/amp_factor, (min(mf*min_amp,mf*max_amp), max(mf*min_amp,mf*max_amp))
             return mf*max_amp-mf*(max_amp-min_amp)/2.0/amp_factor, (min(mf*min_amp,mf*max_amp), max(mf*min_amp,mf*max_amp))
@@ -945,7 +943,7 @@ class BadassRunContext:
         # TODO: unit agnostic
         for wave in [1350, 3000, 4000, 5100, 7000]:
             if (self.target.wave[0] < wave) & (self.target.wave[-1] > wave):
-                blob_pars['INDEX_%d'%wave] = find_nearest(self.target.wave,float(wave))[1]
+                blob_pars['INDEX_%d'%wave] = ba_utils.find_nearest(self.target.wave,float(wave))[1]
 
         self.blob_pars = blob_pars
 
@@ -1196,6 +1194,7 @@ class BadassRunContext:
 
     skip_comps = ['DATA','WAVE','MODEL','NOISE','RESID','POWER','HOST_GALAXY','BALMER_CONT','APOLY','MPOLY',]
     cont_comps = ['POWER', 'HOST_GALAXY', 'BALMER_CONT', 'APOLY', 'MPOLY']
+    tied_target_pars = ['amp', 'disp', 'voff', 'shape', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9', 'h10']
 
     def max_likelihood(self, line_test=False):
 
@@ -1362,16 +1361,6 @@ class BadassRunContext:
         fit_norm = self.target.fit_norm
         blob_pars = self.blob_pars
 
-        # TODO: calc and store elsewhere
-        cosmo = FlatLambdaCDM(self.target.options.fit_options.cosmology.H0, self.target.options.fit_options.cosmology.Om0)
-        d_mpc = cosmo.luminosity_distance(self.target.z).value
-        # TODO: use astropy units
-        d_cm = d_mpc * 3.086E+24 # 1 Mpc = 3.086e+24 cm
-
-        # TODO: in utils
-        def flux_to_lum(flux):
-            return 4*np.pi*(d_cm**2)*flux
-
         for key, val in self.cur_params.items():
             self.mc_attr_store[key][n] = val
 
@@ -1397,7 +1386,7 @@ class BadassRunContext:
             self.mc_attr_store[key+'_FLUX'][n] = np.log10(flux)
 
             # LUM
-            self.mc_attr_store[key+'_LUM'][n] = np.log10(flux_to_lum(flux))
+            self.mc_attr_store[key+'_LUM'][n] = np.log10(self.flux_to_lum(flux))
 
             # EW
             ew = np.trapz(val/cont, wave_comp)*(1.0+self.target.z)
@@ -1414,17 +1403,17 @@ class BadassRunContext:
 
             # Total Luminosities
             flux = total_cont[blob_pars[index_attr]]*flux_norm*fit_norm
-            self.mc_attr_store[tot_attr][n] = np.log10(flux_to_lum(flux)*wave)
+            self.mc_attr_store[tot_attr][n] = np.log10(self.flux_to_lum(flux)*wave)
 
             # AGN Luminosities
             agn_attr = 'L_CONT_AGN_%d'%wave
             flux = agn_cont[blob_pars[index_attr]]*flux_norm*fit_norm
-            self.mc_attr_store[agn_attr][n] = np.log10(flux_to_lum(flux)*wave)
+            self.mc_attr_store[agn_attr][n] = np.log10(self.flux_to_lum(flux)*wave)
 
             # Host Luminosities
             host_attr = 'L_CONT_HOST_%d'%wave
             flux = host_cont[blob_pars[index_attr]]*flux_norm*fit_norm
-            self.mc_attr_store[host_attr][n] = np.log10(flux_to_lum(flux)*wave)
+            self.mc_attr_store[host_attr][n] = np.log10(self.flux_to_lum(flux)*wave)
 
         for wave in [4000, 7000]:
             host_attr = 'HOST_FRAC_%d'%wave
@@ -1495,10 +1484,9 @@ class BadassRunContext:
 
         # Add tied parameters
         med_dict = {key:key_dict['med'] for key,key_dict in self.fit_results.items()}
-        target_pars = ['amp', 'disp', 'voff', 'shape', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9', 'h10']
         for line_name, line_dict in self.line_list.items():
             for par_name, expr in line_dict.items():
-                if (expr == 'free') or (not par_name in target_pars):
+                if (expr == 'free') or (not par_name in self.tied_target_pars):
                     continue
 
                 med = ne.evaluate(expr, local_dict=med_dict).item()
@@ -1733,6 +1721,16 @@ class BadassRunContext:
         self.comp_dict['RESID'] = self.fit_spec-self.model
 
 
+    # TODO: in utils
+    def flux_to_lum(self, flux):
+        # TODO: calc and store elsewhere
+        cosmo = FlatLambdaCDM(self.target.options.fit_options.cosmology.H0, self.target.options.fit_options.cosmology.Om0)
+        d_mpc = cosmo.luminosity_distance(self.target.z).value
+        # TODO: use astropy units
+        d_cm = d_mpc * 3.086E+24 # 1 Mpc = 3.086e+24 cm
+        return 4*np.pi*(d_cm**2)*flux
+
+
     def run_emcee(self):
         self.reweight()
 
@@ -1751,18 +1749,25 @@ class BadassRunContext:
         # Keep original burn_in and max_iter to reset convergence if jumps out of convergence
         orig_burn_in = self.options.mcmc_options.burn_in
         orig_max_iter = self.options.mcmc_options.max_iter
+        write_iter = self.options.mcmc_options.write_iter
+        write_thresh = self.options.mcmc_options.write_thresh
 
         burn_in = orig_burn_in
         max_iter = orig_max_iter
 
-        self.add_chain(0)
+        # TODO: create Backend class that supports objects (pickle-based?)
+        # backend = emcee.backends.HDFBackend(self.target.outdir.joinpath('log', 'MCMC_chain.h5'))
+        # backend.reset(nwalkers, ndim)
 
         def lnprob_wrapper(p):
             self.cur_params = dict(zip(self.cur_params.keys(), p))
-            return self.lnprob() + self.calc_mcmc_blob()
+            lp, ll = self.lnprob()
+            blob_dict = self.calc_mcmc_blob()
+            blob_dict['LOG_LIKE'] = ll
+            return lp, blob_dict
 
-        dtype = [('log_like',float), ('fluxes',dict), ('eqwidths',dict), ('cont_fluxes',dict), ('int_vel_disp', dict)]
-        sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob_wrapper, blobs_dtype=dtype)
+        dtype = [('full_blob',dict),]
+        sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob_wrapper, blobs_dtype=dtype)#, backend=backend)
 
         # TODO: do something with
         start_time = time.time()
@@ -1773,17 +1778,30 @@ class BadassRunContext:
         # TODO: if auto_stop
 
         # TODO: for testing
-        max_iter = 10
-        write_iter = 3
+        # max_iter = 10
+        # write_iter = 3
+        # write_thresh = 3
 
-        while sampler.iteration < max_iter:
-            print('MCMC iteration: %d' % sampler.iteration)
-            sampler.run_mcmc(pos, min(write_iter, max_iter-sampler.iteration))
+        # self.add_chain()
+        # sampler.run_mcmc(pos, write_thresh)
+        # self.add_chain(sampler=sampler)
 
-            # TODO: write chain (use emcee functions?)
+        # while sampler.iteration < max_iter:
+        #     print('MCMC iteration: %d' % sampler.iteration)
+        #     sampler.run_mcmc(pos, min(write_iter, max_iter-sampler.iteration))
+        #     self.add_chain(sampler=sampler)
+            # TODO: verbose -> print current parameter values
+
+
+        self.add_chain()
+        for k, result in enumerate(sampler.sample(pos, iterations=max_iter)):
+            if (k+1) % write_iter == 0:
+                print('MCMC iteration: %d' % sampler.iteration)
+                self.add_chain(sampler=sampler)
+
 
         elap_time = (time.time() - start_time)
-        run_time = time_convert(elap_time)
+        run_time = ba_utils.time_convert(elap_time)
         print('emcee Runtime = %s' % (run_time))
 
         # TODO
@@ -1792,8 +1810,15 @@ class BadassRunContext:
         # TODO: remove excess zeros on convergence
 
         # TODO: output files
+        self.collect_mcmc_results(sampler)
 
         plotting.plotly_best_fit(self)
+        if not self.options.plot_options.plot_param_hist:
+            return
+
+        for key in self.param_dict.keys():
+            plotting.posterior_plot(key, self.mcmc_results_dict[key], self.mcmc_result_chains['chains'][key], burn_in, self.target.outdir)
+        plotting.posterior_plot('LOG_LIKE', self.mcmc_results_dict['LOG_LIKE'], self.mcmc_result_chains['chains']['LOG_LIKE'], burn_in, self.target.outdir)
 
 
     def initialize_walkers(self, nwalkers):
@@ -1809,42 +1834,43 @@ class BadassRunContext:
         return pos
 
 
-    def add_chain(self, i):
-        chain_file = self.target.outdir.joinpath('log', 'MCMC_chain.csv')
-        if self.chain_df is None:
+    def add_chain(self, sampler=None):
+        if sampler is None:
             self.chain_df = pd.DataFrame(columns=['iter']+list(self.cur_params.keys()))
-        chain_dict = {'iter': i}
-        chain_dict.update(self.cur_params)
+            chain_dict = {'iter': 0}
+            chain_dict.update(self.cur_params)
+        else:
+            chain_dict = {'iter': sampler.iteration}
+            last_iter = self.chain_df.iter.values[-1]
+            chain_vals = {key:np.nanmedian(sampler.chain[:,last_iter:,i]) for i, key in enumerate(self.cur_params.keys())}
+            chain_dict.update(chain_vals)
+
         self.chain_df.loc[len(self.chain_df)] = chain_dict
+        chain_file = self.target.outdir.joinpath('log', 'MCMC_chain.csv')
         self.chain_df.to_csv(chain_file, index=False)
 
 
     def calc_mcmc_blob(self):
+        blob_dict = {}
         noise = self.comp_dict['NOISE']
         wave = self.comp_dict['WAVE']
         total_cont, agn_cont, host_cont = get_continuums(self.comp_dict, len(wave))
-
-        fluxes = {}
-        eqwidths = {}
-        int_vel_disp = {}
-        npix_dict = {}
-        snr_dict = {}
 
         for key, val in self.comp_dict.items():
             if key in self.skip_comps:
                 continue
 
             # TODO: better way to integrate?
-            fluxes[key+'_FLUX'] = np.abs(np.trapz(val, self.fit_wave))
+            blob_dict[key+'_FLUX'] = np.abs(np.trapz(val, self.fit_wave))
             eqwidth = np.trapz(val / total_cont, self.fit_wave)
-            eqwidths[key+'_EW'] = eqwidth if np.isfinite(eqwidth) else 0.0
+            blob_dict[key+'_EW'] = eqwidth if np.isfinite(eqwidth) else 0.0
 
         for line_name, line_dict in {**self.line_list, **self.combined_line_list}.items():
             line_comp = self.comp_dict[line_name]
-            int_vel_disp[line_name+'_FWHM'] = combined_fwhm(wave, np.abs(line_comp), line_dict['disp_res_kms'], self.target.velscale)
-            int_vel_disp[line_name+'_W80'] = calculate_w80(wave, np.abs(line_comp), line_dict['disp_res_kms'], self.target.velscale, line_dict['center'])
-            npix_dict[line_name+'_NPIX'] = len(np.where(np.abs(line_comp) > noise)[0])
-            snr_dict[line_name+'_SNR'] = np.nanmax(np.abs(line_comp)) / np.nanmean(noise)
+            blob_dict[line_name+'_FWHM'] = combined_fwhm(wave, np.abs(line_comp), line_dict['disp_res_kms'], self.target.velscale)
+            blob_dict[line_name+'_W80'] = calculate_w80(wave, np.abs(line_comp), line_dict['disp_res_kms'], self.target.velscale, line_dict['center'])
+            blob_dict[line_name+'_NPIX'] = len(np.where(np.abs(line_comp) > noise)[0])
+            blob_dict[line_name+'_SNR'] = np.nanmax(np.abs(line_comp)) / np.nanmean(noise)
 
             if not line_name in self.combined_line_list:
                 continue
@@ -1853,12 +1879,11 @@ class BadassRunContext:
             full_profile = np.abs(line_comp)
             norm_profile = full_profile / np.sum(full_profile)
             voff = np.trapz(vel*norm_profile, vel) / simpson(norm_profile, vel)
-            int_vel_disp[line_name+'_VOFF'] = voff if np.isfinite(voff) else 0.0
+            blob_dict[line_name+'_VOFF'] = voff if np.isfinite(voff) else 0.0
 
             disp = np.sqrt(np.trapz(vel**2*norm_profile, vel) / np.trapz(norm_profile, vel) - (voff**2))
-            int_vel_disp[line_name+'_DISP'] = disp if np.isfinite(disp) else 0.0
+            blob_dict[line_name+'_DISP'] = disp if np.isfinite(disp) else 0.0
 
-        cont_fluxes = {}
 
         cont_types = {
             'TOT': total_cont,
@@ -1871,22 +1896,181 @@ class BadassRunContext:
                 continue
 
             for cont_key, cont_val in cont_types.items():
-                cont_fluxes['F_CONT_%s_%d'%(cont_key,wave)] = cont_val[self.blob_pars['INDEX_%d'%wave]]
+                blob_dict['F_CONT_%s_%d'%(cont_key,wave)] = cont_val[self.blob_pars['INDEX_%d'%wave]]
 
         for wave in [4000, 7000]:
             if (wave < self.fit_wave[0]) or (wave > self.fit_wave[-1]):
                 continue
 
             for cont_key in ['AGN', 'HOST']:
-                cont_fluxes['HOST_FRAC_%d'%wave] = cont_types[cont_key][self.blob_pars['INDEX_%d'%wave]]/total_cont[self.blob_pars['INDEX_%d'%wave]]
+                blob_dict['HOST_FRAC_%d'%wave] = cont_types[cont_key][self.blob_pars['INDEX_%d'%wave]]/total_cont[self.blob_pars['INDEX_%d'%wave]]
 
 
-        fit_quality = {
-            'R_SQUARED': badass_test_suite.r_squared(self.comp_dict['DATA'], self.comp_dict['MODEL']),
-            'RCHI_SQUARED': badass_test_suite.r_chi_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'], self.comp_dict['NOISE'], len(self.cur_params))
-        }
+        blob_dict['R_SQUARED'] = badass_test_suite.r_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'])
+        blob_dict['RCHI_SQUARED'] = badass_test_suite.r_chi_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'], self.comp_dict['NOISE'], len(self.cur_params))
+        return blob_dict
 
-        return fluxes, eqwidths, cont_fluxes, {**int_vel_disp, **npix_dict, **snr_dict, **fit_quality}
+
+    def collect_mcmc_results(self, sampler):
+        nwalkers, niters, nparams = sampler.chain.shape
+        burn_in = self.options.mcmc_options.burn_in
+        if burn_in >= niters: burn_in = int(niters/2)
+
+        self.mcmc_result_chains = {'chains':{}, 'flat_chains':{}}
+
+        def flatten_chain(chain):
+            # TODO: zero-trim if converged before max iters
+            chain[~np.isfinite(chain)] = 0
+            return chain[:,burn_in:].flatten()
+
+        for i, param in enumerate(self.cur_params.keys()):
+            self.mcmc_result_chains['chains'][param] = sampler.chain[:,:,i]
+            self.mcmc_result_chains['flat_chains'][param] = flatten_chain(sampler.chain[:,:,i])
+
+        all_chains = np.swapaxes(sampler.get_blobs()['full_blob'],0,1)
+        for key in all_chains[0][0].keys():
+            self.mcmc_result_chains['chains'][key] = np.zeros((nwalkers,niters))
+            self.mcmc_result_chains['flat_chains'][key] = np.zeros((nwalkers,niters))
+            if key.split('_')[-1] == 'FLUX':
+                lum_key = key.replace('_FLUX', '_LUM')
+                self.mcmc_result_chains['chains'][lum_key] = np.zeros((nwalkers,niters))
+                self.mcmc_result_chains['flat_chains'][lum_key] = np.zeros((nwalkers,niters))
+            if key[:6] == 'F_CONT':
+                lum_key = key.replace('F_CONT', 'L_CONT')
+                self.mcmc_result_chains['chains'][lum_key] = np.zeros((nwalkers,niters))
+                self.mcmc_result_chains['flat_chains'][lum_key] = np.zeros((nwalkers,niters))
+
+
+        def get_key_chain(chain, param):
+            with np.nditer([chain, None], flags=['refs_ok', 'multi_index', 'buffered'], op_flags=[['readonly'], ['writeonly', 'allocate', 'no_broadcast']]) as it:
+                for x, y in it:
+                    y[...] = x.item()[param]
+                return it.operands[1]
+
+
+        for key in all_chains[0][0].keys():
+            print(key)
+            val = get_key_chain(all_chains, key).astype(float)
+
+            if (key.split('_')[-1] == 'FLUX') or (key[:6] == 'F_CONT'):
+                val = val * self.options.fit_options.flux_norm * self.target.fit_norm * (1.0+self.target.z)
+
+            elif key.split('_')[-1] == 'EW':
+                val = val * (1.0+self.target.z)
+
+            self.mcmc_result_chains['chains'][key] = val
+            self.mcmc_result_chains['flat_chains'][key] = flatten_chain(val)
+
+            if key.split('_')[-1] == 'FLUX':
+                lum_key = key.replace('_FLUX', '_LUM')
+                lum = np.log10(self.flux_to_lum(10**val))
+                lum[~np.isfinite(lum)] = 0
+                self.mcmc_result_chains['chains'][lum_key] = lum
+                self.mcmc_result_chains['flat_chains'][lum_key] = flatten_chain(lum)
+
+            if key[:6] == 'F_CONT':
+                lum_key = key.replace('F_CONT', 'L_CONT')
+                wave = float(key.split('_')[-1])
+                lum = np.log10(self.flux_to_lum(10**val)*wave)
+                lum[~np.isfinite(lum)] = 0
+                self.mcmc_result_chains['chains'][lum_key] = lum
+                self.mcmc_result_chains['flat_chains'][lum_key] = flatten_chain(lum)
+
+
+        self.mcmc_results_dict = {}
+        self.collect_mcmc_pars(sampler)
+        self.collect_tied_pars()
+
+
+    def collect_mcmc_pars(self, sampler):
+        for key, chain in self.mcmc_result_chains['flat_chains'].items():
+            print(key)
+
+            if len(chain) == 0:
+                par_results = {k:np.nan for k in result_dict}
+                par_results['flat_chain'] = flat
+                par_results['flag'] = 1
+                self.mcmc_results_dict[key] = par_results
+                continue
+
+            par_results = {}
+
+            if key.split('_')[-1] == 'AMP':
+                chain *= self.target.fit_norm
+
+            post_med = np.nanmedian(chain)
+            par_results['par_best'] = post_med
+
+            # 68% confidence interval
+            lo, hi = ba_utils.compute_HDI(chain, 0.68)
+            par_results['ci_68_low'] = post_med - lo
+            par_results['ci_68_upp'] = hi - post_med
+
+            # 95% confidence interval
+            lo, hi = ba_utils.compute_HDI(chain, 0.95)
+            par_results['ci_95_low'] = post_med - lo
+            par_results['ci_95_upp'] = hi - post_med
+
+            hist, bin_edges = np.histogram(chain, bins='doane', density=False)
+            par_results['post_max'] = bin_edges[hist.argmax()]
+
+            par_results['mean'] = np.nanmean(chain)
+            par_results['std_dev'] = np.nanstd(chain)
+            par_results['median'] = post_med
+            par_results['med_abs_dev'] = stats.median_abs_deviation(chain)
+            par_results['flat_chain'] = chain
+
+            par_results['flag'] = 0
+            if (not np.isfinite(post_med)) or (not np.isfinite(par_results['ci_68_low'])) or (not np.isfinite(par_results['ci_68_upp'])):
+                    par_results['flag'] = 1
+
+            if key in self.param_dict.keys():
+                plim = self.param_dict[key]['plim']
+                if key.split('_')[-1] == 'AMP':
+                    plim = [p*self.target.fit_norm for p in plim]
+                if (post_med-(1.5*par_results['ci_68_low']) <= plim[0]) or (post_med+(1.5*par_results['ci_68_upp']) >= plim[1]):
+                    par_results['flag'] = 1
+
+            elif key.split('_')[-1] == 'FLUX':
+                if post_med-(1.5*par_results['ci_68_low']) <= -20:
+                    par_results['flag'] = 1
+
+            elif key.split('_')[-1] == 'LUM':
+                if post_med-(1.5*par_results['ci_68_low']) <= 30:
+                    par_results['flag'] = 1
+
+            elif (key.split('_')[-1] == 'EW') or (key[:6] == 'F_CONT'):
+                if post_med-(1.5*par_results['ci_68_low']) <= 0:
+                    par_results['flag'] = 1
+
+            self.mcmc_results_dict[key] = par_results
+
+
+    def collect_tied_pars(self):
+        par_best_dict = {k:v['par_best'] for k,v in self.mcmc_results_dict.items()}
+
+        for line_name, line_dict in self.line_list.items():
+            for par_name, par_val in line_dict.items():
+                if (par_val == 'free') or (not par_name in self.tied_target_pars) or (isinstance(par_val, (int,float))):
+                    continue
+
+                par_results = {}
+                expr_vars = [p for p in self.cur_params.keys() if p in par_val]
+
+                # TODO: what we want?
+                par_results['init'] = self.param_dict[expr_vars[0]]['init']
+                par_results['plim'] = self.param_dict[expr_vars[0]]['plim']
+
+                par_results['par_best'] = ne.evaluate(par_val, local_dict=par_best_dict).item()
+                # TODO: add to self.mcmc_result_chains instead?
+                par_results['chain'] = ne.evaluate(par_val, local_dict=self.mcmc_result_chains['chains'])
+                par_results['flat_chain'] = ne.evaluate(par_val, local_dict=self.mcmc_result_chains['flat_chains'])
+
+                for attr in ['ci_68_low', 'ci_68_upp', 'ci_95_low', 'ci_95_upp', 'mean', 'std_dev', 'median', 'med_abs_dev']:
+                    par_results[attr] = np.sqrt(np.sum(np.array([self.mcmc_results_dict[k][attr] for k in expr_vars], dtype=float)**2))
+                par_results['flag'] = np.sum([self.mcmc_results_dict[k]['flag'] for k in expr_vars])
+
+                self.mcmc_results_dict[line_name+'_'+par_name.upper()] = par_results
 
 
 def get_continuums(components, size):
@@ -1915,114 +2099,6 @@ def get_continuums(components, size):
 
 
 def ignore_this(): 
-
-
-    #
-    if verbose:
-        output_free_pars(line_list,param_dict,soft_cons)
-    #
-    # Replace initial conditions with best fit max. likelihood parameters (the old switcharoo)
-    for key in result_dict:
-        if key in param_dict:
-            param_dict[key]['init']=result_dict[key]['med']
-    # We make an exception for FeII temperature if Kovadevic et al. (2010) templates are used because 
-    # temperature is not every sensitive > 8,000 K.  This causes temperature parameter to blow up
-    # during the initial max. likelihood fitting, causing it to be initialized for MCMC at an 
-    # unreasonable value.  We therefroe re-initializethe FeiI temp start value to 10,000 K.
-    if 'feii_temp' in param_dict:
-        param_dict['feii_temp']['init']=10000.0
-        
-
-
-
-
-    #######################################################################################################
-
-
-    # Run emcee
-    if verbose:
-        print('\n Performing MCMC iterations...')
-        print('----------------------------------------------------------------------------------------------------')
-
-    # Extract relevant stuff from dicts
-    param_names  = [key for key in param_dict ]
-    init_params  = [param_dict[key]['init'] for key in param_dict ]
-    bounds		 = [param_dict[key]['plim'] for key in param_dict ]
-    prior_dict   = {key:param_dict[key] for key in param_dict if ("prior" in param_dict[key])}
-    # Check number of walkers
-    # If number of walkers < 2*(# of params) (the minimum required), then set it to that
-    if nwalkers<2*len(param_names):
-        if verbose:
-            print('\n Number of walkers < 2 x (# of parameters)!  Setting nwalkers = %d' % (2.0*len(param_names)))
-        nwalkers = int(2.0*len(param_names))
-    
-    ndim, nwalkers = len(init_params), nwalkers # minimum walkers = 2*len(params)
-
-    # initialize walker starting positions based on parameter estimation from Maximum Likelihood fitting
-    pos = initialize_walkers(init_params,param_names,bounds,soft_cons,nwalkers,ndim)
-    # Run emcee
-    # args = arguments of lnprob (log-probability function)
-    lnprob_args=(param_names,
-                 prior_dict,
-                 line_list,
-                 combined_line_list,
-                 bounds,
-                 soft_cons,
-                 lam_gal,
-                 galaxy,
-                 noise,
-                 comp_options,
-                 losvd_options,
-                 host_options,
-                 power_options,
-                 poly_options,
-                 opt_feii_options,
-                 uv_iron_options,
-                 balmer_options,
-                 outflow_test_options,
-                 host_template,
-                 opt_feii_templates,
-                 uv_iron_template,
-                 balmer_template,
-                 stel_templates,
-                 blob_pars,
-                 disp_res,
-                 fit_mask,
-                 velscale,
-                 "final",
-                 fit_stat,
-                 False,
-                 run_dir)
-    
-    emcee_data = run_emcee(pos,ndim,nwalkers,run_dir,lnprob_args,init_params,param_names,
-                            auto_stop,conv_type,min_samp,ncor_times,autocorr_tol,write_iter,write_thresh,
-                            burn_in,min_iter,max_iter,verbose=verbose)
-
-    sampler_chain, burn_in, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob, log_like_blob = emcee_data
-    # Add chains to each parameter in param dictionary
-    for k,key in enumerate(param_names):
-        if key in param_dict:
-            param_dict[key]['chain']=sampler_chain[:,:,k]
-
-    if verbose:
-        print('\n > Fitting MCMC chains...')
-    # These three functions produce parameter, flux, and luminosity histograms and chains from the MCMC sampling.
-    # Free parameter values, uncertainties, and plots
-    param_dict = param_plots(param_dict,fit_norm,burn_in,run_dir,plot_param_hist=plot_param_hist,verbose=verbose)
-    # Add tied parameters
-    param_dict = add_tied_parameters(param_dict, line_list)
-    # Log Like Function values plots
-    log_like_dict = log_like_plot(log_like_blob, burn_in, nwalkers, run_dir, plot_param_hist=plot_param_hist,verbose=verbose)
-    # Flux values, uncertainties, and plots
-    flux_dict = flux_plots(flux_blob, z, burn_in, nwalkers, flux_norm, fit_norm, run_dir,verbose=verbose)
-    # Luminosity values, uncertainties, and plots
-    lum_dict = lum_plots(flux_dict, burn_in, nwalkers, z, run_dir, H0=cosmology["H0"],Om0=cosmology["Om0"],verbose=verbose)
-    # Continuum luminosity 
-    cont_lum_dict = cont_lum_plots(cont_flux_blob, burn_in, nwalkers, z, flux_norm, fit_norm, run_dir, H0=cosmology["H0"],Om0=cosmology["Om0"],verbose=verbose)
-    # Equivalent widths, uncertainties, and plots
-    eqwidth_dict = eqwidth_plots(eqwidth_blob, z, burn_in, nwalkers, run_dir, verbose=verbose)
-    # Auxiliary Line Dict (Combined FWHMs and Fluxes of MgII and CIV)
-    int_vel_disp_dict = int_vel_disp_plots(int_vel_disp_blob, burn_in, nwalkers, z, run_dir, H0=cosmology["H0"],Om0=cosmology["Om0"],verbose=verbose)
 
     # If stellar velocity is fit, estimate the systemic velocity of the galaxy;
     # SDSS redshifts are based on average emission line redshifts.
@@ -2118,7 +2194,7 @@ def ignore_this():
     # Write best fit parameters to fits table
     # Header information
     header_dict = {}
-    header_dict["Z_SDSS"]	= z
+    header_dict["Z_SDSS"]   = z
     header_dict["MED_NOISE"] = np.nanmedian(noise)
     header_dict["VELSCALE"]  = velscale
     header_dict["FLUX_NORM"]  = flux_norm
@@ -2216,12 +2292,12 @@ def systemic_vel_est(z,param_dict,burn_in,run_dir,plot_param_hist=True):
         z_dict["z_sys"]["ci_95_low"]   = low_95
         z_dict["z_sys"]["ci_95_upp"]   = upp_95
         z_dict["z_sys"]['post_max'] = post_max 
-        z_dict["z_sys"]["mean"] 	   = post_mean
-        z_dict["z_sys"]["std_dev"] 	   = post_std
-        z_dict["z_sys"]["median"]	   = post_med
+        z_dict["z_sys"]["mean"]        = post_mean
+        z_dict["z_sys"]["std_dev"]     = post_std
+        z_dict["z_sys"]["median"]      = post_med
         z_dict["z_sys"]["med_abs_dev"] = post_mad
         z_dict["z_sys"]["flat_chain"]  = flat
-        z_dict["z_sys"]["flag"] 	   = flag
+        z_dict["z_sys"]["flag"]        = flag
     else:
         z_dict = {}
         z_dict["z_sys"] = {}
@@ -2231,106 +2307,14 @@ def systemic_vel_est(z,param_dict,burn_in,run_dir,plot_param_hist=True):
         z_dict["z_sys"]["ci_95_low"]   = np.nan
         z_dict["z_sys"]["ci_95_upp"]   = np.nan
         z_dict["z_sys"]['post_max'] = np.nan 
-        z_dict["z_sys"]["mean"] 	   = np.nan
-        z_dict["z_sys"]["std_dev"] 	   = np.nan
-        z_dict["z_sys"]["median"]	   = np.nan
+        z_dict["z_sys"]["mean"]        = np.nan
+        z_dict["z_sys"]["std_dev"]     = np.nan
+        z_dict["z_sys"]["median"]      = np.nan
         z_dict["z_sys"]["med_abs_dev"] = np.nan
         z_dict["z_sys"]["flat_chain"]  = flat
-        z_dict["z_sys"]["flag"] 	   = 1	
+        z_dict["z_sys"]["flag"]        = 1  
     
     return z_dict
-
-
-def insert_nan(spec,ibad):
-    """
-    Inserts additional NaN values to neighboriing ibad pixels.
-    """
-    all_bad = np.unique(np.concatenate([ibad-1,ibad,ibad+1]))
-    ibad_new = []
-    for i in all_bad:
-        if (i>0) & (i<len(spec)):
-            ibad_new.append(i)
-    ibad_new = np.array(ibad_new)
-    try:
-        spec[ibad_new] = np.nan
-        return spec
-    except:
-        return spec
-
-
-def isFloat(num):
-    try:
-        float(num)
-        return True
-    except (ValueError,TypeError) as e:
-        return False
-
-def add_tied_parameters(pdict,line_list):
-
-    # for key in pdict:
-    # 	print(key,pdict[key])
-    # Make dictionaries for pdict
-    param_names = [key for key in pdict]
-    # init_dict  = {key:pdict[key]["init"]  for key in pdict}
-    # plim_dict  = {key:pdict[key]["plim"]  for key in pdict}
-    chain_dict	  = {key:pdict[key]["chain"] for key in pdict}
-    par_best_dict   = {key:pdict[key]["par_best"] for key in pdict}
-
-    ci_68_low_dict   = {key:pdict[key]["ci_68_low"] for key in pdict}
-    ci_68_upp_dict   = {key:pdict[key]["ci_68_upp"] for key in pdict}
-    ci_95_low_dict   = {key:pdict[key]["ci_95_low"] for key in pdict}
-    ci_95_upp_dict   = {key:pdict[key]["ci_95_upp"] for key in pdict}
-
-    mean_dict      = {key:pdict[key]["mean"] for key in pdict}
-    std_dev_dict     = {key:pdict[key]["std_dev"] for key in pdict}
-    median_dict   = {key:pdict[key]["median"] for key in pdict}
-    med_abs_dev_dict = {key:pdict[key]["med_abs_dev"] for key in pdict}
-
-    flat_samp_dict   = {key:pdict[key]["flat_chain"] for key in pdict}
-    flag_dict	   = {key:pdict[key]["flag"] for key in pdict}
-    # print()
-
-    for line in line_list:
-        for par in line_list[line]:
-            if (line_list[line][par]!="free") & (par in ["amp","disp","voff","shape","h3","h4","h5","h6","h7","h8","h9","h10"]) & (isFloat(line_list[line][par]) is False):
-                expr = line_list[line][par] # expression to evaluate
-                expr_vars  = [i for i in param_names if i in expr]
-                init	   = pdict[expr_vars[0]]["init"]
-                plim	   = pdict[expr_vars[0]]["plim"]
-                chain	   = ne.evaluate(line_list[line][par],local_dict = chain_dict)
-                par_best   = ne.evaluate(line_list[line][par],local_dict = par_best_dict).item()
-                flat_chain = ne.evaluate(line_list[line][par],local_dict = flat_samp_dict)
-
-                
-                ci_68_low  = np.sqrt(np.sum(np.array([ci_68_low_dict[i] for i in expr_vars],dtype=float)**2))
-                ci_68_upp  = np.sqrt(np.sum(np.array([ci_68_upp_dict[i] for i in expr_vars],dtype=float)**2))
-                ci_95_low  = np.sqrt(np.sum(np.array([ci_95_low_dict[i] for i in expr_vars],dtype=float)**2))
-                ci_95_upp  = np.sqrt(np.sum(np.array([ci_95_upp_dict[i] for i in expr_vars],dtype=float)**2))
-
-                mean        = np.sqrt(np.sum(np.array([mean_dict[i] for i in expr_vars],dtype=float)**2))
-                std_dev  = np.sqrt(np.sum(np.array([std_dev_dict[i] for i in expr_vars],dtype=float)**2))
-                median    = np.sqrt(np.sum(np.array([median_dict[i] for i in expr_vars],dtype=float)**2))
-                med_abs_dev = np.sqrt(np.sum(np.array([med_abs_dev_dict[i] for i in expr_vars],dtype=float)**2))
-
-                flag 	 = np.sum([flag_dict[i] for i in expr_vars])
-                pdict[line+"_"+par.upper()] = {"init":init, "plim":plim, "chain":chain, 
-                                               "par_best":par_best, "ci_68_low":ci_68_low, "ci_68_upp":ci_68_upp, 
-                                               "ci_95_low":ci_95_low, "ci_95_upp":ci_95_upp, 
-                                               "mean": mean, "std_dev":std_dev,
-                                               "median":median, "med_abs_dev":med_abs_dev,
-                                               "flag":flag,"flat_chain":flat_chain}
-
-            # the case where the parameter was set to a constant value
-            if (line_list[line][par]!="free") & (par in ["amp","disp","voff","shape","h3","h4","h5","h6","h7","h8","h9","h10"]) & (isFloat(line_list[line][par]) is True):
-
-                continue
-    # for key in pdict:
-    # 	print(key,pdict[key])
-
-    return pdict
-
-
-
 
 
 #### Likelihood function #########################################################
@@ -2463,7 +2447,7 @@ def simple_power_law(x,amp,alpha):
 
     Parameters
     ----------
-    x	 : array_like
+    x    : array_like
             wavelength vector (angstroms)
     amp   : float 
             continuum amplitude (flux density units)
@@ -2472,7 +2456,7 @@ def simple_power_law(x,amp,alpha):
 
     Returns
     ----------
-    C	 : array
+    C    : array
             AGN continuum model the same length as x
     """
     # This works
@@ -2494,9 +2478,9 @@ def broken_power_law(x, amp, x_break, alpha_1, alpha_2, delta):
 
     Parameters
     ----------
-    x		: array_like
+    x       : array_like
               wavelength vector (angstroms)
-    amp	 : float [0,max]
+    amp  : float [0,max]
               continuum amplitude (flux density units)
     x_break : float [x_min,x_max]
               wavelength of the break
@@ -2508,7 +2492,7 @@ def broken_power_law(x, amp, x_break, alpha_1, alpha_2, delta):
 
     Returns
     ----------
-    C	 : array
+    C    : array
             AGN continuum model the same length as x
     """
 
@@ -2552,10 +2536,10 @@ def run_emcee(pos,ndim,nwalkers,run_dir,lnprob_args,init_params,param_names,
         autocorr_times_all = [] # storage array for autocorrelation times
         autocorr_tols_all  = [] # storage array for autocorrelation tolerances
         old_tau = np.full(len(param_names),np.inf)
-        min_samp	 = min_samp # minimum iterations to use past convergence
-        ncor_times   = ncor_times # multiplicative tolerance; number of correlation times before which we stop sampling	
-        autocorr_tol = autocorr_tol	
-        stop_iter	= max_iter # stopping iteration; changes once convergence is reached
+        min_samp     = min_samp # minimum iterations to use past convergence
+        ncor_times   = ncor_times # multiplicative tolerance; number of correlation times before which we stop sampling 
+        autocorr_tol = autocorr_tol 
+        stop_iter   = max_iter # stopping iteration; changes once convergence is reached
         converged  = False
         # write_log((min_samp,autocorr_tol,ncor_times,conv_type),'autocorr_options',run_dir)
 
@@ -2570,8 +2554,8 @@ def run_emcee(pos,ndim,nwalkers,run_dir,lnprob_args,init_params,param_names,
         if all(elem in param_names  for elem in conv_type)==True:
             if (verbose):
                 print('\n Only considering convergence of following parameters: ')
-                for c in conv_type:	
-                    print('		  %s' % c)
+                for c in conv_type: 
+                    print('       %s' % c)
                 pass
         # check to see that all param_names are in conv_type, if not, remove them 
         # from conv_type
@@ -2585,8 +2569,8 @@ def run_emcee(pos,ndim,nwalkers,run_dir,lnprob_args,init_params,param_names,
                 if all(elem in conv_type  for elem in param_names)==True:
                     if (verbose):
                         print('\n Only considering convergence of following parameters: ')
-                        for c in conv_type:	
-                            print('		  %s' % c)
+                        for c in conv_type: 
+                            print('       %s' % c)
                         pass
                     else:
                         if (verbose):
@@ -2655,7 +2639,7 @@ def run_emcee(pos,ndim,nwalkers,run_dir,lnprob_args,init_params,param_names,
                 elif ( (par_conv.size > 0) and (k+1)>(np.nanmean(tau[par_conv]) * ncor_times) and (np.nanmean(tol[par_conv])<autocorr_tol) and (stop_iter == max_iter) ):
                     if verbose:
                         print('\n ---------------------------------------------')
-                        print(' | Converged at %d iterations.			  | ' % (k+1))
+                        print(' | Converged at %d iterations.             | ' % (k+1))
                         print(' | Performing %d iterations of sampling... | ' % min_samp )
                         print(' | Sampling will finish at %d iterations.  | ' % ((k+1)+min_samp) )
                         print(' ---------------------------------------------')
@@ -2677,8 +2661,8 @@ def run_emcee(pos,ndim,nwalkers,run_dir,lnprob_args,init_params,param_names,
 
                 if (par_conv.size>0):
                     pnames_sorted = param_names[i_sort]
-                    tau_sorted	= tau[i_sort]
-                    tol_sorted	= tol[i_sort]
+                    tau_sorted  = tau[i_sort]
+                    tol_sorted  = tol[i_sort]
                     best_sorted   = np.array(best)[i_sort]
                     if verbose:
                         print('{0:<30}{1:<40}{2:<30}'.format('\nIteration = %d' % (k+1),'%d x Mean Autocorr. Time = %0.2f' % (ncor_times,np.nanmean(tau[par_conv]) * ncor_times),'Mean Tolerance = %0.2f' % np.nanmean(tol[par_conv])))
@@ -2715,7 +2699,7 @@ def run_emcee(pos,ndim,nwalkers,run_dir,lnprob_args,init_params,param_names,
                 elif ( (par_conv.size > 0) and (k+1)>(np.nanmedian(tau[par_conv]) * ncor_times) and (np.nanmedian(tol[par_conv])<autocorr_tol) and (stop_iter == max_iter) ):
                     if verbose:
                         print('\n ---------------------------------------------')
-                        print(' | Converged at %d iterations.			  |' % (k+1))
+                        print(' | Converged at %d iterations.             |' % (k+1))
                         print(' | Performing %d iterations of sampling... |' % min_samp )
                         print(' | Sampling will finish at %d iterations.  |' % ((k+1)+min_samp) )
                         print(' ---------------------------------------------')
@@ -2737,8 +2721,8 @@ def run_emcee(pos,ndim,nwalkers,run_dir,lnprob_args,init_params,param_names,
 
                 if (par_conv.size>0):
                     pnames_sorted = param_names[i_sort]
-                    tau_sorted	= tau[i_sort]
-                    tol_sorted	= tol[i_sort]
+                    tau_sorted  = tau[i_sort]
+                    tol_sorted  = tol[i_sort]
                     best_sorted   = np.array(best)[i_sort]
                     if verbose:
                         print('{0:<30}{1:<40}{2:<30}'.format('\nIteration = %d' % (k+1),'%d x Median Autocorr. Time = %0.2f' % (ncor_times,np.nanmedian(tau[par_conv]) * ncor_times),'Med. Tolerance = %0.2f' % np.nanmedian(tol[par_conv])))
@@ -2749,7 +2733,7 @@ def run_emcee(pos,ndim,nwalkers,run_dir,lnprob_args,init_params,param_names,
                             if (((k+1)>tau_sorted[i]*ncor_times) and (tol_sorted[i]<autocorr_tol) and (tau_sorted[i]>1.0)):
                                 conv_bool = 'True'
                             else: conv_bool = 'False'
-                            if (round(tau_sorted[i],1)>1.0):# & (tol[i]<autocorr_tol):	
+                            if (round(tau_sorted[i],1)>1.0):# & (tol[i]<autocorr_tol):  
                                 print('{0:<30}{1:<20.4f}{2:<20.4f}{3:<20.4f}{4:<20}'.format(pnames_sorted[i],best_sorted[i],tau_sorted[i],tol_sorted[i],conv_bool))
                             else: 
                                 print('{0:<30}{1:<20.4f}{2:<20}{3:<20}{4:<20}'.format(pnames_sorted[i],best_sorted[i],' -------- ',' -------- ',' -------- '))
@@ -2765,7 +2749,7 @@ def run_emcee(pos,ndim,nwalkers,run_dir,lnprob_args,init_params,param_names,
                 elif all( ((k+1)>(x * ncor_times)) for x in tau) and all( (x>1.0) for x in tau) and all(y<autocorr_tol for y in tol) and (stop_iter == max_iter):
                     if verbose:
                         print('\n ---------------------------------------------')
-                        print(' | Converged at %d iterations.			  | ' % (k+1))
+                        print(' | Converged at %d iterations.             | ' % (k+1))
                         print(' | Performing %d iterations of sampling... | ' % min_samp )
                         print(' | Sampling will finish at %d iterations.  | ' % ((k+1)+min_samp) )
                         print(' ---------------------------------------------')
@@ -2786,8 +2770,8 @@ def run_emcee(pos,ndim,nwalkers,run_dir,lnprob_args,init_params,param_names,
                     converged = False
                 if 1:
                     pnames_sorted = param_names[i_sort]
-                    tau_sorted	= tau[i_sort]
-                    tol_sorted	= tol[i_sort]
+                    tau_sorted  = tau[i_sort]
+                    tol_sorted  = tol[i_sort]
                     best_sorted   = np.array(best)[i_sort]
                     if verbose:
                         print('{0:<30}'.format('\nIteration = %d' % (k+1)))
@@ -2823,7 +2807,7 @@ def run_emcee(pos,ndim,nwalkers,run_dir,lnprob_args,init_params,param_names,
                 elif all( ((k+1)>(x * ncor_times)) for x in tau_interest) and all( (x>1.0) for x in tau_interest) and all(y<autocorr_tol for y in tol_interest) and (stop_iter == max_iter):
                     if verbose:
                         print('\n ---------------------------------------------')
-                        print(' | Converged at %d iterations.			  | ' % (k+1))
+                        print(' | Converged at %d iterations.             | ' % (k+1))
                         print(' | Performing %d iterations of sampling... | ' % min_samp )
                         print(' | Sampling will finish at %d iterations.  | ' % ((k+1)+min_samp) )
                         print(' ---------------------------------------------')
@@ -2844,8 +2828,8 @@ def run_emcee(pos,ndim,nwalkers,run_dir,lnprob_args,init_params,param_names,
                     converged = False
                 if 1:
                     pnames_sorted = param_interest[i_sort]
-                    tau_sorted	= tau_interest[i_sort]
-                    tol_sorted	= tol_interest[i_sort]
+                    tau_sorted  = tau_interest[i_sort]
+                    tol_sorted  = tol_interest[i_sort]
                     best_sorted   = np.array(best_interest)[i_sort]
                     if verbose:
                         print('{0:<30}'.format('\nIteration = %d' % (k+1)))
@@ -2866,7 +2850,7 @@ def run_emcee(pos,ndim,nwalkers,run_dir,lnprob_args,init_params,param_names,
             if ((k+1) == stop_iter):
                 break
 
-            old_tau = tau	
+            old_tau = tau   
 
         # If auto_stop=False, simply print out the parameters and their best values at that iteration
         if ((k+1) % write_iter == 0) and ((k+1)>=min_iter) and ((k+1)>=write_thresh) and (auto_stop==False):
@@ -2881,7 +2865,7 @@ def run_emcee(pos,ndim,nwalkers,run_dir,lnprob_args,init_params,param_names,
                         print('{0:<30}{1:<20.4f}'.format(pnames_sorted[i],best_sorted[i]))
                 print('------------------------------------------------')
 
-    elap_time = (time.time() - start_time)	   
+    elap_time = (time.time() - start_time)     
     run_time = time_convert(elap_time)
     if verbose:
         print("\n emcee Runtime = %s. \n" % (run_time))
@@ -2921,8 +2905,8 @@ def run_emcee(pos,ndim,nwalkers,run_dir,lnprob_args,init_params,param_names,
     a = np.swapaxes(a,2,1)
 
     # Extract metadata blobs
-    blobs		   = sampler.get_blobs()
-    flux_blob	   = blobs["fluxes"]
+    blobs          = sampler.get_blobs()
+    flux_blob      = blobs["fluxes"]
     eqwidth_blob   = blobs["eqwidths"]
     cont_flux_blob = blobs["cont_fluxes"]
     int_vel_disp_blob  = blobs["int_vel_disp"]
@@ -3001,915 +2985,6 @@ def auto_window(taus, c):
     return len(taus) - 1
 
 
-def gauss_kde(xs,data,h):
-    """
-    Gaussian kernel density estimation.
-    """
-    def gauss_kernel(x):
-        return (1./np.sqrt(2.*np.pi)) * np.exp(-x**2/2)
-
-    kde = np.sum((1./h) * gauss_kernel((xs.reshape(len(xs),1)-data)/h), axis=1)
-    kde = kde/np.trapz(kde,xs)# normalize
-    return kde
-
-def kde_bandwidth(data):
-    """
-    Silverman bandwidth estimation for kernel density estimation.
-    """
-    return (4./(3.*len(data)))**(1./5.) * np.nanstd(data)
-
-def compute_HDI(trace, mass_frac) :
-    """
-    Returns highest probability density region given by
-    a set of samples.
-    
-    Source: http://bebi103.caltech.edu.s3-website-us-east-1.amazonaws.com/2015/tutorials/l06_credible_regions.html
-    
-    Parameters
-    ----------
-    trace : array
-        1D array of MCMC samples for a single variable
-    mass_frac : float with 0 < mass_frac <= 1
-        The fraction of the probability to be included in
-        the HPD.  For example, `massfrac` = 0.95 gives a
-        95% HPD.
-        
-    Returns
-    -------
-    output : array, shape (2,)
-        The bounds of the HPD
-    """
-    # Get sorted list
-    d = np.sort(np.copy(trace))
-
-    # Number of total samples taken
-    n = len(trace)
-    
-    # Get number of samples that should be included in HPD
-    n_samples = np.floor(mass_frac * n).astype(int)
-    
-    # Get width (in units of data) of all intervals with n_samples samples
-    int_width = d[n_samples:] - d[:n-n_samples]
-    
-    # Pick out minimal interval
-    min_int = np.argmin(int_width)
-    
-    # Return interval
-    return np.array([d[min_int], d[min_int+n_samples]])
-
-def posterior_plots(key,flat,chain,burn_in,xs,kde,
-                    low_68,upp_68,low_95,upp_95,post_mean,post_std,post_med,post_mad,
-                    run_dir
-                    ):
-    """
-    Plot posterior distributions and chains from MCMC.
-    """
-    # Initialize figures and axes
-    # Make an updating plot of the chain
-    fig = plt.figure(figsize=(10,8)) 
-    gs = gridspec.GridSpec(2, 2)
-    gs.update(wspace=0.35, hspace=0.35) # set the spacing between axes. 
-    ax1  = plt.subplot(gs[0,0])
-    ax2  = plt.subplot(gs[0,1])
-    ax3  = plt.subplot(gs[1,0:2])
-
-    # Histogram; 'Doane' binning produces the best results from tests.
-    n, bins, patches = ax1.hist(flat, bins='doane', histtype="bar" , density=True, facecolor="#4200a6", alpha=1,zorder=10)
-    # Plot 1: Histogram plots
-    ax1.axvline(post_med	,linewidth=0.5,linestyle="-",color='xkcd:bright aqua',alpha=1.00,zorder=20,label=r'$p(\theta|x)_{\rm{med}}$')
-    #
-    ax1.axvline(post_med-low_68,linewidth=0.5,linestyle="--" ,color='xkcd:bright aqua',alpha=1.00,zorder=20,label=r'$\textrm{68\% conf.}$')
-    ax1.axvline(post_med+upp_68,linewidth=0.5,linestyle="--" ,color='xkcd:bright aqua',alpha=1.00,zorder=20)
-    #
-    ax1.axvline(post_med-low_95,linewidth=0.5,linestyle=":" ,color='xkcd:bright aqua',alpha=1.00,zorder=20,label=r'$\textrm{95\% conf.}$')
-    ax1.axvline(post_med+upp_95,linewidth=0.5,linestyle=":" ,color='xkcd:bright aqua',alpha=1.00,zorder=20)
-    #
-    ax1.plot(xs,kde ,linewidth=0.5,linestyle="-" ,color="xkcd:bright pink",alpha=1.00,zorder=15,label="KDE")
-    ax1.plot(xs,kde ,linewidth=3.0,linestyle="-" ,color="xkcd:bright pink",alpha=0.50,zorder=15)
-    ax1.plot(xs,kde ,linewidth=6.0,linestyle="-" ,color="xkcd:bright pink",alpha=0.20,zorder=15)
-    #
-    ax1.grid(visible=True,which="major",axis="both",alpha=0.15,color="xkcd:bright pink",linewidth=0.5,zorder=0)
-    # ax1.plot(xvec,yvec,color='white')
-    ax1.set_xlabel(r'%s' % key,fontsize=12)
-    ax1.set_ylabel(r'$p$(%s)' % key,fontsize=12)
-    ax1.legend(loc="best",fontsize=6)
-    
-    # Plot 2: best fit values
-    values = [post_med,low_68,upp_68,low_95,upp_95,post_mean,post_std,post_med,post_mad]
-    labels = [r"$p(\theta|x)_{\rm{med}}$",
-        r"$\rm{CI\;68\%\;low}$",r"$\rm{CI\;68\%\;upp}$",
-        r"$\rm{CI\;95\%\;low}$",r"$\rm{CI\;95\%\;upp}$",
-        r"$\rm{Mean}$",r"$\rm{Std.\;Dev.}$",
-        r"$\rm{Median}$",r"$\rm{Med. Abs. Dev.}$"]
-    start, step = 1, 0.12
-    vspace = np.linspace(start,1-len(labels)*step,len(labels),endpoint=False)
-    # Plot 2: best fit values
-    for i in range(len(labels)):
-        ax2.annotate('{0:>30}{1:<2}{2:<30.3f}'.format(labels[i],r"$\qquad=\qquad$",values[i]), 
-                    xy=(0.5, vspace[i]),  xycoords='axes fraction',
-                    xytext=(0.95, vspace[i]), textcoords='axes fraction',
-                    horizontalalignment='right', verticalalignment='top', 
-                    fontsize=10)
-    ax2.axis('off')
-
-    # Plot 3: Chain plot
-    for w in range(0,np.shape(chain)[0],1):
-        ax3.plot(range(np.shape(chain)[1]),chain[w,:],color='white',linewidth=0.5,alpha=0.5,zorder=0)
-    # Calculate median and median absolute deviation of walkers at each iteration; we have depreciated
-    # the average and standard deviation because they do not behave well for outlier walkers, which
-    # also don't agree with histograms.
-    c_med = np.nanmedian(chain,axis=0)
-    c_madstd = mad_std(chain)
-    ax3.plot(range(np.shape(chain)[1]),c_med,color='xkcd:bright pink',alpha=1.,linewidth=2.0,label='Median',zorder=10)
-    ax3.fill_between(range(np.shape(chain)[1]),c_med+c_madstd,c_med-c_madstd,color='#4200a6',alpha=0.5,linewidth=1.5,label='Median Absolute Dev.',zorder=5)
-    ax3.axvline(burn_in,linestyle='--',linewidth=0.5,color='xkcd:bright aqua',label='burn-in = %d' % burn_in,zorder=20)
-    ax3.grid(visible=True,which="major",axis="both",alpha=0.15,color="xkcd:bright pink",linewidth=0.5,zorder=0)
-    ax3.set_xlim(0,np.shape(chain)[1])
-    ax3.set_xlabel('$N_\mathrm{iter}$',fontsize=12)
-    ax3.set_ylabel(r'%s' % key,fontsize=12)
-    ax3.legend(loc='upper left')
-    
-    # Save the figure
-    histo_dir = run_dir.joinpath('histogram_plots')
-    histo_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(histo_dir.joinpath('%s_MCMC.png' % (key)), bbox_inches="tight",dpi=300)
-
-    # Close plot window
-    fig.clear()
-    plt.close()
-
-    return
-
-def param_plots(param_dict,fit_norm,burn_in,run_dir,plot_param_hist=True,verbose=True):
-    """
-    Generates best-fit values, uncertainties, and plots for 
-    free parameters from MCMC sample chains.
-    """
-    #
-    if verbose:
-        print("\n Generating model parameter distributions...\n")
-
-    for key in param_dict:
-        #
-        if verbose:
-            print('		  %s' % key)
-        chain = param_dict[key]['chain'] # shape = (nwalkers,niter)
-        chain[~np.isfinite(chain)] = 0
-        # Burned-in + Flattened (along walker axis) chain
-        # If burn_in is larger than the size of the chain, then 
-        # take 50% of the chain length instead.
-
-        # Rescale amplitudes
-        if key[-4:]=="_AMP":
-            chain*=fit_norm
-
-        if (burn_in >= np.shape(chain)[1]):
-            burn_in = int(0.5*np.shape(chain)[1])
-        # Flatten the chains
-        flat = chain[:,burn_in:]
-        # flat = flat.flat
-        flat = flat.flatten()
-
-        # 
-        if len(flat) > 0:
-
-            # Histogram; 'Doane' binning produces the best results from tests.
-            hist, bin_edges = np.histogram(flat, bins='doane', density=False)
-
-            # Generate pseudo-data on the ends of the histogram; this prevents the KDE
-            # from weird edge behavior.
-            n_pseudo = 3 # number of pseudo-bins 
-            bin_width=bin_edges[1]-bin_edges[0]
-            lower_pseudo_data = np.random.uniform(low=bin_edges[0]-bin_width*n_pseudo, high=bin_edges[0], size=hist[0]*n_pseudo)
-            upper_pseudo_data = np.random.uniform(low=bin_edges[-1], high=bin_edges[-1]+bin_width*n_pseudo, size=hist[-1]*n_pseudo)
-
-            # Calculate bandwidth for KDE (Silverman method)
-            h = kde_bandwidth(flat)
-
-            # Create a subsampled grid for the KDE based on the subsampled data; by
-            # default, we subsample by a factor of 10.
-            xs = np.linspace(np.min(flat),np.max(flat),10*len(hist))
-
-            # Calculate KDE
-            kde = gauss_kde(xs,np.concatenate([flat,lower_pseudo_data,upper_pseudo_data]),h)
-            p68 = compute_HDI(flat,0.68)
-            p95 = compute_HDI(flat,0.95)
-
-            post_max  = bin_edges[hist.argmax()] # posterior max estimated from KDE
-            post_mean = np.nanmean(flat)
-            post_med  = np.nanmedian(flat)
-            low_68  = post_med - p68[0]
-            upp_68  = p68[1] - post_med
-            low_95  = post_med - p95[0]
-            upp_95  = p95[1] - post_med
-            post_std  = np.nanstd(flat)
-            post_mad  = stats.median_abs_deviation(flat)
-
-            # Quality flags; flag any parameter that violates parameter limits by 1.5 sigma
-            flag = 0 
-            if key[-4:]=="_AMP":
-                if ( (post_med-1.5*low_68) <= (param_dict[key]['plim'][0]*fit_norm) ):
-                    flag+=1
-                if ( (post_med+1.5*upp_68) >= (param_dict[key]['plim'][1]*fit_norm) ):
-                    flag+=1
-                if ~np.isfinite(post_med) or ~np.isfinite(low_68) or ~np.isfinite(upp_68):
-                    flag+=1
-            else:
-                if ( (post_med-1.5*low_68) <= (param_dict[key]['plim'][0]) ):
-                    flag+=1
-                if ( (post_med+1.5*upp_68) >= (param_dict[key]['plim'][1]) ):
-                    flag+=1
-                if ~np.isfinite(post_med) or ~np.isfinite(low_68) or ~np.isfinite(upp_68):
-                    flag+=1
-
-            param_dict[key]['par_best'] = post_med # maximum of posterior distribution
-            param_dict[key]['ci_68_low']   = low_68	# lower 68% confidence interval
-            param_dict[key]['ci_68_upp']   = upp_68	# upper 68% confidence interval
-            param_dict[key]['ci_95_low']   = low_95	# lower 95% confidence interval
-            param_dict[key]['ci_95_upp']   = upp_95	# upper 95% confidence interval
-            param_dict[key]['post_max'] = post_max # maximum of posterior distribution
-            param_dict[key]['mean']  = post_mean # mean of posterior distribution
-            param_dict[key]['std_dev']   = post_std	# standard deviation
-            param_dict[key]['median']     = post_med # median of posterior distribution
-            param_dict[key]['med_abs_dev'] = post_mad	# median absolute deviation
-            param_dict[key]['flat_chain']  = flat   # flattened samples used for histogram.
-            param_dict[key]['flag']	       = flag 
-
-            if (plot_param_hist==True):
-
-                posterior_plots(key,flat,chain,burn_in,xs,kde,
-                                low_68,upp_68,low_95,upp_95,post_mean,post_std,post_med,post_mad,
-                                run_dir
-                                )
-
-        else:
-            param_dict[key]['par_best'] = np.nan # maximum of posterior distribution
-            param_dict[key]['ci_68_low']   = np.nan	# lower 68% confidence interval
-            param_dict[key]['ci_68_upp']   = np.nan	# upper 68% confidence interval
-            param_dict[key]['ci_95_low']   = np.nan	# lower 95% confidence interval
-            param_dict[key]['ci_95_upp']   = np.nan	# upper 95% confidence interval
-            param_dict[key]['post_max'] = np.nan # maximum of posterior distribution
-            param_dict[key]['mean']  = np.nan # mean of posterior distribution
-            param_dict[key]['std_dev']   = np.nan	# standard deviation
-            param_dict[key]['median']     = np.nan # median of posterior distribution
-            param_dict[key]['med_abs_dev'] = np.nan	# median absolute deviation
-            param_dict[key]['flat_chain']  = flat   # flattened samples used for histogram.
-            param_dict[key]['flag']	       = 1 
-
-    return param_dict
-
-
-def log_like_plot(ll_blob, burn_in, nwalkers, run_dir, plot_param_hist=True,verbose=True):
-    """
-    Generates best-fit values, uncertainties, and plots for 
-    component fluxes from MCMC sample chains.
-    """
-    
-    ll = ll_blob.T
-
-    # Burned-in + Flattened (along walker axis) chain
-    # If burn_in is larger than the size of the chain, then 
-    # take 50% of the chain length instead.
-    if (burn_in >= np.shape(ll)[1]):
-        burn_in = int(0.5*np.shape(ll)[1])
-        # print('\n Burn-in is larger than chain length! Using 50% of chain length for burn-in...\n')
-
-    flat = ll[:,burn_in:]
-    # flat = flat.flat
-    flat = flat.flatten()
-
-    # Old confidence interval stuff; replaced by np.quantile
-    # p = np.percentile(flat, [16, 50, 84])
-    # pdfmax = p[1]
-    # low1   = p[1]-p[0]
-    # upp1   = p[2]-p[1]
-
-    # 
-    if len(flat[np.isfinite(flat)]) > 0:
-
-        # Histogram; 'Doane' binning produces the best results from tests.
-        hist, bin_edges = np.histogram(flat, bins='doane', density=False)
-
-        # Generate pseudo-data on the ends of the histogram; this prevents the KDE
-        # from weird edge behavior.
-        n_pseudo = 3 # number of pseudo-bins 
-        bin_width=bin_edges[1]-bin_edges[0]
-        lower_pseudo_data = np.random.uniform(low=bin_edges[0]-bin_width*n_pseudo, high=bin_edges[0], size=hist[0]*n_pseudo)
-        upper_pseudo_data = np.random.uniform(low=bin_edges[-1], high=bin_edges[-1]+bin_width*n_pseudo, size=hist[-1]*n_pseudo)
-
-        # Calculate bandwidth for KDE (Silverman method)
-        h = kde_bandwidth(flat)
-
-        # Create a subsampled grid for the KDE based on the subsampled data; by
-        # default, we subsample by a factor of 10.
-        xs = np.linspace(np.min(flat),np.max(flat),10*len(hist))
-
-        # Calculate KDE
-        kde = gauss_kde(xs,np.concatenate([flat,lower_pseudo_data,upper_pseudo_data]),h)
-        p68 = compute_HDI(flat,0.68)
-        p95 = compute_HDI(flat,0.95)
-
-        post_max  = bin_edges[hist.argmax()] # posterior max estimated from KDE
-        post_mean = np.nanmean(flat)
-        post_med  = np.nanmedian(flat)
-        low_68  = post_med - p68[0]
-        upp_68  = p68[1] - post_med
-        low_95  = post_med - p95[0]
-        upp_95  = p95[1] - post_med
-        post_std  = np.nanstd(flat)
-        post_mad  = stats.median_abs_deviation(flat)
-
-        # Quality flags; flag any parameter that violates parameter limits by 1.5 sigma
-        flag = 0
-        if ~np.isfinite(post_med) or ~np.isfinite(low_68) or ~np.isfinite(upp_68):
-            flag += 1
-
-        ll_dict = {
-                    'par_best'  : post_med, # maximum of posterior distribution
-                    'ci_68_low'   : low_68,	# lower 68% confidence interval
-                    'ci_68_upp'   : upp_68,	# upper 68% confidence interval
-                    'ci_95_low'   : low_95,	# lower 95% confidence interval
-                    'ci_95_upp'   : upp_95,	# upper 95% confidence interval
-                    'post_max'  : post_max,
-                    'mean'    : post_mean, # mean of posterior distribution
-                    'std_dev'    : post_std,	# standard deviation
-                    'median'      : post_med, # median of posterior distribution
-                    'med_abs_dev' : post_mad,	# median absolute deviation
-                    'flat_chain'  : flat,   # flattened samples used for histogram.
-                    'flag'    : flag, 
-        }
-
-        if (plot_param_hist==True):
-                posterior_plots("LOG_LIKE",flat,ll,burn_in,xs,kde,
-                                low_68,upp_68,low_95,upp_95,post_mean,post_std,post_med,post_mad,
-                                run_dir)
-    else:
-        ll_dict = {
-                'par_best'  : np.nan, # maximum of posterior distribution
-                'ci_68_low'   : np.nan,	# lower 68% confidence interval
-                'ci_68_upp'   : np.nan,	# upper 68% confidence interval
-                'ci_95_low'   : np.nan,	# lower 95% confidence interval
-                'ci_95_upp'   : np.nan,	# upper 95% confidence interval
-                'post_max'  : np.nan,
-                'mean'    : np.nan, # mean of posterior distribution
-                'std_dev'    : np.nan,	# standard deviation
-                'median'      : np.nan, # median of posterior distribution
-                'med_abs_dev' : np.nan,	# median absolute deviation
-                'flat_chain'  : flat,   # flattened samples used for histogram.
-                'flag'    : 1, 
-        }	
-
-    return ll_dict
-
-def flux_plots(flux_blob, z, burn_in, nwalkers, flux_norm, fit_norm, run_dir, verbose=True):
-    """
-    Generates best-fit values, uncertainties, and plots for 
-    component fluxes from MCMC sample chains.
-    """
-    if verbose:
-        print("\n Generating model flux distributions...\n")
-
-    # Create a flux dictionary
-    niter	= np.shape(flux_blob)[0]
-    nwalkers = np.shape(flux_blob)[1]
-    flux_dict = {}
-    for key in flux_blob[0][0]:
-        flux_dict[key] = {'chain':np.empty([nwalkers,niter])}
-
-    # Restructure the flux_blob for the flux_dict
-    for i in range(niter):
-        for j in range(nwalkers):
-            for key in flux_blob[0][0]:
-                flux_dict[key]['chain'][j,i] = flux_blob[i][j][key]
-
-    for key in flux_dict:
-        if verbose:
-            print('		  %s' % key)
-        chain = np.log10(flux_dict[key]['chain']*flux_norm*fit_norm*(1.0+z)) # shape = (nwalkers,niter)
-        chain[~np.isfinite(chain)] = 0
-        flux_dict[key]['chain'] = chain
-        # Burned-in + Flattened (along walker axis) chain
-        # If burn_in is larger than the size of the chain, then 
-        # take 50% of the chain length instead.
-        if (burn_in >= np.shape(chain)[1]):
-            burn_in = int(0.5*np.shape(chain)[1])
-
-        # Remove burn_in iterations and flatten for histogram
-        flat = chain[:,burn_in:]
-        # flat = flat.flat
-        flat = flat.flatten()
-
-        # 
-        if len(flat) > 0:
-
-            # Histogram; 'Doane' binning produces the best results from tests.
-            hist, bin_edges = np.histogram(flat, bins='doane', density=False)
-
-            # Calculate KDE
-            p68 = compute_HDI(flat,0.68)
-            p95 = compute_HDI(flat,0.95)
-
-            post_max  = bin_edges[hist.argmax()] # posterior max estimated from KDE
-            post_mean = np.nanmean(flat)
-            post_med  = np.nanmedian(flat)
-            low_68  = post_med - p68[0]
-            upp_68  = p68[1] - post_med
-            low_95  = post_med - p95[0]
-            upp_95  = p95[1] - post_med
-            post_std  = np.nanstd(flat)
-            post_mad  = stats.median_abs_deviation(flat)
-
-            # Quality flags; flag any parameter that violates parameter limits by 1.5 sigma
-            flag = 0  
-            if ( (post_med-1.5*low_68) <= -20 ):
-                flag+=1
-            if ~np.isfinite(post_med) or ~np.isfinite(low_68) or ~np.isfinite(upp_68):
-                flag+=1
-
-            flux_dict[key]['par_best']  = post_med # maximum of posterior distribution
-            flux_dict[key]['ci_68_low']   = low_68	# lower 68% confidence interval
-            flux_dict[key]['ci_68_upp']   = upp_68	# upper 68% confidence interval
-            flux_dict[key]['ci_95_low']   = low_95	# lower 95% confidence interval
-            flux_dict[key]['ci_95_upp']   = upp_95	# upper 95% confidence interval
-            flux_dict[key]['post_max']  = post_max
-            flux_dict[key]['mean']    = post_mean # mean of posterior distribution
-            flux_dict[key]['std_dev']    = post_std	# standard deviation
-            flux_dict[key]['median']      = post_med # median of posterior distribution
-            flux_dict[key]['med_abs_dev'] = post_mad	# median absolute deviation
-            flux_dict[key]['flat_chain']  = flat   # flattened samples used for histogram.
-            flux_dict[key]['flag']	    = flag 
-
-        else:
-            flux_dict[key]['par_best']  = np.nan # maximum of posterior distribution
-            flux_dict[key]['ci_68_low']   = np.nan	# lower 68% confidence interval
-            flux_dict[key]['ci_68_upp']   = np.nan	# upper 68% confidence interval
-            flux_dict[key]['ci_95_low']   = np.nan	# lower 95% confidence interval
-            flux_dict[key]['ci_95_upp']   = np.nan	# upper 95% confidence interval
-            flux_dict[key]['post_max']  = np.nan
-            flux_dict[key]['mean']    = np.nan # mean of posterior distribution
-            flux_dict[key]['std_dev']    = np.nan	# standard deviation
-            flux_dict[key]['median']      = np.nan # median of posterior distribution
-            flux_dict[key]['med_abs_dev'] = np.nan	# median absolute deviation
-            flux_dict[key]['flat_chain']  = flat   # flattened samples used for histogram.
-            flux_dict[key]['flag']	    = 1 
-
-    return flux_dict
-
-def lum_plots(flux_dict,burn_in,nwalkers,z,run_dir,H0=70.0,Om0=0.30,verbose=True):
-    """
-    Generates best-fit values, uncertainties, and plots for 
-    component luminosities from MCMC sample chains.
-    """
-    if verbose:
-        print("\n Generating model luminosity distributions...\n")
-
-    # Compute luminosity distance (in cm) using FlatLambdaCDM cosmology
-    cosmo = FlatLambdaCDM(H0, Om0)
-    d_mpc = cosmo.luminosity_distance(z).value
-    d_cm  = d_mpc * 3.086E+24 # 1 Mpc = 3.086e+24 cm
-
-    # Create a flux dictionary
-    lum_dict = {}
-    for key in flux_dict:
-        flux = 10**(flux_dict[key]['chain']) 
-        # Convert fluxes to luminosities and take log10
-        lum   = np.log10((flux * 4*np.pi * d_cm**2	)) #/ 1.0E+42
-        lum[~np.isfinite(lum)] = 0
-        lum_dict[key[:-4]+'LUM']= {'chain':lum}
-
-    for key in lum_dict:
-        if verbose:
-            print('		  %s' % key)
-        chain = lum_dict[key]['chain'] # shape = (nwalkers,niter)
-        chain[~np.isfinite(chain)] = 0
-
-        # Burned-in + Flattened (along walker axis) chain
-        # If burn_in is larger than the size of the chain, then 
-        # take 50% of the chain length instead.
-        if (burn_in >= np.shape(chain)[1]):
-            burn_in = int(0.5*np.shape(chain)[1])
-            # print('\n Burn-in is larger than chain length! Using 50% of chain length for burn-in...\n')
-
-        # Remove burn_in iterations and flatten for histogram
-        flat = chain[:,burn_in:]
-        # flat = flat.flat
-        flat = flat.flatten()
-
-        # 
-        if len(flat) > 0:
-
-            # Histogram; 'Doane' binning produces the best results from tests.
-            hist, bin_edges = np.histogram(flat, bins='doane', density=False)
-
-            # Calculate KDE
-            # kde = gauss_kde(xs,np.concatenate([subsampled,lower_pseudo_data,upper_pseudo_data]),h)
-            p68 = compute_HDI(flat,0.68)
-            p95 = compute_HDI(flat,0.95)
-
-            post_max  = bin_edges[hist.argmax()] # posterior max estimated from KDE
-            post_mean = np.nanmean(flat)
-            post_med  = np.nanmedian(flat)
-            low_68  = post_med - p68[0]
-            upp_68  = p68[1] - post_med
-            low_95  = post_med - p95[0]
-            upp_95  = p95[1] - post_med
-            post_std  = np.nanstd(flat)
-            post_mad  = stats.median_abs_deviation(flat)
-
-            # Quality flags; flag any parameter that violates parameter limits by 1.5 sigma
-            flag = 0  
-            if ( (post_med-1.5*low_68) <= 30 ):
-                flag+=1
-            if ~np.isfinite(post_med) or ~np.isfinite(low_68) or ~np.isfinite(upp_68):
-                flag+=1
-
-            lum_dict[key]['par_best']   = post_med # maximum of posterior distribution
-            lum_dict[key]['ci_68_low']   = low_68	# lower 68% confidence interval
-            lum_dict[key]['ci_68_upp']   = upp_68	# upper 68% confidence interval
-            lum_dict[key]['ci_95_low']   = low_95	# lower 95% confidence interval
-            lum_dict[key]['ci_95_upp']   = upp_95	# upper 95% confidence interval
-            lum_dict[key]['post_max']   = post_max
-            lum_dict[key]['mean']      = post_mean # mean of posterior distribution
-            lum_dict[key]['std_dev']     = post_std	# standard deviation
-            lum_dict[key]['median']   = post_med # median of posterior distribution
-            lum_dict[key]['med_abs_dev'] = post_mad	# median absolute deviation
-            lum_dict[key]['flat_chain']  = flat   # flattened samples used for histogram.
-            lum_dict[key]['flag']	   = flag
-
-        else:
-            lum_dict[key]['par_best']   = np.nan # maximum of posterior distribution
-            lum_dict[key]['ci_68_low']   = np.nan	# lower 68% confidence interval
-            lum_dict[key]['ci_68_upp']   = np.nan	# upper 68% confidence interval
-            lum_dict[key]['ci_95_low']   = np.nan	# lower 95% confidence interval
-            lum_dict[key]['ci_95_upp']   = np.nan	# upper 95% confidence interval
-            lum_dict[key]['post_max']   = np.nan
-            lum_dict[key]['mean']      = np.nan # mean of posterior distribution
-            lum_dict[key]['std_dev']     = np.nan	# standard deviation
-            lum_dict[key]['median']   = np.nan # median of posterior distribution
-            lum_dict[key]['med_abs_dev'] = np.nan	# median absolute deviation
-            lum_dict[key]['flat_chain']  = flat   # flattened samples used for histogram.
-            lum_dict[key]['flag']	   = 1 
-
-    return lum_dict
-
-def eqwidth_plots(eqwidth_blob, z, burn_in, nwalkers, run_dir,verbose=True):
-    """
-    Generates best-fit values, uncertainties, and plots for 
-    component fluxes from MCMC sample chains.
-    """
-    if verbose:
-        print("\n Generating model equivalent width distributions...\n")
-    # Create a flux dictionary
-    niter	= np.shape(eqwidth_blob)[0]
-    nwalkers = np.shape(eqwidth_blob)[1]
-    eqwidth_dict = {}
-    for key in eqwidth_blob[0][0]:
-        eqwidth_dict[key] = {'chain':np.empty([nwalkers,niter])}
-
-    # Restructure the flux_blob for the flux_dict
-    for i in range(niter):
-        for j in range(nwalkers):
-            for key in eqwidth_blob[0][0]:
-                eqwidth_dict[key]['chain'][j,i] = eqwidth_blob[i][j][key]
-
-    for key in eqwidth_dict:
-        if verbose:
-            print('		  %s' % key)
-        chain = eqwidth_dict[key]['chain'] * (1.0+z) # shape = (nwalkers,niter)
-        chain[~np.isfinite(chain)] = 0
-
-        # Burned-in + Flattened (along walker axis) chain
-        # If burn_in is larger than the size of the chain, then 
-        # take 50% of the chain length instead.
-        if (burn_in >= np.shape(chain)[1]):
-            burn_in = int(0.5*np.shape(chain)[1])
-
-        # Remove burn_in iterations and flatten for histogram
-        flat = chain[:,burn_in:]
-        # flat = flat.flat
-        flat = flat.flatten()
-
-        # 
-        if len(flat) > 0:
-
-            # Histogram; 'Doane' binning produces the best results from tests.
-            hist, bin_edges = np.histogram(flat, bins='doane', density=False)
-
-            # Calculate HDI
-            p68 = compute_HDI(flat,0.68)
-            p95 = compute_HDI(flat,0.95)
-
-            post_max  = bin_edges[hist.argmax()] # posterior max estimated from KDE
-            post_mean = np.nanmean(flat)
-            post_med  = np.nanmedian(flat)
-            low_68  = post_med - p68[0]
-            upp_68  = p68[1] - post_med
-            low_95  = post_med - p95[0]
-            upp_95  = p95[1] - post_med
-            post_std  = np.nanstd(flat)
-            post_mad  = stats.median_abs_deviation(flat)
-
-            # Quality flags; flag any parameter that violates parameter limits by 1.5 sigma
-            flag = 0  
-            if ( (post_med-1.5*low_68) <= 0 ):
-                flag+=1
-            if ~np.isfinite(post_med) or ~np.isfinite(low_68) or ~np.isfinite(upp_68):
-                flag+=1
-
-            eqwidth_dict[key]['par_best']   = post_med # maximum of posterior distribution
-            eqwidth_dict[key]['ci_68_low']   = low_68	# lower 68% confidence interval
-            eqwidth_dict[key]['ci_68_upp']   = upp_68	# upper 68% confidence interval
-            eqwidth_dict[key]['ci_95_low']   = low_95	# lower 95% confidence interval
-            eqwidth_dict[key]['ci_95_upp']   = upp_95	# upper 95% confidence interval
-            eqwidth_dict[key]['post_max']   = post_max
-            eqwidth_dict[key]['mean']      = post_mean # mean of posterior distribution
-            eqwidth_dict[key]['std_dev']     = post_std	# standard deviation
-            eqwidth_dict[key]['median']   = post_med # median of posterior distribution
-            eqwidth_dict[key]['med_abs_dev'] = post_mad	# median absolute deviation
-            eqwidth_dict[key]['flat_chain']  = flat   # flattened samples used for histogram.
-            eqwidth_dict[key]['flag']	     = flag
-
-        else:
-            eqwidth_dict[key]['par_best']   = np.nan # maximum of posterior distribution
-            eqwidth_dict[key]['ci_68_low']   = np.nan	# lower 68% confidence interval
-            eqwidth_dict[key]['ci_68_upp']   = np.nan	# upper 68% confidence interval
-            eqwidth_dict[key]['ci_95_low']   = np.nan	# lower 95% confidence interval
-            eqwidth_dict[key]['ci_95_upp']   = np.nan	# upper 95% confidence interval
-            eqwidth_dict[key]['post_max']   = np.nan
-            eqwidth_dict[key]['mean']      = np.nan # mean of posterior distribution
-            eqwidth_dict[key]['std_dev']     = np.nan	# standard deviation
-            eqwidth_dict[key]['median']   = np.nan # median of posterior distribution
-            eqwidth_dict[key]['med_abs_dev'] = np.nan	# median absolute deviation
-            eqwidth_dict[key]['flat_chain']  = flat   # flattened samples used for histogram.
-            eqwidth_dict[key]['flag']	   = 1 
-
-    return eqwidth_dict
-
-def cont_lum_plots(cont_flux_blob,burn_in,nwalkers,z,flux_norm,fit_norm,run_dir,H0=70.0,Om0=0.30,verbose=True):
-    """
-    Generates best-fit values, uncertainties, and plots for 
-    component luminosities from MCMC sample chains.
-    """
-
-    # Create a flux dictionary
-    niter	= np.shape(cont_flux_blob)[0]
-    nwalkers = np.shape(cont_flux_blob)[1]
-    cont_flux_dict = {}
-    for key in cont_flux_blob[0][0]:
-        cont_flux_dict[key] = {'chain':np.empty([nwalkers,niter])}
-
-    # Restructure the flux_blob for the flux_dict
-    for i in range(niter):
-        for j in range(nwalkers):
-            for key in cont_flux_blob[0][0]:
-                cont_flux_dict[key]['chain'][j,i] = cont_flux_blob[i][j][key]
-    
-    # Compute luminosity distance (in cm) using FlatLambdaCDM cosmology
-    cosmo = FlatLambdaCDM(H0, Om0)
-    d_mpc = cosmo.luminosity_distance(z).value
-    d_cm  = d_mpc * 3.086E+24 # 1 Mpc = 3.086e+24 cm
-    # Create a luminosity dictionary
-    cont_lum_dict = {}
-    for key in cont_flux_dict:
-        # Total cont. lum.
-        if (key=="F_CONT_TOT_1350"):
-            flux = (cont_flux_dict[key]['chain']) * flux_norm * fit_norm
-            # Convert fluxes to luminosities and normalize by 10^(+42) to avoid numerical issues 
-            lum   = np.log10((flux * 4*np.pi * d_cm**2	) * 1350.0) #/ 1.0E+42
-            lum[~np.isfinite(lum)] = 0
-            cont_lum_dict["L_CONT_TOT_1350"]= {'chain':lum}
-        if (key=="F_CONT_TOT_3000"):
-            flux = (cont_flux_dict[key]['chain']) * flux_norm * fit_norm
-            # Convert fluxes to luminosities and normalize by 10^(+42) to avoid numerical issues 
-            lum   = np.log10((flux * 4*np.pi * d_cm**2	) * 3000.0) #/ 1.0E+42
-            lum[~np.isfinite(lum)] = 0
-            cont_lum_dict["L_CONT_TOT_3000"]= {'chain':lum}
-        if (key=="F_CONT_TOT_5100"):
-            flux = (cont_flux_dict[key]['chain']) * flux_norm * fit_norm
-            # Convert fluxes to luminosities and normalize by 10^(+42) to avoid numerical issues 
-            lum   = np.log10((flux * 4*np.pi * d_cm**2	) * 5100.0) #/ 1.0E+42
-            lum[~np.isfinite(lum)] = 0
-            cont_lum_dict["L_CONT_TOT_5100"]= {'chain':lum}
-        # AGN cont. lum.
-        if (key=="F_CONT_AGN_1350"):
-            flux = (cont_flux_dict[key]['chain']) * flux_norm * fit_norm
-            # Convert fluxes to luminosities and normalize by 10^(+42) to avoid numerical issues 
-            lum   = np.log10((flux * 4*np.pi * d_cm**2	) * 1350.0) #/ 1.0E+42
-            lum[~np.isfinite(lum)] = 0
-            cont_lum_dict["L_CONT_AGN_1350"]= {'chain':lum}
-        if (key=="F_CONT_AGN_3000"):
-            flux = (cont_flux_dict[key]['chain']) * flux_norm * fit_norm
-            # Convert fluxes to luminosities and normalize by 10^(+42) to avoid numerical issues 
-            lum   = np.log10((flux * 4*np.pi * d_cm**2	) * 3000.0) #/ 1.0E+42
-            lum[~np.isfinite(lum)] = 0
-            cont_lum_dict["L_CONT_AGN_3000"]= {'chain':lum}
-        if (key=="F_CONT_AGN_5100"):
-            flux = (cont_flux_dict[key]['chain']) * flux_norm * fit_norm
-            # Convert fluxes to luminosities and normalize by 10^(+42) to avoid numerical issues 
-            lum   = np.log10((flux * 4*np.pi * d_cm**2	) * 5100.0) #/ 1.0E+42
-            lum[~np.isfinite(lum)] = 0
-            cont_lum_dict["L_CONT_AGN_5100"]= {'chain':lum}
-        # Host cont. lum
-        if (key=="F_CONT_HOST_1350"):
-            flux = (cont_flux_dict[key]['chain']) * flux_norm * fit_norm
-            # Convert fluxes to luminosities and normalize by 10^(+42) to avoid numerical issues 
-            lum   = np.log10((flux * 4*np.pi * d_cm**2	) * 1350.0) #/ 1.0E+42
-            lum[~np.isfinite(lum)] = 0
-            cont_lum_dict["L_CONT_HOST_1350"]= {'chain':lum}
-        if (key=="F_CONT_HOST_3000"):
-            flux = (cont_flux_dict[key]['chain']) * flux_norm * fit_norm
-            # Convert fluxes to luminosities and normalize by 10^(+42) to avoid numerical issues 
-            lum   = np.log10((flux * 4*np.pi * d_cm**2	) * 3000.0) #/ 1.0E+42
-            lum[~np.isfinite(lum)] = 0
-            cont_lum_dict["L_CONT_HOST_3000"]= {'chain':lum}
-        if (key=="F_CONT_HOST_5100"):
-            flux = (cont_flux_dict[key]['chain']) * flux_norm * fit_norm
-            # Convert fluxes to luminosities and normalize by 10^(+42) to avoid numerical issues 
-            lum   = np.log10((flux * 4*np.pi * d_cm**2	) * 5100.0) #/ 1.0E+42
-            lum[~np.isfinite(lum)] = 0
-            cont_lum_dict["L_CONT_HOST_5100"]= {'chain':lum}
-        # AGN fractions
-        if (key=="AGN_FRAC_4000"):
-            cont_lum_dict["AGN_FRAC_4000"]= {'chain':cont_flux_dict[key]['chain']}
-        if (key=="AGN_FRAC_7000"):
-            cont_lum_dict["AGN_FRAC_7000"]= {'chain':cont_flux_dict[key]['chain']}	
-        # Host fractions
-        if (key=="HOST_FRAC_4000"):
-            cont_lum_dict["HOST_FRAC_4000"]= {'chain':cont_flux_dict[key]['chain']}
-        if (key=="HOST_FRAC_7000"):
-            cont_lum_dict["HOST_FRAC_7000"]= {'chain':cont_flux_dict[key]['chain']}	
-
-
-    for key in cont_lum_dict:
-        if verbose:
-            print('		  %s' % key)
-        chain = cont_lum_dict[key]['chain'] # shape = (nwalkers,niter)
-        chain[~np.isfinite(chain)] = 0
-
-        # Burned-in + Flattened (along walker axis) chain
-        # If burn_in is larger than the size of the chain, then 
-        # take 50% of the chain length instead.
-        if (burn_in >= np.shape(chain)[1]):
-            burn_in = int(0.5*np.shape(chain)[1])
-            # print('\n Burn-in is larger than chain length! Using 50% of chain length for burn-in...\n')
-
-        # Remove burn_in iterations and flatten for histogram
-        flat = chain[:,burn_in:]
-        # flat = flat.flat
-        flat = flat.flatten()
-
-        # 
-        if len(flat) > 0:
-
-            # Histogram; 'Doane' binning produces the best results from tests.
-            hist, bin_edges = np.histogram(flat, bins='doane', density=False)
-
-            # Calculate HDI
-            p68 = compute_HDI(flat,0.68)
-            p95 = compute_HDI(flat,0.95)
-
-            post_max  = bin_edges[hist.argmax()] # posterior max estimated from KDE
-            post_mean = np.nanmean(flat)
-            post_med  = np.nanmedian(flat)
-            low_68  = post_med - p68[0]
-            upp_68  = p68[1] - post_med
-            low_95  = post_med - p95[0]
-            upp_95  = p95[1] - post_med
-            post_std  = np.nanstd(flat)
-            post_mad  = stats.median_abs_deviation(flat)
-
-            # Quality flags; flag any parameter that violates parameter limits by 1.5 sigma
-            flag = 0  
-            if ( (post_med-1.5*low_68) <= 0 ):
-                flag+=1
-            if ~np.isfinite(post_med) or ~np.isfinite(low_68) or ~np.isfinite(upp_68):
-                flag+=1
-
-            cont_lum_dict[key]['par_best']  = post_med # maximum of posterior distribution
-            cont_lum_dict[key]['ci_68_low']   = low_68	# lower 68% confidence interval
-            cont_lum_dict[key]['ci_68_upp']   = upp_68	# upper 68% confidence interval
-            cont_lum_dict[key]['ci_95_low']   = low_95	# lower 95% confidence interval
-            cont_lum_dict[key]['ci_95_upp']   = upp_95	# upper 95% confidence interval
-            cont_lum_dict[key]['post_max']  = post_max
-            cont_lum_dict[key]['mean']    = post_mean # mean of posterior distribution
-            cont_lum_dict[key]['std_dev']    = post_std	# standard deviation
-            cont_lum_dict[key]['median']      = post_med # median of posterior distribution
-            cont_lum_dict[key]['med_abs_dev'] = post_mad	# median absolute deviation
-            cont_lum_dict[key]['flat_chain']  = flat   # flattened samples used for histogram.
-            cont_lum_dict[key]['flag']	   = flag 
-
-        else:
-            cont_lum_dict[key]['par_best']  = np.nan # maximum of posterior distribution
-            cont_lum_dict[key]['ci_68_low']   = np.nan	# lower 68% confidence interval
-            cont_lum_dict[key]['ci_68_upp']   = np.nan	# upper 68% confidence interval
-            cont_lum_dict[key]['ci_95_low']   = np.nan	# lower 95% confidence interval
-            cont_lum_dict[key]['ci_95_upp']   = np.nan	# upper 95% confidence interval
-            cont_lum_dict[key]['post_max']  = np.nan
-            cont_lum_dict[key]['mean']    = np.nan # mean of posterior distribution
-            cont_lum_dict[key]['std_dev']    = np.nan	# standard deviation
-            cont_lum_dict[key]['median']      = np.nan # median of posterior distribution
-            cont_lum_dict[key]['med_abs_dev'] = np.nan	# median absolute deviation
-            cont_lum_dict[key]['flat_chain']  = flat   # flattened samples used for histogram.
-            cont_lum_dict[key]['flag']	    = 1 
-
-    return cont_lum_dict
-
-def int_vel_disp_plots(int_vel_disp_blob,burn_in,nwalkers,z,run_dir,H0=70.0,Om0=0.30,verbose=True):
-    """
-    Generates best-fit values, uncertainties, and plots for 
-    component luminosities from MCMC sample chains.
-    """
-    if verbose:
-        print("\n Generating model integrated velocity moment distributions...\n")
-
-    # Create a flux dictionary
-    niter	= np.shape(int_vel_disp_blob)[0]
-    nwalkers = np.shape(int_vel_disp_blob)[1]
-    int_vel_disp_dict = {}
-    for key in int_vel_disp_blob[0][0]:
-        int_vel_disp_dict[key] = {'chain':np.empty([nwalkers,niter])}
-
-    # Restructure the int_vel_disp_blob for the int_vel_disp_dict
-    for i in range(niter):
-        for j in range(nwalkers):
-            for key in int_vel_disp_blob[0][0]:
-                int_vel_disp_dict[key]['chain'][j,i] = int_vel_disp_blob[i][j][key]
-
-    for key in int_vel_disp_dict:
-        if verbose:
-            print('		  %s' % key)
-        chain = int_vel_disp_dict[key]['chain'] # shape = (nwalkers,niter)
-        chain[~np.isfinite(chain)] = 0
-
-        # Burned-in + Flattened (along walker axis) chain
-        # If burn_in is larger than the size of the chain, then 
-        # take 50% of the chain length instead.
-        if (burn_in >= np.shape(chain)[1]):
-            burn_in = int(0.5*np.shape(chain)[1])
-            # print('\n Burn-in is larger than chain length! Using 50% of chain length for burn-in...\n')
-
-        # Remove burn_in iterations and flatten for histogram
-        flat = chain[:,burn_in:]
-        # flat = flat.flat
-        flat = flat.flatten()
-
-        # 
-        if len(flat) > 0:
-
-            # Histogram; 'Doane' binning produces the best results from tests.
-            hist, bin_edges = np.histogram(flat, bins='doane', density=False)
-
-            # Calculate HDI
-            p68 = compute_HDI(flat,0.68)
-            p95 = compute_HDI(flat,0.95)
-
-            post_max  = bin_edges[hist.argmax()] # posterior max estimated from KDE
-            post_mean = np.nanmean(flat)
-            post_med  = np.nanmedian(flat)
-            low_68  = post_med - p68[0]
-            upp_68  = p68[1] - post_med
-            low_95  = post_med - p95[0]
-            upp_95  = p95[1] - post_med
-            post_std  = np.nanstd(flat)
-            post_mad  = stats.median_abs_deviation(flat)
-
-            # Quality flags; flag any parameter that violates parameter limits by 1.5 sigma
-            flag = 0  
-            if ( (post_med-1.5*low_68) <= 0 ):
-                flag+=1
-            if ~np.isfinite(post_med) or ~np.isfinite(low_68) or ~np.isfinite(upp_68):
-                flag+=1
-
-            int_vel_disp_dict[key]['par_best']  = post_med # maximum of posterior distribution
-            int_vel_disp_dict[key]['ci_68_low']   = low_68	# lower 68% confidence interval
-            int_vel_disp_dict[key]['ci_68_upp']   = upp_68	# upper 68% confidence interval
-            int_vel_disp_dict[key]['ci_95_low']   = low_95	# lower 95% confidence interval
-            int_vel_disp_dict[key]['ci_95_upp']   = upp_95	# upper 95% confidence interval
-            int_vel_disp_dict[key]['post_max']  = post_max
-            int_vel_disp_dict[key]['mean']    = post_mean # mean of posterior distribution
-            int_vel_disp_dict[key]['std_dev']    = post_std	# standard deviation
-            int_vel_disp_dict[key]['median']      = post_med # median of posterior distribution
-            int_vel_disp_dict[key]['med_abs_dev'] = post_mad	# median absolute deviation
-            int_vel_disp_dict[key]['flat_chain']  = flat   # flattened samples used for histogram.
-            int_vel_disp_dict[key]['flag']	   = flag 
-
-        else:
-            int_vel_disp_dict[key]['par_best']  = np.nan # maximum of posterior distribution
-            int_vel_disp_dict[key]['ci_68_low']   = np.nan	# lower 68% confidence interval
-            int_vel_disp_dict[key]['ci_68_upp']   = np.nan	# upper 68% confidence interval
-            int_vel_disp_dict[key]['ci_95_low']   = np.nan	# lower 95% confidence interval
-            int_vel_disp_dict[key]['ci_95_upp']   = np.nan	# upper 95% confidence interval
-            int_vel_disp_dict[key]['post_max']  = np.nan
-            int_vel_disp_dict[key]['mean']    = np.nan # mean of posterior distribution
-            int_vel_disp_dict[key]['std_dev']    = np.nan	# standard deviation
-            int_vel_disp_dict[key]['median']      = np.nan # median of posterior distribution
-            int_vel_disp_dict[key]['med_abs_dev'] = np.nan	# median absolute deviation
-            int_vel_disp_dict[key]['flat_chain']  = flat   # flattened samples used for histogram.
-            int_vel_disp_dict[key]['flag']	    = 1 
-
-    return int_vel_disp_dict
-
-
 def write_params(param_dict,header_dict,bounds,run_dir,binnum=None,spaxelx=None,spaxely=None):
     """
     Writes all measured parameters, fluxes, luminosities, and extra stuff 
@@ -3926,7 +3001,7 @@ def write_params(param_dict,header_dict,bounds,run_dir,binnum=None,spaxelx=None,
     std_dev  = []
     median    = []
     med_abs_dev = []
-    flags 	 = []
+    flags    = []
 
     # Param dict
     for key in param_dict:
@@ -3943,7 +3018,7 @@ def write_params(param_dict,header_dict,bounds,run_dir,binnum=None,spaxelx=None,
         flags.append(param_dict[key]['flag'])
 
     # Sort param_names alphabetically
-    i_sort	 = np.argsort(par_names)
+    i_sort   = np.argsort(par_names)
     par_names   = np.array(par_names)[i_sort] 
     par_best    = np.array(par_best)[i_sort]  
     ci_68_low   = np.array(ci_68_low)[i_sort]   
@@ -3954,7 +3029,7 @@ def write_params(param_dict,header_dict,bounds,run_dir,binnum=None,spaxelx=None,
     std_dev  = np.array(std_dev)[i_sort]
     median    = np.array(median)[i_sort]   
     med_abs_dev = np.array(med_abs_dev)[i_sort] 
-    flags	  = np.array(flags)[i_sort]	 
+    flags     = np.array(flags)[i_sort]  
 
     # Write best-fit parameters to FITS table
     col1  = fits.Column(name='parameter', format='30A', array=par_names)
@@ -4001,7 +3076,7 @@ def write_chains(param_dict,run_dir):
     """
 
     # for key in param_dict:
-    # 	print(key,np.shape(param_dict[key]["chain"]))
+    #   print(key,np.shape(param_dict[key]["chain"]))
 
     cols = []
     # Construct a column for each parameter and chain
@@ -4125,7 +3200,7 @@ def plot_best_model(param_dict,
         return new_center
 
     output_model = True
-    fit_type	 = 'final'
+    fit_type     = 'final'
     comp_dict = fit_model(par_best,
                           param_names,
                           line_list,
@@ -4201,9 +3276,9 @@ def plot_best_model(param_dict,
             elif key=='Z_OPT_FEII_TEMPLATE':
                 ax1.plot(comp_dict['WAVE'], comp_dict['Z_OPT_FEII_TEMPLATE'], color='xkcd:rust', linewidth=0.5, linestyle='-' , label='Z-transition FeII')
         elif (key=='UV_IRON_TEMPLATE'):
-            ax1.plot(comp_dict['WAVE'], comp_dict['UV_IRON_TEMPLATE'], color='xkcd:bright purple', linewidth=0.5, linestyle='-' , label='UV Iron'	 )
+            ax1.plot(comp_dict['WAVE'], comp_dict['UV_IRON_TEMPLATE'], color='xkcd:bright purple', linewidth=0.5, linestyle='-' , label='UV Iron'    )
         elif (key=='BALMER_CONT'):
-            ax1.plot(comp_dict['WAVE'], comp_dict['BALMER_CONT'], color='xkcd:bright green', linewidth=0.5, linestyle='--' , label='Balmer Continuum'	 )
+            ax1.plot(comp_dict['WAVE'], comp_dict['BALMER_CONT'], color='xkcd:bright green', linewidth=0.5, linestyle='--' , label='Balmer Continuum'    )
         # Plot emission lines by cross-referencing comp_dict with line_list
         if (key in line_list):
             if (line_list[key]["line_type"]=="na"):
@@ -4338,14 +3413,14 @@ def write_log(output_val,output_type,run_dir):
             logfile.write('\n')
             logfile.write('\n### Emcee Options ###')
             logfile.write('\n-----------------------------------------------------------------------------------------------------------------')
-            logfile.write('\n{0:<30}{1:<30}'.format('ndim'		, ndim ))
-            logfile.write('\n{0:<30}{1:<30}'.format('nwalkers'	, nwalkers ))
+            logfile.write('\n{0:<30}{1:<30}'.format('ndim'      , ndim ))
+            logfile.write('\n{0:<30}{1:<30}'.format('nwalkers'  , nwalkers ))
             logfile.write('\n{0:<30}{1:<30}'.format('auto_stop'   , str(auto_stop) ))
             logfile.write('\n{0:<30}{1:<30}'.format('user burn_in', burn_in ))
             logfile.write('\n{0:<30}{1:<30}'.format('write_iter'  , write_iter ))
             logfile.write('\n{0:<30}{1:<30}'.format('write_thresh', write_thresh ))
-            logfile.write('\n{0:<30}{1:<30}'.format('min_iter'	, min_iter ))
-            logfile.write('\n{0:<30}{1:<30}'.format('max_iter'	, max_iter ))
+            logfile.write('\n{0:<30}{1:<30}'.format('min_iter'  , min_iter ))
+            logfile.write('\n{0:<30}{1:<30}'.format('max_iter'  , max_iter ))
             logfile.write('\n{0:<30}{1:<30}'.format('start_time'  , a ))
             logfile.write('\n-----------------------------------------------------------------------------------------------------------------')
         return None
@@ -4357,10 +3432,10 @@ def write_log(output_val,output_type,run_dir):
             logfile.write('\n')
             logfile.write('\n### Autocorrelation Options ###')
             logfile.write('\n-----------------------------------------------------------------------------------------------------------------')
-            logfile.write('\n{0:<30}{1:<30}'.format('min_samp'  , min_samp	 ))
+            logfile.write('\n{0:<30}{1:<30}'.format('min_samp'  , min_samp   ))
             logfile.write('\n{0:<30}{1:<30}'.format('tolerance%', autocorr_tol ))
             logfile.write('\n{0:<30}{1:<30}'.format('ncor_times', ncor_times   ))
-            logfile.write('\n{0:<30}{1:<30}'.format('conv_type' , str(conv_type)	))
+            logfile.write('\n{0:<30}{1:<30}'.format('conv_type' , str(conv_type)    ))
             logfile.write('\n-----------------------------------------------------------------------------------------------------------------')
         return None
 

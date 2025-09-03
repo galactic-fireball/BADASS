@@ -1,12 +1,12 @@
 import astropy.constants as const
+from astropy.stats import mad_std
 import copy
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numexpr as ne
 import numpy as np
 
-from utils.utils import find_nearest
-
+import utils.utils as ba_utils
 
 def calc_new_center(center, voff):
         return (voff*center)/const.c.to('km/s').value + center
@@ -166,7 +166,7 @@ def create_test_plot(target, fit_results, label_A, label_B, test_title=None):
                 continue
 
             xloc = calc_new_center(line_dict['center'], voff)
-            idx = find_nearest(comp_dict['WAVE'], xloc)[1]
+            idx = ba_utils.find_nearest(comp_dict['WAVE'], xloc)[1]
             yloc = np.max([comp_dict['DATA'][idx], comp_dict['MODEL'][idx]])*1.05
 
             ax[0].annotate(line_dict['label'], xy=(xloc,yloc), xycoords='data', xytext=(xloc,yloc), textcoords='data', horizontalalignment='center', verticalalignment='center', color='xkcd:white', fontsize=6)
@@ -301,7 +301,7 @@ def max_like_plot(ctx):
             voff = ne.evaluate(line_dict['voff'], local_dict=ctx.cur_params).item()
         xloc = calc_new_center(center, voff)
         offset_factor = 0.05
-        wave_arg = find_nearest(ctx.target.wave, xloc)[1]
+        wave_arg = ba_utils.find_nearest(ctx.target.wave, xloc)[1]
         yloc = np.max([comp_dict['DATA'][wave_arg], comp_dict['MODEL'][wave_arg]]) + (offset_factor*np.max(comp_dict['DATA']))
         ax1.annotate(label, xy=(xloc, yloc), xycoords='data', xytext=(xloc, yloc), textcoords='data',
                      horizontalalignment='center', verticalalignment='bottom', color='xkcd:white', fontsize=6)
@@ -402,4 +402,89 @@ def plotly_best_fit(ctx):
         
     fig.update_xaxes(matches='x')
     fig.write_html(ctx.target.outdir.joinpath('%s_bestfit.html' % ctx.target.outdir.name), include_mathjax='cdn')
+
+
+def posterior_plot(key, mcmc_results, chain, burn_in, outdir):
+    # Plot posterior distributions and chains from MCMC.
+
+    hist, bin_edges = np.histogram(mcmc_results['flat_chain'], bins='doane', density=False)
+    # Generate pseudo-data on the ends of the histogram; this prevents the KDE from weird edge behavior
+    n_pseudo = 3
+    bin_width = bin_edges[1]-bin_edges[0]
+    lower_pseudo_data = np.random.uniform(low=bin_edges[0]-bin_width*n_pseudo, high=bin_edges[0], size=hist[0]*n_pseudo)
+    upper_pseudo_data = np.random.uniform(low=bin_edges[-1], high=bin_edges[-1]+bin_width*n_pseudo, size=hist[-1]*n_pseudo)
+    h = ba_utils.kde_bandwidth(mcmc_results['flat_chain']) # Calculate bandwidth for KDE (Silverman method)
+
+    # Create a subsampled grid for the KDE based on the subsampled data;
+    # by default, we subsample by a factor of 10
+    xs = np.linspace(np.min(mcmc_results['flat_chain']), np.max(mcmc_results['flat_chain']), 10*len(hist))
+    kde = ba_utils.gauss_kde(xs, np.concatenate([mcmc_results['flat_chain'], lower_pseudo_data, upper_pseudo_data]), h)
+
+    fig = plt.figure(figsize=(10,8))
+    gs = gridspec.GridSpec(2, 2)
+    gs.update(wspace=0.35, hspace=0.35)
+    ax1 = plt.subplot(gs[0,0])
+    ax2 = plt.subplot(gs[0,1])
+    ax3 = plt.subplot(gs[1,0:2])
+
+    # Plot 1: Histogram plots
+    # 'Doane' binning produces the best results from tests
+    n, bins, patches = ax1.hist(mcmc_results['flat_chain'], bins='doane', histtype='bar', density=True, facecolor='#4200a6', zorder=10)
+    ax1.axvline(mcmc_results['par_best'], linewidth=0.5, color='xkcd:bright aqua', zorder=20, label=r'$p(\theta|x)_{\rm{med}}$')
+    ax1.axvline(mcmc_results['par_best']-mcmc_results['ci_68_low'], linewidth=0.5, linestyle='--', color='xkcd:bright aqua', zorder=20, label=r'$\textrm{68\% conf.}$')
+    ax1.axvline(mcmc_results['par_best']+mcmc_results['ci_68_upp'], linewidth=0.5, linestyle='--', color='xkcd:bright aqua', zorder=20)
+    ax1.axvline(mcmc_results['par_best']-mcmc_results['ci_95_low'], linewidth=0.5, linestyle=':', color='xkcd:bright aqua', zorder=20, label=r'$\textrm{95\% conf.}$')
+    ax1.axvline(mcmc_results['par_best']+mcmc_results['ci_95_low'], linewidth=0.5, linestyle=':', color='xkcd:bright aqua', zorder=20)
+
+    ax1.plot(xs, kde, linewidth=0.5, color='xkcd:bright pink', zorder=15, label='KDE')
+    ax1.plot(xs, kde, linewidth=3.0, color='xkcd:bright pink', alpha=0.50, zorder=15)
+    ax1.plot(xs, kde, linewidth=6.0, color='xkcd:bright pink', alpha=0.20, zorder=15)
+
+    ax1.grid(visible=True, which='major', axis='both', alpha=0.15, color='xkcd:bright pink', linewidth=0.5, zorder=0)
+    ax1.set_xlabel(r'%s' % key, fontsize=12)
+    ax1.set_ylabel(r'$p$(%s)' % key, fontsize=12)
+    ax1.legend(fontsize=6)
+    
+    # Plot 2: best fit values
+    values_dict = {
+        'par_best': r'$p(\theta|x)_{\rm{med}}$',
+        'ci_68_low': r'$\rm{CI\;68\%\;low}$', 'ci_68_upp': r'$\rm{CI\;68\%\;upp}$',
+        'ci_95_low': r'$\rm{CI\;95\%\;low}$', 'ci_95_upp': r'$\rm{CI\;95\%\;upp}$',
+        'mean': r'$\rm{Mean}$', 'std_dev': r'$\rm{Std.\;Dev.}$',
+        'median': r'$\rm{Median}$', 'med_abs_dev': r'$\rm{Med. Abs. Dev.}$',
+    }
+
+    start, step = 1, 0.12
+    vspace = np.linspace(start, 1-len(values_dict)*step, len(values_dict), endpoint=False)
+    for i, (value, label) in enumerate(values_dict.items()):
+        ax2.annotate('{0:>30}{1:<2}{2:<30.3f}'.format(label, r'$\qquad=\qquad$', mcmc_results[value]),
+                    xy=(0.5, vspace[i]),  xycoords='axes fraction',
+                    xytext=(0.95, vspace[i]), textcoords='axes fraction',
+                    horizontalalignment='right', verticalalignment='top', fontsize=10)
+    ax2.axis('off')
+
+    # Plot 3: Chain plot
+    nwalkers, niters = chain.shape
+    for w in range(nwalkers):
+        ax3.plot(range(niters), chain[w,:], color='white', linewidth=0.5, alpha=0.5, zorder=0)
+
+    # Calculate median and median absolute deviation of walkers at each iteration; we have depreciated
+    # the average and standard deviation because they do not behave well for outlier walkers, which
+    # also don't agree with histograms
+    c_med = np.nanmedian(chain, axis=0)
+    c_madstd = mad_std(chain)
+
+    ax3.plot(range(niters), c_med, color='xkcd:bright pink', linewidth=2.0, label='Median', zorder=10)
+    ax3.fill_between(range(niters), c_med+c_madstd, c_med-c_madstd, color='#4200a6', alpha=0.5, linewidth=1.5, label='Median Absolute Dev.', zorder=5)
+    ax3.axvline(burn_in, linestyle='--', linewidth=0.5, color='xkcd:bright aqua', label='burn-in = %d' % burn_in, zorder=20)
+    ax3.grid(visible=True, which='major', axis='both', alpha=0.15, color='xkcd:bright pink', linewidth=0.5, zorder=0)
+    ax3.set_xlim(0,niters)
+    ax3.set_xlabel(r'$N_\mathrm{iter}$', fontsize=12)
+    ax3.set_ylabel(r'%s' % key, fontsize=12)
+    ax3.legend(loc='upper left')
+
+    histo_dir = outdir.joinpath('histogram_plots')
+    histo_dir.mkdir(parents=True, exist_ok=True)
+    plt.savefig(histo_dir.joinpath('%s_MCMC.png' % (key)), bbox_inches='tight', dpi=300)
+    plt.close()
 

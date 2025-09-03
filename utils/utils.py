@@ -219,6 +219,23 @@ def window_filter(spec,size):
     return med_spec
 
 
+def insert_nan(spec,ibad):
+    """
+    Inserts additional NaN values to neighboriing ibad pixels.
+    """
+    all_bad = np.unique(np.concatenate([ibad-1,ibad,ibad+1]))
+    ibad_new = []
+    for i in all_bad:
+        if (i>0) & (i<len(spec)):
+            ibad_new.append(i)
+    ibad_new = np.array(ibad_new)
+    try:
+        spec[ibad_new] = np.nan
+        return spec
+    except:
+        return spec
+
+
 def interpolate_metal(spec,noise):
     """
     Interpolates over metal absorption lines for 
@@ -339,6 +356,62 @@ def rebin(x, factor):
         xx = x.reshape(len(x)//factor, factor, -1).mean(1).squeeze()
 
     return xx
+
+
+def gauss_kde(xs,data,h):
+    # Gaussian kernel density estimation.
+    def gauss_kernel(x):
+        return (1./np.sqrt(2.*np.pi)) * np.exp(-x**2/2)
+
+    kde = np.sum((1./h) * gauss_kernel((xs.reshape(len(xs),1)-data)/h), axis=1)
+    kde = kde/np.trapz(kde,xs) # normalize
+    return kde
+
+
+def kde_bandwidth(data):
+    # Silverman bandwidth estimation for kernel density estimation.
+    return (4./(3.*len(data)))**(1./5.) * np.nanstd(data)
+
+
+def compute_HDI(trace, mass_frac) :
+    """
+    Returns highest probability density region given by
+    a set of samples.
+    
+    Source: http://bebi103.caltech.edu.s3-website-us-east-1.amazonaws.com/2015/tutorials/l06_credible_regions.html
+    
+    Parameters
+    ----------
+    trace : array
+        1D array of MCMC samples for a single variable
+    mass_frac : float with 0 < mass_frac <= 1
+        The fraction of the probability to be included in
+        the HPD.  For example, `massfrac` = 0.95 gives a
+        95% HPD.
+        
+    Returns
+    -------
+    output : array, shape (2,)
+        The bounds of the HPD
+    """
+    # Get sorted list
+    d = np.sort(np.copy(trace))
+
+    # Number of total samples taken
+    n = len(trace)
+    
+    # Get number of samples that should be included in HPD
+    n_samples = np.floor(mass_frac * n).astype(int)
+    
+    # Get width (in units of data) of all intervals with n_samples samples
+    int_width = d[n_samples:] - d[:n-n_samples]
+    
+    # Pick out minimal interval
+    min_int = np.argmin(int_width)
+    
+    # Return interval
+    return np.array([d[min_int], d[min_int+n_samples]])
+
 
 
 # TODO: move to badass_tools
