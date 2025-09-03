@@ -1623,7 +1623,7 @@ class BadassRunContext:
         noise = self.fit_noise[fit_mask]
 
         if fit_stat == 'ML':
-            return np.sum(-0.5 * (data - model)**2 / (noise**2 + np.log(2*np.pi*noise)**2), axis=0)
+            return -0.5*np.sum(((data-model)**2/noise**2) + np.log(2*np.pi*noise**2), axis=0)
 
         if fit_stat == 'OLS':
             return -np.sum((data - model)**2, axis=0)
