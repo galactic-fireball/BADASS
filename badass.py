@@ -1267,8 +1267,8 @@ class BadassRunContext:
         result = op.basinhopping(func=lnprob_wrapper, x0=list(self.cur_params.values()), stepsize=1.0, interval=1, niter=2500, minimizer_kwargs=minimizer_args,
                                  disp=self.verbose, niter_success=n_basinhop, callback=callback_ftn)
 
-        par_best = result['x']
-        self.cur_params = dict(zip(self.cur_params.keys(), par_best))
+        best_fit = result['x']
+        self.cur_params = dict(zip(self.cur_params.keys(), best_fit))
         fun_result = result['fun']
         self.fit_model()
         self.reweight()
@@ -1293,8 +1293,8 @@ class BadassRunContext:
 
                 # return original spectrum for fitting model
                 self.fit_spec = orig_fit_spec
-                par_best = resultmc['x']
-                self.cur_params = dict(zip(self.cur_params.keys(), par_best))
+                best_fit = resultmc['x']
+                self.cur_params = dict(zip(self.cur_params.keys(), best_fit))
                 fun_result = resultmc['fun']
                 self.fit_model()
                 self.update_mc_store(n, fun_result)
@@ -1755,7 +1755,7 @@ class BadassRunContext:
         burn_in = orig_burn_in
         max_iter = orig_max_iter
 
-        # TODO: create Backend class that supports objects (pickle-based?)
+        # TODO: create Backend class that supports objects (pickle-based? npz-based?)
         # backend = emcee.backends.HDFBackend(self.target.outdir.joinpath('log', 'MCMC_chain.h5'))
         # backend.reset(nwalkers, ndim)
 
@@ -1812,13 +1812,26 @@ class BadassRunContext:
         # TODO: output files
         self.collect_mcmc_results(sampler)
 
-        plotting.plotly_best_fit(self)
-        if not self.options.plot_options.plot_param_hist:
-            return
+        if self.options.plot_options.plot_HTML:
+            plotting.plotly_best_fit(self)
 
-        for key in self.param_dict.keys():
-            plotting.posterior_plot(key, self.mcmc_results_dict[key], self.mcmc_result_chains['chains'][key], burn_in, self.target.outdir)
-        plotting.posterior_plot('LOG_LIKE', self.mcmc_results_dict['LOG_LIKE'], self.mcmc_result_chains['chains']['LOG_LIKE'], burn_in, self.target.outdir)
+        if self.options.plot_options.plot_param_hist:
+            for key in self.param_dict.keys():
+                plotting.posterior_plot(key, self.mcmc_results_dict[key], self.mcmc_result_chains['chains'][key], burn_in, self.target.outdir)
+            plotting.posterior_plot('LOG_LIKE', self.mcmc_results_dict['LOG_LIKE'], self.mcmc_result_chains['chains']['LOG_LIKE'], burn_in, self.target.outdir)
+
+        if self.options.plot_options.plot_corner:
+            plotting.corner_plot(self)
+
+        plotting.plot_best_model(self, 'best_fit_model.pdf')
+
+        elap_time = (time.time() - start_time)
+        print('Total Runtime = %s' % (ba_utils.time_convert(elap_time)))
+
+        # TODO:
+        # write_log(elap_time,'total_time',run_dir)
+
+        print('Done MCMC fitting %s! \n' % self.target.options.io_options.output_dir)
 
 
     def initialize_walkers(self, nwalkers):
@@ -1942,6 +1955,7 @@ class BadassRunContext:
 
 
         def get_key_chain(chain, param):
+            # Loop through each iteration of the chain and grab the parameter value
             with np.nditer([chain, None], flags=['refs_ok', 'multi_index', 'buffered'], op_flags=[['readonly'], ['writeonly', 'allocate', 'no_broadcast']]) as it:
                 for x, y in it:
                     y[...] = x.item()[param]
@@ -1949,7 +1963,6 @@ class BadassRunContext:
 
 
         for key in all_chains[0][0].keys():
-            print(key)
             val = get_key_chain(all_chains, key).astype(float)
 
             if (key.split('_')[-1] == 'FLUX') or (key[:6] == 'F_CONT'):
@@ -1976,18 +1989,26 @@ class BadassRunContext:
                 self.mcmc_result_chains['chains'][lum_key] = lum
                 self.mcmc_result_chains['flat_chains'][lum_key] = flatten_chain(lum)
 
+            # TODO: move to stellar template?
+            if key == 'STEL_VEL':
+                zsys = (self.target.z+1) * (1+val/c)-1
+                self.mcmc_result_chains['chains']['Z_SYS'] = zsys
+                self.mcmc_result_chains['flat_chains']['Z_SYS'] = flatten_chain(zsys)
 
+
+        self.fit_model()
         self.mcmc_results_dict = {}
         self.collect_mcmc_pars(sampler)
-        self.collect_tied_pars()
+        self.mcmc_output()
 
+
+    result_attrs = ['best_fit', 'ci_68_low', 'ci_68_upp', 'ci_95_low', 'ci_95_upp', 'mean', 'std_dev', 'median', 'med_abs_dev', 'flag']
 
     def collect_mcmc_pars(self, sampler):
         for key, chain in self.mcmc_result_chains['flat_chains'].items():
-            print(key)
 
             if len(chain) == 0:
-                par_results = {k:np.nan for k in result_dict}
+                par_results = {k:np.nan for k in self.result_attrs}
                 par_results['flat_chain'] = flat
                 par_results['flag'] = 1
                 self.mcmc_results_dict[key] = par_results
@@ -1999,7 +2020,7 @@ class BadassRunContext:
                 chain *= self.target.fit_norm
 
             post_med = np.nanmedian(chain)
-            par_results['par_best'] = post_med
+            par_results['best_fit'] = post_med
 
             # 68% confidence interval
             lo, hi = ba_utils.compute_HDI(chain, 0.68)
@@ -2043,11 +2064,30 @@ class BadassRunContext:
                 if post_med-(1.5*par_results['ci_68_low']) <= 0:
                     par_results['flag'] = 1
 
+            elif key == 'Z_SYS':
+                if post_med-(3.0*par_results['ci_68_low']) < 0:
+                    par_results['flag'] = 1
+
             self.mcmc_results_dict[key] = par_results
+
+        self.collect_tied_pars()
+
+        for line_name, line_dict in ({**self.line_list, **self.combined_line_list}).items():
+            disp_res_par_results = {k:np.nan for k in self.result_attrs}
+            disp_res = line_dict['disp_res_kms']
+            disp_res_par_results['best_fit'] = disp_res
+            self.mcmc_results_dict[line_name+'_DISP_RES'] = disp_res_par_results
+
+            self.mcmc_results_dict[line_name+'_DISP_CORR'] = copy.deepcopy(self.mcmc_results_dict[line_name+'_DISP'])
+            self.mcmc_results_dict[line_name+'_DISP_CORR']['best_fit'] = np.nanmax([0.0, np.sqrt(self.mcmc_results_dict[line_name+'_DISP']['best_fit']**2-(disp_res**2))])
+            self.mcmc_results_dict[line_name+'_FWHM_CORR'] = copy.deepcopy(self.mcmc_results_dict[line_name+'_FWHM'])
+            self.mcmc_results_dict[line_name+'_FWHM_CORR']['best_fit'] = np.nanmax([0.0, np.sqrt(self.mcmc_results_dict[line_name+'_FWHM']['best_fit']**2-(disp_res*2.3548)**2)])
+            self.mcmc_results_dict[line_name+'_W80_CORR'] = copy.deepcopy(self.mcmc_results_dict[line_name+'_W80'])
+            self.mcmc_results_dict[line_name+'_W80_CORR']['best_fit'] = np.nanmax([0.0, np.sqrt(self.mcmc_results_dict[line_name+'_W80']['best_fit']**2-(2.567*disp_res)**2)])
 
 
     def collect_tied_pars(self):
-        par_best_dict = {k:v['par_best'] for k,v in self.mcmc_results_dict.items()}
+        best_fit_dict = {k:v['best_fit'] for k,v in self.mcmc_results_dict.items()}
 
         for line_name, line_dict in self.line_list.items():
             for par_name, par_val in line_dict.items():
@@ -2061,7 +2101,7 @@ class BadassRunContext:
                 par_results['init'] = self.param_dict[expr_vars[0]]['init']
                 par_results['plim'] = self.param_dict[expr_vars[0]]['plim']
 
-                par_results['par_best'] = ne.evaluate(par_val, local_dict=par_best_dict).item()
+                par_results['best_fit'] = ne.evaluate(par_val, local_dict=best_fit_dict).item()
                 # TODO: add to self.mcmc_result_chains instead?
                 par_results['chain'] = ne.evaluate(par_val, local_dict=self.mcmc_result_chains['chains'])
                 par_results['flat_chain'] = ne.evaluate(par_val, local_dict=self.mcmc_result_chains['flat_chains'])
@@ -2071,6 +2111,61 @@ class BadassRunContext:
                 par_results['flag'] = np.sum([self.mcmc_results_dict[k]['flag'] for k in expr_vars])
 
                 self.mcmc_results_dict[line_name+'_'+par_name.upper()] = par_results
+
+
+    def mcmc_output(self):
+        # Write chains
+        if self.options.output_options.write_chain:
+            cols = []
+            for key, chain in self.mcmc_result_chains['chains'].items():
+                cols.append(fits.Column(name=key, format='%dD'%(chain.shape[0]*chain.shape[1]), dim='(%d,%d)'%(chain.shape[1],chain.shape[0]), array=[chain]))
+            cols = fits.ColDefs(cols)
+            hdu = fits.BinTableHDU.from_columns(cols)
+            hdu.writeto(self.target.outdir.joinpath('log', 'MCMC_chains.fits'), overwrite=True)
+            hdu.close()
+
+
+        # TODO: remove redundancy with ml bmc.fits
+        # Write best-fit components
+        cols = []
+        for key, value in self.comp_dict.items():
+            cols.append(fits.Column(name=key, format='E', array=value))
+        cols.append(fits.Column(name='MASK', format='E', array=self.target.fit_mask))
+        cols = fits.ColDefs(cols)
+        hdu = fits.BinTableHDU.from_columns(cols)
+        hdu.writeto(self.target.outdir.joinpath('log', 'best_model_components.fits'), overwrite=True)
+
+
+        # TODO: remove redundancy with ml pt.fits
+        # Write parameter table
+        hdr = fits.Header()
+        hdr['z_sdss'] = self.target.z
+        hdr['med_noise'] = np.nanmedian(self.target.noise)
+        hdr['velscale'] = self.target.velscale
+        hdr['fit_norm'] = self.target.fit_norm
+        hdr['flux_norm'] = self.target.options.fit_options.flux_norm
+        primary = fits.PrimaryHDU(header=hdr)
+
+        cols_dict = {'parameter': []}
+        cols_dict.update({k:[] for k in self.result_attrs})
+        for key, result_dict in self.mcmc_results_dict.items():
+            cols_dict['parameter'].append(key)
+            for attr in self.result_attrs:
+                cols_dict[attr].append(result_dict[attr])
+
+        cols = []
+        for key, values in cols_dict.items():
+            fmt = 'E' if key != 'parameter' else '30A'
+            cols.append(fits.Column(name=key, format=fmt, array=values))
+        cols = fits.ColDefs(cols)
+        table = fits.BinTableHDU.from_columns(cols)
+
+        hdu = fits.HDUList([primary, table])
+        hdu.writeto(self.target.outdir.joinpath('log', 'par_table.fits'), overwrite=True)
+        hdu.close()
+
+        # TODO:
+        # write_log((par_names,par_best,ci_68_low,ci_68_upp,ci_95_low,ci_95_upp,mean,std_dev,median,med_abs_dev,flags),'emcee_results',run_dir)
 
 
 def get_continuums(components, size):
@@ -2095,226 +2190,6 @@ def get_continuums(components, size):
 
 
 #################################################################################
-
-
-
-def ignore_this(): 
-
-    # If stellar velocity is fit, estimate the systemic velocity of the galaxy;
-    # SDSS redshifts are based on average emission line redshifts.
-    extra_dict = {}
-    extra_dict["LOG_LIKE"] = log_like_dict
-
-    if ('stel_vel' in param_dict):
-        if verbose:
-            print('\n > Estimating systemic velocity of galaxy...')
-        z_dict = systemic_vel_est(z,param_dict,burn_in,run_dir,plot_param_hist=plot_param_hist)
-        extra_dict = {**extra_dict, **z_dict}
-
-
-    # Combine all the dictionaries
-    combined_pdict = {**param_dict,**flux_dict,**lum_dict,**eqwidth_dict,**cont_lum_dict,**int_vel_disp_dict,**extra_dict}
-
-    # Add the dispersion resolutions and corrected dispersion and widths for all lines
-    all_lines = {**line_list,**combined_line_list}
-    for line in all_lines:
-        disp_res = all_lines[line]["disp_res_kms"]
-        combined_pdict[line+"_DISP_RES"] = {'par_best'  : disp_res, # maximum of posterior distribution
-                                            'ci_68_low'   : np.nan, # lower 68% confidence interval
-                                            'ci_68_upp'   : np.nan, # upper 68% confidence interval
-                                            'ci_95_low'   : np.nan, # lower 95% confidence interval
-                                            'ci_95_upp'   : np.nan, # upper 95% confidence interval
-                                            'post_max'  : np.nan,
-                                            'mean'    : np.nan, # mean of posterior distribution
-                                            'std_dev'    : np.nan,   # standard deviation
-                                            'median'      : np.nan, # median of posterior distribution
-                                            'med_abs_dev' : np.nan,   # median absolute deviation
-                                            'flat_chain'  : np.nan,   # flattened samples used for histogram.
-                                            'flag'    : np.nan, 
-                                            }
-        disp_corr = np.nanmax([0.0,np.sqrt(combined_pdict[line+"_DISP"]["par_best"]**2-(disp_res)**2)])
-        fwhm_corr = np.nanmax([0.0,np.sqrt(combined_pdict[line+"_FWHM"]["par_best"]**2-(disp_res*2.3548)**2)]) 
-        w80_corr  = np.nanmax([0.0,np.sqrt(combined_pdict[line+"_W80"]["par_best"]**2-(2.567*disp_res)**2)]) 
-        # Add entires for these corrected lines (uncertainties are the same)
-        combined_pdict[line+"_DISP_CORR"] = copy.deepcopy(combined_pdict[line+"_DISP"])
-        combined_pdict[line+"_DISP_CORR"]["par_best"] = disp_corr
-        combined_pdict[line+"_FWHM_CORR"] = copy.deepcopy(combined_pdict[line+"_FWHM"])
-        combined_pdict[line+"_FWHM_CORR"]["par_best"] = fwhm_corr
-        combined_pdict[line+"_W80_CORR"] = copy.deepcopy(combined_pdict[line+"_W80"])
-        combined_pdict[line+"_W80_CORR"]["par_best"] = w80_corr
-
-    if verbose:
-        print('\n > Saving Data...')
-
-    # Write all chains to a fits table
-    if (write_chain==True):
-        write_chains(combined_pdict,run_dir)
-
-    # corner plot
-    if (plot_corner==True):
-        corner_plot(param_dict,combined_pdict,corner_options,run_dir)
-
-
-
-    # Plot and save the best fit model and all sub-components
-    comp_dict = plot_best_model(param_dict,
-                    line_list,
-                    combined_line_list,
-                    lam_gal,
-                    galaxy,
-                    noise,
-                    comp_options,
-                    losvd_options,
-                    host_options,
-                    power_options,
-                    poly_options,
-                    opt_feii_options,
-                    uv_iron_options,
-                    balmer_options,
-                    outflow_test_options,
-                    host_template,
-                    opt_feii_templates,
-                    uv_iron_template,
-                    balmer_template,
-                    stel_templates,
-                    blob_pars,
-                    disp_res,
-                    fit_mask,
-                    fit_stat,
-                    velscale,
-                    flux_norm,
-                    fit_norm,
-                    run_dir)
-
-    # Calculate some fit quality parameters which will be added to the dictionary
-    # These will be appended to result_dict and need to be in the same format {"med": , "std", "flag":}
-    # fit_quality_dict = fit_quality_pars(param_dict,len(param_dict),line_list,combined_line_list,comp_dict,fit_mask,fit_type="mcmc",fit_stat=fit_stat)
-    # param_dict = {**param_dict,**fit_quality_dict}
-
-    # Write best fit parameters to fits table
-    # Header information
-    header_dict = {}
-    header_dict["Z_SDSS"]   = z
-    header_dict["MED_NOISE"] = np.nanmedian(noise)
-    header_dict["VELSCALE"]  = velscale
-    header_dict["FLUX_NORM"]  = flux_norm
-    header_dict["FIT_NORM"]  = fit_norm
-    #
-    # param_dict = {**param_dict,**flux_dict,**lum_dict,**eqwidth_dict,**cont_lum_dict,**int_vel_disp_dict,**extra_dict}
-    write_params(combined_pdict,header_dict,bounds,run_dir,binnum,spaxelx,spaxely)
-
-    # Make interactive HTML plot 
-    if plot_HTML:
-        plotly_best_fit(fits_file.parent.name,line_list,fit_mask,run_dir)
-    
-    # Total time
-    elap_time = (time.time() - start_time)
-    if verbose:
-        print("\n Total Runtime = %s" % (time_convert(elap_time)))
-    # Write to log
-    write_log(elap_time,'total_time',run_dir)
-    print(' - Done fitting %s! \n' % fits_file.stem)
-    sys.stdout.flush()
-    return
-
-
-#### Calculate Sysetemic Velocity ################################################
-
-def systemic_vel_est(z,param_dict,burn_in,run_dir,plot_param_hist=True):
-    """
-    Estimates the systemic (stellar) velocity of the galaxy and corrects 
-    the SDSS redshift (which is based on emission lines).
-    """
-
-    c = 299792.458   
-    # Get measured stellar velocity
-    stel_vel = np.array(param_dict['stel_vel']['chain'])
-
-    # Calculate new redshift
-    z_best = (z+1)*(1+stel_vel/c)-1
-
-    # Burned-in + Flattened (along walker axis) chain
-    # If burn_in is larger than the size of the chain, then 
-    # take 50% of the chain length instead.
-    if (burn_in >= np.shape(z_best)[1]):
-        burn_in = int(0.5*np.shape(z_best)[1])
-        # print('\n Burn-in is larger than chain length! Using 50% of chain length for burn-in...\n')
-
-    flat = z_best[:,burn_in:]
-    # flat = flat.flat
-    flat = flat.flatten()
-
-    # Subsample the data into a manageable size for the kde and HDI
-    if len(flat[np.isfinite(flat)]) > 0:
-        # subsampled = np.random.choice(flat[np.isfinite(flat)],size=10000)
-
-        # Histogram; 'Doane' binning produces the best results from tests.
-        hist, bin_edges = np.histogram(flat, bins='doane', density=False)
-
-        # Generate pseudo-data on the ends of the histogram; this prevents the KDE
-        # from weird edge behavior.
-        # n_pseudo = 3 # number of pseudo-bins 
-        # bin_width=bin_edges[1]-bin_edges[0]
-        # lower_pseudo_data = np.random.uniform(low=bin_edges[0]-bin_width*n_pseudo, high=bin_edges[0], size=hist[0]*n_pseudo)
-        # upper_pseudo_data = np.random.uniform(low=bin_edges[-1], high=bin_edges[-1]+bin_width*n_pseudo, size=hist[-1]*n_pseudo)
-
-        # Calculate bandwidth for KDE (Silverman method)
-        # h = kde_bandwidth(flat)
-
-        # Create a subsampled grid for the KDE based on the subsampled data; by
-        # default, we subsample by a factor of 10.
-        # xs = np.linspace(np.min(subsampled),np.max(subsampled),10*len(hist))
-
-        # Calculate KDE
-        # kde = gauss_kde(xs,np.concatenate([subsampled,lower_pseudo_data,upper_pseudo_data]),h)
-        p68 = compute_HDI(flat,0.68)
-        p95 = compute_HDI(flat,0.95)
-
-        post_max  = bin_edges[hist.argmax()] # posterior max estimated from KDE
-        post_mean = np.nanmean(flat)
-        post_med  = np.nanmedian(flat)
-        low_68  = post_med - p68[0]
-        upp_68  = p68[1] - post_med
-        low_95  = post_med - p95[0]
-        upp_95  = p95[1] - post_med
-        post_std  = np.nanstd(flat)
-        post_mad  = stats.median_abs_deviation(flat)
-
-        if ((post_med-(3.0*low_68))<0): 
-            flag = 1
-        else: flag = 0
-
-        z_dict = {}
-        z_dict["z_sys"] = {}
-        z_dict["z_sys"]["par_best"] = post_med
-        z_dict["z_sys"]["ci_68_low"]   = low_68
-        z_dict["z_sys"]["ci_68_upp"]   = upp_68
-        z_dict["z_sys"]["ci_95_low"]   = low_95
-        z_dict["z_sys"]["ci_95_upp"]   = upp_95
-        z_dict["z_sys"]['post_max'] = post_max 
-        z_dict["z_sys"]["mean"]        = post_mean
-        z_dict["z_sys"]["std_dev"]     = post_std
-        z_dict["z_sys"]["median"]      = post_med
-        z_dict["z_sys"]["med_abs_dev"] = post_mad
-        z_dict["z_sys"]["flat_chain"]  = flat
-        z_dict["z_sys"]["flag"]        = flag
-    else:
-        z_dict = {}
-        z_dict["z_sys"] = {}
-        z_dict["z_sys"]["par_best"] = np.nan
-        z_dict["z_sys"]["ci_68_low"]   = np.nan
-        z_dict["z_sys"]["ci_68_upp"]   = np.nan
-        z_dict["z_sys"]["ci_95_low"]   = np.nan
-        z_dict["z_sys"]["ci_95_upp"]   = np.nan
-        z_dict["z_sys"]['post_max'] = np.nan 
-        z_dict["z_sys"]["mean"]        = np.nan
-        z_dict["z_sys"]["std_dev"]     = np.nan
-        z_dict["z_sys"]["median"]      = np.nan
-        z_dict["z_sys"]["med_abs_dev"] = np.nan
-        z_dict["z_sys"]["flat_chain"]  = flat
-        z_dict["z_sys"]["flag"]        = 1  
-    
-    return z_dict
 
 
 #### Likelihood function #########################################################
@@ -2983,403 +2858,6 @@ def auto_window(taus, c):
     if np.any(m):
         return np.argmin(m)
     return len(taus) - 1
-
-
-def write_params(param_dict,header_dict,bounds,run_dir,binnum=None,spaxelx=None,spaxely=None):
-    """
-    Writes all measured parameters, fluxes, luminosities, and extra stuff 
-    (black hole mass, systemic redshifts) and all flags to a FITS table.
-    """
-    # Extract elements from dictionaries
-    par_names   = []
-    par_best    = []
-    ci_68_low   = []
-    ci_68_upp   = []
-    ci_95_low   = []
-    ci_95_upp   = []
-    mean        = []
-    std_dev  = []
-    median    = []
-    med_abs_dev = []
-    flags    = []
-
-    # Param dict
-    for key in param_dict:
-        par_names.append(key)
-        par_best.append(param_dict[key]['par_best'])
-        ci_68_low.append(param_dict[key]['ci_68_low'])
-        ci_68_upp.append(param_dict[key]['ci_68_upp'])
-        ci_95_low.append(param_dict[key]['ci_95_low'])
-        ci_95_upp.append(param_dict[key]['ci_95_upp'])
-        mean.append(param_dict[key]['mean'])
-        std_dev.append(param_dict[key]['std_dev'])
-        median.append(param_dict[key]['median'])
-        med_abs_dev.append(param_dict[key]['med_abs_dev'])
-        flags.append(param_dict[key]['flag'])
-
-    # Sort param_names alphabetically
-    i_sort   = np.argsort(par_names)
-    par_names   = np.array(par_names)[i_sort] 
-    par_best    = np.array(par_best)[i_sort]  
-    ci_68_low   = np.array(ci_68_low)[i_sort]   
-    ci_68_upp   = np.array(ci_68_upp)[i_sort]
-    ci_95_low   = np.array(ci_95_low)[i_sort]   
-    ci_95_upp   = np.array(ci_95_upp)[i_sort]  
-    mean        = np.array(mean)[i_sort]   
-    std_dev  = np.array(std_dev)[i_sort]
-    median    = np.array(median)[i_sort]   
-    med_abs_dev = np.array(med_abs_dev)[i_sort] 
-    flags     = np.array(flags)[i_sort]  
-
-    # Write best-fit parameters to FITS table
-    col1  = fits.Column(name='parameter', format='30A', array=par_names)
-    col2  = fits.Column(name='best_fit', format='E', array=par_best)
-    col3  = fits.Column(name='ci_68_low', format='E', array=ci_68_low)
-    col4  = fits.Column(name='ci_68_upp', format='E', array=ci_68_upp)
-    col5  = fits.Column(name='ci_95_low', format='E', array=ci_95_low)
-    col6  = fits.Column(name='ci_95_upp', format='E', array=ci_95_upp)
-    col7  = fits.Column(name='mean', format='E', array=mean)
-    col8  = fits.Column(name='std_dev', format='E', array=std_dev)
-    col9  = fits.Column(name='median', format='E', array=median)
-    col10 = fits.Column(name='med_abs_dev', format='E', array=med_abs_dev)
-    col11 = fits.Column(name='flag', format='E', array=flags)
-    cols = fits.ColDefs([col1,col2,col3,col4,col5,col6,col7,col8,col9,col10,col11])
-    table_hdu  = fits.BinTableHDU.from_columns(cols)
-
-    if binnum is not None:
-        header_dict['binnum'] = binnum
-    # Header information
-    hdr = fits.Header()
-    for key in header_dict:
-        hdr[key] = header_dict[key]
-    empty_primary = fits.PrimaryHDU(header=hdr)
-
-    hdu = fits.HDUList([empty_primary,table_hdu])
-    if spaxelx is not None and spaxely is not None:
-        hdu2 = fits.BinTableHDU.from_columns(fits.ColDefs([
-            fits.Column(name='spaxelx', array=spaxelx, format='E'),
-            fits.Column(name='spaxely', array=spaxely, format='E')
-        ]))
-        hdu.append(hdu2)
-
-    hdu.writeto(run_dir.joinpath('log', 'par_table.fits'), overwrite=True)
-
-    del hdu
-    # Write full param dict to log file
-    write_log((par_names,par_best,ci_68_low,ci_68_upp,ci_95_low,ci_95_upp,mean,std_dev,median,med_abs_dev,flags),'emcee_results',run_dir)
-    return 
-
-def write_chains(param_dict,run_dir):
-    """
-    Writes all MCMC chains to a FITS Image HDU.  Each FITS 
-    extension corresponds to 
-    """
-
-    # for key in param_dict:
-    #   print(key,np.shape(param_dict[key]["chain"]))
-
-    cols = []
-    # Construct a column for each parameter and chain
-    for key in param_dict:
-        # cols.append(fits.Column(name=key, format='D',array=param_dict[key]['chain']))
-        values = param_dict[key]['chain']
-        cols.append(fits.Column(name=key, format="%dD" % (values.shape[0]*values.shape[1]), dim="(%d,%d)" % (values.shape[1],values.shape[0]), array=[values]))
-    # Write to fits
-    cols = fits.ColDefs(cols)
-    hdu = fits.BinTableHDU.from_columns(cols)
-    hdu.writeto(run_dir.joinpath('log', 'MCMC_chains.fits'), overwrite=True)
-
-    return 
-
-def corner_plot(free_dict,param_dict,corner_options,run_dir):
-    """
-    Calls the corner.py package to create a corner plot of all or selected parameters.
-    """
-
-    # with open("free_dict.pickle","wb") as handle:
-    #    pickle.dump(free_dict,handle)
-    # with open("param_dict.pickle","wb") as handle:
-    #    pickle.dump(param_dict,handle)
-    # with open("corner_options.pickle","wb") as handle:
-    #    pickle.dump(corner_options,handle)
-
-    # Extract the flattened chained from the dicts
-    free_dict  = {i:free_dict[i]["flat_chain"] for i in free_dict}
-    param_dict = {i:param_dict[i]["flat_chain"] for i in param_dict}
-
-    # Extract parameters that are actually in the param_dict
-    valid_dict = {i:param_dict[i] for i in corner_options["pars"] if i in param_dict}
-    
-    if len(valid_dict)>=2:
-        # Stack the flat samples in order 
-        flat_samples = np.vstack([valid_dict[i] for i in valid_dict]).T
-        # labels if not provided
-        if len(corner_options["labels"])==len(valid_dict):
-            labels = corner_options["labels"]
-        else:
-            labels = [key for key in valid_dict]
-        with plt.style.context('default'):
-            fig = corner.corner(flat_samples,labels=labels)
-            plt.savefig(run_dir.joinpath('corner.pdf'))
-        fig.clear()
-        plt.close()
-    elif len(valid_dict)<2:
-        print("\n WARNING: More than two valid parameters are required to generate corner plot! Defaulting to only free parameters... \n")
-        flat_samples = np.vstack([free_dict[i] for i in free_dict]).T
-        labels = [key for key in free_dict]
-        with plt.style.context('default'):
-            fig = corner.corner(flat_samples,labels=labels)
-            plt.savefig(run_dir.joinpath('corner.pdf'))
-        fig.clear()
-        plt.close()
-
-    
-
-    return
-
-
-    
-def plot_best_model(param_dict,
-                    line_list,
-                    combined_line_list,
-                    lam_gal,
-                    galaxy,
-                    noise,
-                    comp_options,
-                    losvd_options,
-                    host_options,
-                    power_options,
-                    poly_options,
-                    opt_feii_options,
-                    uv_iron_options,
-                    balmer_options,
-                    outflow_test_options,
-                    host_template,
-                    opt_feii_templates,
-                    uv_iron_template,
-                    balmer_template,
-                    stel_templates,
-                    blob_pars,
-                    disp_res,
-                    fit_mask,
-                    fit_stat,
-                    velscale,
-                    flux_norm,
-                    fit_norm,
-                    run_dir):
-    """
-    Plots the best fig model and outputs the components to a FITS file for reproduction.
-    """
-
-    param_names  = [key for key in param_dict ]
-    par_best     = [param_dict[key]['par_best'] for key in param_dict ]
-
-    # We already multiplied the amplitudes by fit_norm in param_plots(), 
-    # now we need to use the original amplitudes to generate the best fit model
-    for i in range(len(param_names)):
-        if param_names[i][-4:]=="_AMP":
-            par_best[i]/=fit_norm
-
-
-    def poly_label(kind):
-        if kind=="apoly":
-            order = len([p for p in param_names if p.startswith("APOLY_")])-1
-        if kind=="mpoly":
-            order = len([p for p in param_names if p.startswith("MPOLY_")])-1
-        #
-        ordinal = lambda n: "%d%s" % (n,"tsnrhtdd"[(n//10%10!=1)*(n%10<4)*n%10::4])
-        return ordinal(order)
-
-    def calc_new_center(center,voff):
-        """
-        Calculated new center shifted 
-        by some velocity offset.
-        """
-        c = 299792.458 # speed of light (km/s)
-        new_center = (voff*center)/c + center
-        return new_center
-
-    output_model = True
-    fit_type     = 'final'
-    comp_dict = fit_model(par_best,
-                          param_names,
-                          line_list,
-                          combined_line_list,
-                          lam_gal,
-                          galaxy,
-                          noise,
-                          comp_options,
-                          losvd_options,
-                          host_options,
-                          power_options,
-                          poly_options,
-                          opt_feii_options,
-                          uv_iron_options,
-                          balmer_options,
-                          outflow_test_options,
-                          host_template,
-                          opt_feii_templates,
-                          uv_iron_template,
-                          balmer_template,
-                          stel_templates,
-                          blob_pars,
-                          disp_res,
-                          fit_mask,
-                          velscale,
-                          run_dir,
-                          fit_type,
-                          fit_stat,
-                          output_model)
-
-    # Rescale all components by fit_norm
-    for key in comp_dict:
-        if key not in ["WAVE"]:
-            comp_dict[key] *= fit_norm
-
-    # Put params in dictionary
-    p = dict(zip(param_names,par_best))
-
-    # Maximum Likelihood plot
-    fig = plt.figure(figsize=(14,6)) 
-    gs = gridspec.GridSpec(4, 1)
-    gs.update(wspace=0.0, hspace=0.0) # set the spacing between axes. 
-    ax1  = plt.subplot(gs[0:3,0])
-    ax2  = plt.subplot(gs[3,0])
-
-    for key in comp_dict:
-        if (key=='DATA'):
-            ax1.plot(comp_dict['WAVE'],comp_dict['DATA'],linewidth=0.5,color='white',label='Data',zorder=0)
-        elif (key=='MODEL'):
-            ax1.plot(lam_gal,comp_dict[key], color='xkcd:bright red', linewidth=1.0, label='Model', zorder=15)
-        elif (key=='HOST_GALAXY'):
-            ax1.plot(comp_dict['WAVE'], comp_dict['HOST_GALAXY'], color='xkcd:bright green', linewidth=0.5, linestyle='-', label='Host/Stellar')
-
-        elif (key=='POWER'):
-            ax1.plot(comp_dict['WAVE'], comp_dict['POWER'], color='xkcd:red' , linewidth=0.5, linestyle='--', label='AGN Cont.')
-
-        elif (key=='APOLY'):
-            ax1.plot(comp_dict['WAVE'], comp_dict['APOLY'], color='xkcd:bright purple' , linewidth=0.5, linestyle='-', label='%s-order Add. Poly.' % (poly_label("apoly")))
-        elif (key=='MPOLY'):
-            ax1.plot(comp_dict['WAVE'], comp_dict['MPOLY'], color='xkcd:lavender' , linewidth=0.5, linestyle='-', label='%s-order Mult. Poly.' % (poly_label("mpoly")))
-
-        elif (key in ['NA_OPT_FEII_TEMPLATE','BR_OPT_FEII_TEMPLATE']):
-            ax1.plot(comp_dict['WAVE'], comp_dict['NA_OPT_FEII_TEMPLATE'], color='xkcd:yellow', linewidth=0.5, linestyle='-' , label='Narrow FeII')
-            ax1.plot(comp_dict['WAVE'], comp_dict['BR_OPT_FEII_TEMPLATE'], color='xkcd:orange', linewidth=0.5, linestyle='-' , label='Broad FeII')
-
-        elif (key in ['F_OPT_FEII_TEMPLATE','S_OPT_FEII_TEMPLATE','G_OPT_FEII_TEMPLATE','Z_OPT_FEII_TEMPLATE']):
-            if key=='F_OPT_FEII_TEMPLATE':
-                ax1.plot(comp_dict['WAVE'], comp_dict['F_OPT_FEII_TEMPLATE'], color='xkcd:yellow', linewidth=0.5, linestyle='-' , label='F-transition FeII')
-            elif key=='S_OPT_FEII_TEMPLATE':
-                ax1.plot(comp_dict['WAVE'], comp_dict['S_OPT_FEII_TEMPLATE'], color='xkcd:mustard', linewidth=0.5, linestyle='-' , label='S-transition FeII')
-            elif key=='G_OPT_FEII_TEMPLATE':
-                ax1.plot(comp_dict['WAVE'], comp_dict['G_OPT_FEII_TEMPLATE'], color='xkcd:orange', linewidth=0.5, linestyle='-' , label='G-transition FeII')
-            elif key=='Z_OPT_FEII_TEMPLATE':
-                ax1.plot(comp_dict['WAVE'], comp_dict['Z_OPT_FEII_TEMPLATE'], color='xkcd:rust', linewidth=0.5, linestyle='-' , label='Z-transition FeII')
-        elif (key=='UV_IRON_TEMPLATE'):
-            ax1.plot(comp_dict['WAVE'], comp_dict['UV_IRON_TEMPLATE'], color='xkcd:bright purple', linewidth=0.5, linestyle='-' , label='UV Iron'    )
-        elif (key=='BALMER_CONT'):
-            ax1.plot(comp_dict['WAVE'], comp_dict['BALMER_CONT'], color='xkcd:bright green', linewidth=0.5, linestyle='--' , label='Balmer Continuum'    )
-        # Plot emission lines by cross-referencing comp_dict with line_list
-        if (key in line_list):
-            if (line_list[key]["line_type"]=="na"):
-                ax1.plot(comp_dict['WAVE'], comp_dict[key], color='xkcd:cerulean', linewidth=0.5, linestyle='-', label='Narrow/Core Comp.')
-            if (line_list[key]["line_type"]=="br"):
-                ax1.plot(comp_dict['WAVE'], comp_dict[key], color='xkcd:bright teal', linewidth=0.5, linestyle='-', label='Broad Comp.')
-            if (line_list[key]["line_type"]=="out"):
-                ax1.plot(comp_dict['WAVE'], comp_dict[key], color='xkcd:bright pink', linewidth=0.5, linestyle='-', label='Outflow Comp.')
-            if (line_list[key]["line_type"]=="abs"):
-                ax1.plot(comp_dict['WAVE'], comp_dict[key], color='xkcd:pastel red', linewidth=0.5, linestyle='-', label='Absorption Comp.')
-            if (line_list[key]["line_type"]=="user"):
-                ax1.plot(comp_dict['WAVE'], comp_dict[key], color='xkcd:electric lime', linewidth=0.5, linestyle='-', label='Other')
-
-    # Plot bad pixels
-    ibad = [i for i in range(len(lam_gal)) if i not in fit_mask]
-    if (len(ibad)>0):# and (len(ibad[0])>1):
-        bad_wave = [(lam_gal[m],lam_gal[m+1]) for m in ibad if ((m+1)<len(lam_gal))]
-        ax1.axvspan(bad_wave[0][0],bad_wave[0][0],alpha=0.25,color='xkcd:lime green',label="bad pixels")
-        for i in bad_wave[1:]:
-            ax1.axvspan(i[0],i[0],alpha=0.25,color='xkcd:lime green')
-
-    ax1.set_xticklabels([])
-    ax1.set_xlim(np.min(lam_gal)-10,np.max(lam_gal)+10)
-    # ax1.set_ylim(-0.5*np.nanmedian(comp_dict['MODEL']),np.max([comp_dict['DATA'],comp_dict['MODEL']]))
-    ax1.set_ylabel(r'$f_\lambda$ ($10^{%d}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)' % (np.log10(flux_norm)),fontsize=10)
-    # Residuals
-    sigma_resid = np.nanstd(comp_dict['DATA'][fit_mask]-comp_dict['MODEL'][fit_mask])
-    sigma_noise = np.nanmedian(comp_dict['NOISE'][fit_mask])
-    ax2.plot(lam_gal,(comp_dict['NOISE']*3.0),linewidth=0.5,color="xkcd:bright orange",label='$\sigma_{\mathrm{noise}}=%0.4f$' % (sigma_noise))
-    ax2.plot(lam_gal,(comp_dict['RESID']*3.0),linewidth=0.5,color="white",label='$\sigma_{\mathrm{resid}}=%0.4f$' % (sigma_resid))
-    ax1.axhline(0.0,linewidth=1.0,color='white',linestyle='--')
-    ax2.axhline(0.0,linewidth=1.0,color='white',linestyle='--')
-    # Axes limits 
-    ax_low = np.min([ax1.get_ylim()[0],ax2.get_ylim()[0]])
-    ax_upp = np.nanmax(comp_dict['DATA'][fit_mask])+(3.0 * np.nanmedian(comp_dict['NOISE'][fit_mask])) # np.max([ax1.get_ylim()[1], ax2.get_ylim()[1]])
-    # if np.isfinite(sigma_resid):
-        # ax_upp += 3.0 * sigma_resid
-
-    minimum = [np.nanmin(comp_dict[comp][np.where(np.isfinite(comp_dict[comp]))[0]]) for comp in comp_dict
-               if comp_dict[comp][np.isfinite(comp_dict[comp])[0]].size > 0]
-    if len(minimum) > 0:
-        minimum = np.nanmin(minimum)
-    else:
-        minimum = 0.0
-    ax1.set_ylim(np.nanmin([0.0, minimum]), ax_upp)
-    ax1.set_xlim(np.min(lam_gal),np.max(lam_gal))
-    ax2.set_ylim(ax_low,ax_upp)
-    ax2.set_xlim(np.min(lam_gal),np.max(lam_gal))
-    # Axes labels
-    ax2.set_yticklabels(np.round(np.array(ax2.get_yticks()/3.0)))
-    ax2.set_ylabel(r'$\Delta f_\lambda$',fontsize=12)
-    ax2.set_xlabel(r'Wavelength, $\lambda\;(\mathrm{\AA})$',fontsize=12)
-    handles, labels = ax1.get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    ax1.legend(by_label.values(), by_label.keys(),loc='upper right',fontsize=8)
-    ax2.legend(loc='upper right',fontsize=8)
-
-    # Emission line annotations
-    # Gather up emission line center wavelengths and labels (if available, removing any duplicates)
-    line_labels = []
-    for line in line_list:
-        if "label" in line_list[line]:
-            line_labels.append([line,line_list[line]["label"]])
-    line_labels = set(map(tuple, line_labels))   
-    for label in line_labels:
-        center = line_list[label[0]]["center"]
-        if (line_list[label[0]]["voff"]=="free"):
-            voff = p[label[0]+"_VOFF"]
-        elif (line_list[label[0]]["voff"]!="free"):
-            voff   =  ne.evaluate(line_list[label[0]]["voff"],local_dict = p).item()
-        xloc = calc_new_center(center,voff)
-        yloc = np.max([comp_dict["DATA"][find_nearest(lam_gal,xloc)[1]],comp_dict["MODEL"][find_nearest(lam_gal,xloc)[1]]])
-        ax1.annotate(label[1], xy=(xloc, yloc),  xycoords='data',
-        xytext=(xloc, yloc), textcoords='data',
-        horizontalalignment='center', verticalalignment='bottom',
-        color='xkcd:white',fontsize=6,
-        )
-
-    # Save figure
-    plt.savefig(run_dir.joinpath('best_fit_model.pdf'))
-    # Close plot
-    fig.clear()
-    plt.close()
-    
-
-
-    # Store best-fit components in a FITS file
-    # Construct a column for each parameter and chain
-    cols = []
-    for key in comp_dict:
-        cols.append(fits.Column(name=key, format='E', array=comp_dict[key]))
-
-    # Add fit mask to cols
-    cols.append(fits.Column(name="MASK", format='E', array=fit_mask))
-
-    # Write to fits
-    cols = fits.ColDefs(cols)
-    hdu = fits.BinTableHDU.from_columns(cols)
-    hdu.writeto(run_dir.joinpath('log', 'best_model_components.fits'), overwrite=True)
-    
-    return comp_dict
 
 
 def write_log(output_val,output_type,run_dir):

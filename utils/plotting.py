@@ -1,6 +1,7 @@
 import astropy.constants as const
 from astropy.stats import mad_std
 import copy
+import corner
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numexpr as ne
@@ -182,12 +183,12 @@ def create_test_plot(target, fit_results, label_A, label_B, test_title=None):
 
 
 def plot_ml_results(ctx):
-    max_like_plot(ctx)
+    plot_best_model(ctx, 'max_likelihood_fit.pdf')
     if (not ctx.target.options.mcmc_options.mcmc_fit) and (ctx.target.options.plot_options.plot_HTML):
         plotly_best_fit(ctx)
 
 
-def max_like_plot(ctx):
+def plot_best_model(ctx, plot_name):
     # TODO: need to copy? just let them be rescaled
     comp_dict = copy.deepcopy(ctx.comp_dict)
     for key in comp_dict:
@@ -203,7 +204,7 @@ def max_like_plot(ctx):
     linewidth_default = 0.5
     linestyle_default = '-'
 
-    ordinal = lambda n: "%d%s" % (n,"tsnrhtdd"[(n//10%10!=1)*(n%10<4)*n%10::4])
+    ordinal = lambda n: '%d%s' % (n, 'tsnrhtdd'[(n//10%10!=1)*(n%10<4)*n%10::4])
     apoly_label = ordinal(len([p for p in ctx.fit_results.keys() if p.startswith('APOLY_')])-1)
     mpoly_label = ordinal(len([p for p in ctx.fit_results.keys() if p.startswith('MPOLY_')])-1)
 
@@ -307,7 +308,7 @@ def max_like_plot(ctx):
                      horizontalalignment='center', verticalalignment='bottom', color='xkcd:white', fontsize=6)
 
     ax1.set_title(r'%s'%ctx.target.outdir.name.replace('_', '\\_'), fontsize=12)
-    plt.savefig(ctx.target.outdir.joinpath('max_likelihood_fit.pdf'))
+    plt.savefig(ctx.target.outdir.joinpath(plot_name))
     plt.close()
 
 
@@ -430,11 +431,11 @@ def posterior_plot(key, mcmc_results, chain, burn_in, outdir):
     # Plot 1: Histogram plots
     # 'Doane' binning produces the best results from tests
     n, bins, patches = ax1.hist(mcmc_results['flat_chain'], bins='doane', histtype='bar', density=True, facecolor='#4200a6', zorder=10)
-    ax1.axvline(mcmc_results['par_best'], linewidth=0.5, color='xkcd:bright aqua', zorder=20, label=r'$p(\theta|x)_{\rm{med}}$')
-    ax1.axvline(mcmc_results['par_best']-mcmc_results['ci_68_low'], linewidth=0.5, linestyle='--', color='xkcd:bright aqua', zorder=20, label=r'$\textrm{68\% conf.}$')
-    ax1.axvline(mcmc_results['par_best']+mcmc_results['ci_68_upp'], linewidth=0.5, linestyle='--', color='xkcd:bright aqua', zorder=20)
-    ax1.axvline(mcmc_results['par_best']-mcmc_results['ci_95_low'], linewidth=0.5, linestyle=':', color='xkcd:bright aqua', zorder=20, label=r'$\textrm{95\% conf.}$')
-    ax1.axvline(mcmc_results['par_best']+mcmc_results['ci_95_low'], linewidth=0.5, linestyle=':', color='xkcd:bright aqua', zorder=20)
+    ax1.axvline(mcmc_results['best_fit'], linewidth=0.5, color='xkcd:bright aqua', zorder=20, label=r'$p(\theta|x)_{\rm{med}}$')
+    ax1.axvline(mcmc_results['best_fit']-mcmc_results['ci_68_low'], linewidth=0.5, linestyle='--', color='xkcd:bright aqua', zorder=20, label=r'$\textrm{68\% conf.}$')
+    ax1.axvline(mcmc_results['best_fit']+mcmc_results['ci_68_upp'], linewidth=0.5, linestyle='--', color='xkcd:bright aqua', zorder=20)
+    ax1.axvline(mcmc_results['best_fit']-mcmc_results['ci_95_low'], linewidth=0.5, linestyle=':', color='xkcd:bright aqua', zorder=20, label=r'$\textrm{95\% conf.}$')
+    ax1.axvline(mcmc_results['best_fit']+mcmc_results['ci_95_low'], linewidth=0.5, linestyle=':', color='xkcd:bright aqua', zorder=20)
 
     ax1.plot(xs, kde, linewidth=0.5, color='xkcd:bright pink', zorder=15, label='KDE')
     ax1.plot(xs, kde, linewidth=3.0, color='xkcd:bright pink', alpha=0.50, zorder=15)
@@ -447,7 +448,7 @@ def posterior_plot(key, mcmc_results, chain, burn_in, outdir):
     
     # Plot 2: best fit values
     values_dict = {
-        'par_best': r'$p(\theta|x)_{\rm{med}}$',
+        'best_fit': r'$p(\theta|x)_{\rm{med}}$',
         'ci_68_low': r'$\rm{CI\;68\%\;low}$', 'ci_68_upp': r'$\rm{CI\;68\%\;upp}$',
         'ci_95_low': r'$\rm{CI\;95\%\;low}$', 'ci_95_upp': r'$\rm{CI\;95\%\;upp}$',
         'mean': r'$\rm{Mean}$', 'std_dev': r'$\rm{Std.\;Dev.}$',
@@ -487,4 +488,24 @@ def posterior_plot(key, mcmc_results, chain, burn_in, outdir):
     histo_dir.mkdir(parents=True, exist_ok=True)
     plt.savefig(histo_dir.joinpath('%s_MCMC.png' % (key)), bbox_inches='tight', dpi=300)
     plt.close()
+
+
+def corner_plot(ctx):
+    # create a corner plot of all or selected parameters
+
+    flat_chains = ctx.mcmc_result_chains['flat_chains']
+    plot_pars = [par for par in ctx.options.plot_options.corner_options.pars if par in flat_chains]
+    if len(plot_pars) < 2: plot_pars = list(ctx.param_dict.keys()) # Default to free params
+
+    if len(ctx.options.plot_options.corner_options.labels) == len(plot_pars):
+        labels = ctx.options.plot_options.corner_options.labels
+    else:
+        labels = plot_pars
+
+    flat_samples = np.vstack([flat_chains[k] for k in plot_pars]).T
+
+    with plt.style.context('default'):
+        fig = corner.corner(flat_samples, labels=labels)
+        plt.savefig(ctx.target.outdir.joinpath('corner.pdf'))
+        plt.close()
 
