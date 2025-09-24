@@ -265,9 +265,16 @@ DEFAULT_MCMC_OPTIONS = {
     },
     # Automatic stop using autocorrelation analysis
     'auto_stop': 'bool_false',
-    'conv_type': {
-        'type': ['string', 'list'],
-        'allowed': ['mean','median','all'],
+    'conv_type': { 
+        'anyof': [
+            {
+                'type': 'string',
+                'allowed': ['mean','median','all'],
+            },
+            {
+                'type': 'list',
+            },
+        ],
         'default': 'median',
     },
     # min number of iterations for sampling post-convergence

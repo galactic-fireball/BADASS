@@ -1756,10 +1756,10 @@ class BadassRunContext:
         write_thresh = self.options.mcmc_options.write_thresh
 
         # TODO: for testing
-        # max_iter = 10
-        # min_iter = 3
-        # write_iter = 3
-        # write_thresh = 3
+        max_iter = 10
+        min_iter = 3
+        write_iter = 3
+        write_thresh = 3
 
         # TODO: create Backend class that supports objects (pickle-based? npz-based?)
         # backend = emcee.backends.HDFBackend(self.target.outdir.joinpath('log', 'MCMC_chain.h5'))
@@ -1791,6 +1791,7 @@ class BadassRunContext:
                 ncor_times: int = 0
                 conv_type: Union[str,tuple] = ''
                 conv_func: Callable = None
+                conv_tau: np.ndarray = field(default_factory=lambda: np.full(len(self.cur_params), np.inf))
 
                 stop_iter: int = 0
                 burn_in: int = 0
@@ -1808,9 +1809,7 @@ class BadassRunContext:
                     return (all(sampler.iteration > tau*self.ncor_times)) and (all(tau > 1.0)) and (all(tol < self.max_tol))
 
                 def param_conv(self, sampler, tau, tol):
-                    par_idx = np.array([i for i, key in enumerate(self.ctx.cur_params.keys()) if key in self.conv_type])
-                    target_tau = tau[par_idx]
-                    return (all(sampler.iteration > target_tau*self.ncor_times)) and (all(target_tau > 1.0)) and (all(tol < self.max_tol))
+                    return (all(sampler.iteration > tau[self.conv_idx]*self.ncor_times)) and (all(tau[self.conv_idx] > 1.0)) and (all(tol[self.conv_idx] < self.max_tol))
 
                 def __post_init__(self):
                     self.prev_tau = np.full(len(self.ctx.cur_params), np.inf)
@@ -1827,6 +1826,7 @@ class BadassRunContext:
 
                     if isinstance(self.conv_type,tuple):
                         self.conv_func = self.param_conv
+                        self.conv_idx = np.array([i for i, key in enumerate(self.ctx.cur_params.keys()) if key in self.conv_type])
                     elif self.conv_type in conv_types:
                         self.conv_func = conv_types[self.conv_type]
                     else:
@@ -1851,16 +1851,16 @@ class BadassRunContext:
                         print('Converged at %d iterations\nPerforming %d iterations of sampling'%(it, self.min_samp))
                         self.burn_in = it
                         self.stop_iter = it+self.min_samp
-                        # self.conv_tau = tau
+                        self.conv_tau = tau
                         self.converged = True
-                        return
 
-                    if (self.converged) and (not self.conv_func(sampler, tau, tol)):
+                    elif (self.converged) and (not self.conv_func(sampler, tau, tol)):
                         print('Iteration: %d - Jumped out of convergence, resetting burn_in and max_iter'%it)
                         self.burn_in = self.ctx.options.mcmc_options.burn_in
                         self.stop_iter = self.options.mcmc_options.max_iter
                         self.converged = False
 
+                    self.prev_tau = tau
 
             autocorr = AutoCorr(ctx=self)
 
@@ -1888,6 +1888,7 @@ class BadassRunContext:
             if (it >= write_thresh) and (it % write_iter == 0):
                 print('MCMC iteration: %d' % it)
                 self.add_chain(sampler=sampler)
+                # TODO: log current parameter values
 
                 if not autocorr:
                     continue
@@ -1903,6 +1904,26 @@ class BadassRunContext:
         # write_log(run_time,'emcee_time',run_dir)
 
         # TODO: remove excess zeros on convergence
+
+        if autocorr:
+            autocorr_times = np.stack(autocorr.times, axis=1)
+            autocorr_tols = np.stack(autocorr.tolerances, axis=1)
+            autocorr_dict = {}
+            for k, pname in enumerate(self.cur_params.keys()):
+                autocorr_dict[pname] = {
+                    'tau': autocorr_times[k],
+                    'tol': autocorr_tols[k],
+                }
+
+            # TODO: handle in separate output file
+            np.save(self.target.outdir.joinpath('log', 'autocorr_dict.npy'), autocorr_dict)
+            tau = autocorr.conv_tau if autocorr.converged else autocorr.prev_tau
+            tol = (np.abs(tau-autocorr.prev_tau)/autocorr.prev_tau)
+            ptbl = PrettyTable()
+            ptbl.field_names = ['Parameter', 'Autocorr. Time', 'Target Autocorr. Time', 'Tolerance', 'Converged?']
+            for i, pname in enumerate(self.cur_params.keys()):
+                ptbl.add_row([pname, tau[i], autocorr.max_tol, tol[i], autocorr.ncor_times])
+            print(ptbl)
 
         # TODO: output files
         self.collect_mcmc_results(sampler, autocorr)
@@ -2504,423 +2525,6 @@ def broken_power_law(x, amp, x_break, alpha_1, alpha_2, delta):
     return C
 
 
-def run_emcee(pos,ndim,nwalkers,run_dir,lnprob_args,init_params,param_names,
-              auto_stop,conv_type,min_samp,ncor_times,autocorr_tol,write_iter,write_thresh,burn_in,min_iter,max_iter,
-              verbose=True):
-    """
-    Runs MCMC using emcee on all final parameters and checks for autocorrelation convergence 
-    every write_iter iterations.
-    """
-    # Keep original burn_in and max_iter to reset convergence if jumps out of convergence
-    orig_burn_in  = burn_in
-    orig_max_iter = max_iter
-    # Sorted parameter names
-    param_names = np.array(param_names)
-    i_sort = np.argsort(param_names) # this array gives the ordered indices of parameter names (alphabetical)
-    # Create MCMC_chain.csv if it doesn't exist
-    chain_file = run_dir.joinpath('log', 'MCMC_chain.csv')
-    if not chain_file.exists():
-        with chain_file.open(mode='w') as f:
-            param_string = ', '.join(str(e) for e in param_names)
-            f.write('# iter, ' + param_string) # Write initial parameters
-            best_str = ', '.join(str(e) for e in init_params)
-            f.write('\n 0, '+best_str)
-
-    # initialize the sampler
-    dtype = [('fluxes',dict),('eqwidths',dict),('cont_fluxes',dict),("int_vel_disp",dict),('log_like',float)] # mcmc blobs
-    sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, args=lnprob_args,blobs_dtype=dtype) # blobs_dtype=dtype added for Python2 -> Python3
-
-    start_time = time.time() # start timer
-
-    write_log((ndim,nwalkers,auto_stop,conv_type,burn_in,write_iter,write_thresh,min_iter,max_iter),'emcee_options',run_dir)
-
-    # Initialize stuff for autocorrelation analysis
-    if (auto_stop==True):
-        autocorr_times_all = [] # storage array for autocorrelation times
-        autocorr_tols_all  = [] # storage array for autocorrelation tolerances
-        old_tau = np.full(len(param_names),np.inf)
-        min_samp     = min_samp # minimum iterations to use past convergence
-        ncor_times   = ncor_times # multiplicative tolerance; number of correlation times before which we stop sampling 
-        autocorr_tol = autocorr_tol 
-        stop_iter   = max_iter # stopping iteration; changes once convergence is reached
-        converged  = False
-        # write_log((min_samp,autocorr_tol,ncor_times,conv_type),'autocorr_options',run_dir)
-
-    # If one provides a list of parameters for autocorrelation, it needs to be in the 
-    # form of a tuple.  If one only provides one paraemeter, it needs to be converted to a tuple:
-    if (auto_stop==True) and (conv_type != 'all') and (conv_type != 'mean') and (conv_type != 'median'):
-        if not isinstance(conv_type, tuple):
-            conv_type = (conv_type,) #
-
-    # Check auto_stop convergence type:
-    if (auto_stop==True) and (isinstance(conv_type,tuple)==True) :
-        if all(elem in param_names  for elem in conv_type)==True:
-            if (verbose):
-                print('\n Only considering convergence of following parameters: ')
-                for c in conv_type: 
-                    print('       %s' % c)
-                pass
-        # check to see that all param_names are in conv_type, if not, remove them 
-        # from conv_type
-        else:
-            try:
-                conv_type_list = list(conv_type)
-                for c in conv_type:
-                    if c not in param_names:
-                        conv_type_list.remove(c)
-                conv_type = tuple(conv_type_list)
-                if all(elem in conv_type  for elem in param_names)==True:
-                    if (verbose):
-                        print('\n Only considering convergence of following parameters: ')
-                        for c in conv_type: 
-                            print('       %s' % c)
-                        pass
-                    else:
-                        if (verbose):
-                            print('\n One of more parameters in conv_type is not a valid parameter. Defaulting to median convergence type../.\n')
-                        conv_type='median'
-
-            except:
-                print('\n One of more parameters in conv_type is not a valid parameter. Defaulting to median convergence type../.\n')
-                conv_type='median'
-
-    if (auto_stop==True):
-        write_log((min_samp,autocorr_tol,ncor_times,conv_type),'autocorr_options',run_dir)
-    # Run emcee
-    for k, result in enumerate(sampler.sample(pos, iterations=max_iter)):
-            
-        if ((k+1) % write_iter == 0) and verbose:
-            print("MCMC iteration: %d" % (k+1))
-        best = [] # For storing current chain positions (median of parameter values at write_iter iterations)
-        if ((k+1) % write_iter == 0) and ((k+1)>=write_thresh): # Write every [write_iter] iteration
-            # Chain location for each parameter
-            # Median of last 100 positions for each walker.
-            nwalkers = np.shape(sampler.chain)[0]
-            npar = np.shape(sampler.chain)[2]
-            
-            sampler_chain = sampler.chain[:,:k+1,:]
-            new_sampler_chain = []
-            for i in range(0,np.shape(sampler_chain)[2],1):
-                pflat = sampler_chain[:,:,i] # flattened along parameter
-                flat  = np.concatenate(np.stack(pflat,axis=1),axis=0)
-                new_sampler_chain.append(flat)
-            # best = []
-            for pp in range(0,npar,1):
-                data = new_sampler_chain[pp][-int(nwalkers*write_iter):]
-                med = np.nanmedian(data)
-                best.append(med)
-            # write to file
-            with run_dir.joinpath('log', 'MCMC_chain.csv').open(mode='a') as f:
-                best_str = ', '.join(str(e) for e in best)
-                f.write('\n'+str(k+1)+', '+best_str)
-        # Checking autocorrelation times for convergence
-        if ((k+1) % write_iter == 0) and ((k+1)>=min_iter) and ((k+1)>=write_thresh) and (auto_stop==True):
-            # Autocorrelation analysis of chain to determine convergence; the minimum autocorrelation time is 1.0, which results when a time cannot be accurately calculated.
-            tau = autocorr_convergence(sampler.chain) # Calculate autocorrelation times for each parameter
-
-            autocorr_times_all.append(tau) # append tau to storage array
-            # Calculate tolerances
-            tol = (np.abs(tau-old_tau)/old_tau) * 100.0
-            autocorr_tols_all.append(tol) # append tol to storage array
-            # If convergence for mean autocorrelation time 
-            if (auto_stop==True) & (conv_type == 'mean'):
-                par_conv = [] # converged parameter indices
-                par_not_conv  = [] # non-converged parameter indices
-                for x in range(0,len(param_names),1):
-                    if (round(tau[x],1)>1.0):# & (0.0<round(tol[x],1)<autocorr_tol):
-                        par_conv.append(x) # Append index of parameter for which an autocorrelation time can be calculated; we use these to calculate the mean
-                    else: par_not_conv.append(x)
-                # Calculate mean of parameters for which an autocorrelation time could be calculated
-                par_conv = np.array(par_conv) # Explicitly convert to array
-                par_not_conv = np.array(par_not_conv) # Explicitly convert to array
-
-                if (par_conv.size == 0) and (stop_iter == orig_max_iter):
-                    if verbose:
-                        print('\nIteration = %d' % (k+1))
-                        print('-------------------------------------------------------------------------------')
-                        print('- Not enough iterations for any autocorrelation times!')
-                elif ( (par_conv.size > 0) and (k+1)>(np.nanmean(tau[par_conv]) * ncor_times) and (np.nanmean(tol[par_conv])<autocorr_tol) and (stop_iter == max_iter) ):
-                    if verbose:
-                        print('\n ---------------------------------------------')
-                        print(' | Converged at %d iterations.             | ' % (k+1))
-                        print(' | Performing %d iterations of sampling... | ' % min_samp )
-                        print(' | Sampling will finish at %d iterations.  | ' % ((k+1)+min_samp) )
-                        print(' ---------------------------------------------')
-                    burn_in = (k+1)
-                    stop_iter = (k+1)+min_samp
-                    conv_tau = tau
-                    converged = True
-                elif ((par_conv.size == 0) or ( (k+1)<(np.nanmean(tau[par_conv]) * ncor_times)) or (np.nanmean(tol[par_conv])>autocorr_tol)) and (stop_iter < orig_max_iter):
-                    if verbose:
-                        print('\nIteration = %d' % (k+1))
-                        print('-------------------------------------------------------------------------------')
-                        print('- Jumped out of convergence! Resetting convergence criteria...')
-                        # Reset convergence criteria
-                        print('- Resetting burn_in = %d' % orig_burn_in)
-                        print('- Resetting max_iter = %d' % orig_max_iter)
-                    burn_in = orig_burn_in
-                    stop_iter = orig_max_iter
-                    converged = False
-
-                if (par_conv.size>0):
-                    pnames_sorted = param_names[i_sort]
-                    tau_sorted  = tau[i_sort]
-                    tol_sorted  = tol[i_sort]
-                    best_sorted   = np.array(best)[i_sort]
-                    if verbose:
-                        print('{0:<30}{1:<40}{2:<30}'.format('\nIteration = %d' % (k+1),'%d x Mean Autocorr. Time = %0.2f' % (ncor_times,np.nanmean(tau[par_conv]) * ncor_times),'Mean Tolerance = %0.2f' % np.nanmean(tol[par_conv])))
-                        print('--------------------------------------------------------------------------------------------------------')
-                        print('{0:<30}{1:<20}{2:<20}{3:<20}{4:<20}'.format('Parameter','Current Value','Autocorr. Time','Tolerance','Converged?'))
-                        print('--------------------------------------------------------------------------------------------------------')
-                        for i in range(0,len(pnames_sorted),1):
-                            if (((k+1)>tau_sorted[i]*ncor_times) and (tol_sorted[i]<autocorr_tol) and (tau_sorted[i]>1.0) ):
-                                conv_bool = 'True'
-                            else: conv_bool = 'False'
-                            if (round(tau_sorted[i],1)>1.0):# & (tol[i]<autocorr_tol):
-                                print('{0:<30}{1:<20.4f}{2:<20.4f}{3:<20.4f}{4:<20}'.format(pnames_sorted[i],best_sorted[i],tau_sorted[i],tol_sorted[i],conv_bool))
-                            else: 
-                                print('{0:<30}{1:<20.4f}{2:<20}{3:<20}{4:<20}'.format(pnames_sorted[i],best_sorted[i],' -------- ',' -------- ',' -------- '))
-                        print('--------------------------------------------------------------------------------------------------------')
-
-            # If convergence for median autocorrelation time 
-            if (auto_stop==True) & (conv_type == 'median'):
-                par_conv = [] # converged parameter indices
-                par_not_conv  = [] # non-converged parameter indices
-                for x in range(0,len(param_names),1):
-                    if (round(tau[x],1)>1.0):# & (tol[x]<autocorr_tol):
-                        par_conv.append(x) # Append index of parameter for which an autocorrelation time can be calculated; we use these to calculate the mean
-                    else: par_not_conv.append(x)
-                # Calculate mean of parameters for which an autocorrelation time could be calculated
-                par_conv = np.array(par_conv) # Explicitly convert to array
-                par_not_conv = np.array(par_not_conv) # Explicitly convert to array
-
-                if (par_conv.size == 0) and (stop_iter == orig_max_iter):
-                    if verbose:
-                        print('\nIteration = %d' % (k+1))
-                        print('-------------------------------------------------------------------------------')
-                        print('- Not enough iterations for any autocorrelation times!')
-                elif ( (par_conv.size > 0) and (k+1)>(np.nanmedian(tau[par_conv]) * ncor_times) and (np.nanmedian(tol[par_conv])<autocorr_tol) and (stop_iter == max_iter) ):
-                    if verbose:
-                        print('\n ---------------------------------------------')
-                        print(' | Converged at %d iterations.             |' % (k+1))
-                        print(' | Performing %d iterations of sampling... |' % min_samp )
-                        print(' | Sampling will finish at %d iterations.  |' % ((k+1)+min_samp) )
-                        print(' ---------------------------------------------')
-                    burn_in = (k+1)
-                    stop_iter = (k+1)+min_samp
-                    conv_tau = tau
-                    converged = True
-                elif ((par_conv.size == 0) or ( (k+1)<(np.nanmedian(tau[par_conv]) * ncor_times)) or (np.nanmedian(tol[par_conv])>autocorr_tol)) and (stop_iter < orig_max_iter):
-                    if verbose:
-                        print('\nIteration = %d' % (k+1))
-                        print('-------------------------------------------------------------------------------')
-                        print('- Jumped out of convergence! Resetting convergence criteria...')
-                        # Reset convergence criteria
-                        print('- Resetting burn_in = %d' % orig_burn_in)
-                        print('- Resetting max_iter = %d' % orig_max_iter)
-                    burn_in = orig_burn_in
-                    stop_iter = orig_max_iter
-                    converged = False
-
-                if (par_conv.size>0):
-                    pnames_sorted = param_names[i_sort]
-                    tau_sorted  = tau[i_sort]
-                    tol_sorted  = tol[i_sort]
-                    best_sorted   = np.array(best)[i_sort]
-                    if verbose:
-                        print('{0:<30}{1:<40}{2:<30}'.format('\nIteration = %d' % (k+1),'%d x Median Autocorr. Time = %0.2f' % (ncor_times,np.nanmedian(tau[par_conv]) * ncor_times),'Med. Tolerance = %0.2f' % np.nanmedian(tol[par_conv])))
-                        print('--------------------------------------------------------------------------------------------------------')
-                        print('{0:<30}{1:<20}{2:<20}{3:<20}{4:<20}'.format('Parameter','Current Value','Autocorr. Time','Tolerance','Converged?'))
-                        print('--------------------------------------------------------------------------------------------------------')
-                        for i in range(0,len(pnames_sorted),1):
-                            if (((k+1)>tau_sorted[i]*ncor_times) and (tol_sorted[i]<autocorr_tol) and (tau_sorted[i]>1.0)):
-                                conv_bool = 'True'
-                            else: conv_bool = 'False'
-                            if (round(tau_sorted[i],1)>1.0):# & (tol[i]<autocorr_tol):  
-                                print('{0:<30}{1:<20.4f}{2:<20.4f}{3:<20.4f}{4:<20}'.format(pnames_sorted[i],best_sorted[i],tau_sorted[i],tol_sorted[i],conv_bool))
-                            else: 
-                                print('{0:<30}{1:<20.4f}{2:<20}{3:<20}{4:<20}'.format(pnames_sorted[i],best_sorted[i],' -------- ',' -------- ',' -------- '))
-                        print('--------------------------------------------------------------------------------------------------------')
-                
-            # If convergence for ALL autocorrelation times 
-            if (auto_stop==True) & (conv_type == 'all'):
-                if ( all( (x==1.0) for x in tau) ) and (stop_iter == orig_max_iter):
-                    if verbose:
-                        print('\nIteration = %d' % (k+1))
-                        print('-------------------------------------------------------------------------------')
-                        print('- Not enough iterations for any autocorrelation times!')
-                elif all( ((k+1)>(x * ncor_times)) for x in tau) and all( (x>1.0) for x in tau) and all(y<autocorr_tol for y in tol) and (stop_iter == max_iter):
-                    if verbose:
-                        print('\n ---------------------------------------------')
-                        print(' | Converged at %d iterations.             | ' % (k+1))
-                        print(' | Performing %d iterations of sampling... | ' % min_samp )
-                        print(' | Sampling will finish at %d iterations.  | ' % ((k+1)+min_samp) )
-                        print(' ---------------------------------------------')
-                    burn_in = (k+1)
-                    stop_iter = (k+1)+min_samp
-                    conv_tau = tau
-                    converged = True
-                elif (any( ((k+1)<(x * ncor_times)) for x in tau) or any( (x==1.0) for x in tau) or any(y>autocorr_tol for y in tol)) and (stop_iter < orig_max_iter):
-                    if verbose:
-                        print('\n Iteration = %d' % (k+1))
-                        print('-------------------------------------------------------------------------------')
-                        print('- Jumped out of convergence! Resetting convergence criteria...')
-                        # Reset convergence criteria
-                        print('- Resetting burn_in = %d' % orig_burn_in)
-                        print('- Resetting max_iter = %d' % orig_max_iter)
-                    burn_in = orig_burn_in
-                    stop_iter = orig_max_iter
-                    converged = False
-                if 1:
-                    pnames_sorted = param_names[i_sort]
-                    tau_sorted  = tau[i_sort]
-                    tol_sorted  = tol[i_sort]
-                    best_sorted   = np.array(best)[i_sort]
-                    if verbose:
-                        print('{0:<30}'.format('\nIteration = %d' % (k+1)))
-                        print('--------------------------------------------------------------------------------------------------------------------------------------------')
-                        print('{0:<30}{1:<20}{2:<20}{3:<25}{4:<20}{5:<20}'.format('Parameter','Current Value','Autocorr. Time','Target Autocorr. Time','Tolerance','Converged?'))
-                        print('--------------------------------------------------------------------------------------------------------------------------------------------')
-                        for i in range(0,len(pnames_sorted),1):
-                            if (((k+1)>tau_sorted[i]*ncor_times) and (tol_sorted[i]<autocorr_tol) and (tau_sorted[i]>1.0) ):
-                                conv_bool = 'True'
-                            else: conv_bool = 'False'
-                            if (round(tau_sorted[i],1)>1.0):# & (tol[i]<autocorr_tol):
-                                print('{0:<30}{1:<20.4f}{2:<20.4f}{3:<25.4f}{4:<20.4f}{5:<20}'.format(pnames_sorted[i],best_sorted[i],tau_sorted[i],tau_sorted[i]*ncor_times,tol_sorted[i],str(conv_bool)))
-                            else: 
-                                print('{0:<30}{1:<20.4f}{2:<20}{3:<25}{4:<20}{5:<20}'.format(pnames_sorted[i],best_sorted[i],' -------- ',' -------- ',' -------- ',' -------- '))
-                        print('--------------------------------------------------------------------------------------------------------------------------------------------')
-
-            # If convergence for a specific set of parameters
-            if (auto_stop==True) & (isinstance(conv_type,tuple)==True):
-                # Get indices of parameters for which we want to converge; these will be the only ones we care about
-                par_ind = np.array([i for i, item in enumerate(param_names) if item in set(conv_type)])
-                # Get list of parameters, autocorrelation times, and tolerances for the ones we care about
-                param_interest   = param_names[par_ind]
-                tau_interest = tau[par_ind]
-                tol_interest = tol[par_ind]
-                best_interest = np.array(best)[par_ind]
-                # New sort for selected parameters
-                i_sort = np.argsort(param_interest) # this array gives the ordered indices of parameter names (alphabetical)
-                if ( all( (x==1.0) for x in tau_interest) ) and (stop_iter == orig_max_iter):
-                    if verbose:
-                        print('\nIteration = %d' % (k+1))
-                        print('-------------------------------------------------------------------------------')
-                        print('- Not enough iterations for any autocorrelation times!')
-                elif all( ((k+1)>(x * ncor_times)) for x in tau_interest) and all( (x>1.0) for x in tau_interest) and all(y<autocorr_tol for y in tol_interest) and (stop_iter == max_iter):
-                    if verbose:
-                        print('\n ---------------------------------------------')
-                        print(' | Converged at %d iterations.             | ' % (k+1))
-                        print(' | Performing %d iterations of sampling... | ' % min_samp )
-                        print(' | Sampling will finish at %d iterations.  | ' % ((k+1)+min_samp) )
-                        print(' ---------------------------------------------')
-                    burn_in = (k+1)
-                    stop_iter = (k+1)+min_samp
-                    conv_tau = tau
-                    converged = True
-                elif (any( ((k+1)<(x * ncor_times)) for x in tau_interest) or any( (x==1.0) for x in tau_interest) or any(y>autocorr_tol for y in tol_interest)) and (stop_iter < orig_max_iter):
-                    if verbose:
-                        print('\n Iteration = %d' % (k+1))
-                        print('-------------------------------------------------------------------------------')
-                        print('- Jumped out of convergence! Resetting convergence criteria...')
-                        # Reset convergence criteria
-                        print('- Resetting burn_in = %d' % orig_burn_in)
-                        print('- Resetting max_iter = %d' % orig_max_iter)
-                    burn_in = orig_burn_in
-                    stop_iter = orig_max_iter
-                    converged = False
-                if 1:
-                    pnames_sorted = param_interest[i_sort]
-                    tau_sorted  = tau_interest[i_sort]
-                    tol_sorted  = tol_interest[i_sort]
-                    best_sorted   = np.array(best_interest)[i_sort]
-                    if verbose:
-                        print('{0:<30}'.format('\nIteration = %d' % (k+1)))
-                        print('--------------------------------------------------------------------------------------------------------------------------------------------')
-                        print('{0:<30}{1:<20}{2:<20}{3:<25}{4:<20}{5:<20}'.format('Parameter','Current Value','Autocorr. Time','Target Autocorr. Time','Tolerance','Converged?'))
-                        print('--------------------------------------------------------------------------------------------------------------------------------------------')
-                        for i in range(0,len(pnames_sorted),1):
-                            if (((k+1)>tau_sorted[i]*ncor_times) and (tol_sorted[i]<autocorr_tol) and (tau_sorted[i]>1.0) ):
-                                conv_bool = 'True'
-                            else: conv_bool = 'False'
-                            if (round(tau_sorted[i],1)>1.0):# & (tol[i]<autocorr_tol):
-                                print('{0:<30}{1:<20.4f}{2:<20.4f}{3:<25.4f}{4:<20.4f}{5:<20}'.format(pnames_sorted[i],best_sorted[i],tau_sorted[i],tau_sorted[i]*ncor_times,tol_sorted[i],str(conv_bool)))
-                            else: 
-                                print('{0:<30}{1:<20.4f}{2:<20}{3:<25}{4:<20}{5:<20}'.format(pnames_sorted[i],best_sorted[i],' -------- ',' -------- ',' -------- ',' -------- '))
-                        print('--------------------------------------------------------------------------------------------------------------------------------------------')
-
-            # Stop
-            if ((k+1) == stop_iter):
-                break
-
-            old_tau = tau   
-
-        # If auto_stop=False, simply print out the parameters and their best values at that iteration
-        if ((k+1) % write_iter == 0) and ((k+1)>=min_iter) and ((k+1)>=write_thresh) and (auto_stop==False):
-            pnames_sorted = param_names[i_sort]
-            best_sorted   = np.array(best)[i_sort]
-            if verbose:
-                print('{0:<30}'.format('\nIteration = %d' % (k+1)))
-                print('------------------------------------------------')
-                print('{0:<30}{1:<20}'.format('Parameter','Current Value'))
-                print('------------------------------------------------')
-                for i in range(0,len(pnames_sorted),1):
-                        print('{0:<30}{1:<20.4f}'.format(pnames_sorted[i],best_sorted[i]))
-                print('------------------------------------------------')
-
-    elap_time = (time.time() - start_time)     
-    run_time = time_convert(elap_time)
-    if verbose:
-        print("\n emcee Runtime = %s. \n" % (run_time))
-
-    # Write to log file
-    if (auto_stop==True):
-        # Write autocorrelation chain to log 
-        # np.save(run_dir+'/log/autocorr_times_all',autocorr_times_all)
-        # np.save(run_dir+'/log/autocorr_tols_all',autocorr_tols_all)
-        # Create a dictionary with parameter names as keys, and contains
-        # the autocorrelation times and tolerances for each parameter
-        autocorr_times_all = np.stack(autocorr_times_all,axis=1)
-        autocorr_tols_all  = np.stack(autocorr_tols_all,axis=1)
-        autocorr_dict = {}
-        for k in range(0,len(param_names),1):
-            if (np.shape(autocorr_times_all)[0] > 1):
-                autocorr_dict[param_names[k]] = {'tau':autocorr_times_all[k],
-                                                  'tol':autocorr_tols_all[k]} 
-        np.save(run_dir.joinpath('log', 'autocorr_dict.npy'),autocorr_dict)
-
-        if (converged == True):
-            write_log((burn_in,stop_iter,param_names,conv_tau,autocorr_tol,tol,ncor_times),'autocorr_results',run_dir)
-        elif (converged == False):
-            unconv_tol = (np.abs((old_tau) - (tau)) / (tau))
-            write_log((burn_in,stop_iter,param_names,tau,autocorr_tol,unconv_tol,ncor_times),'autocorr_results',run_dir)
-    write_log(run_time,'emcee_time',run_dir) 
-
-    # Remove excess zeros from sampler chain if emcee converged on a solution
-    # in fewer iterations than max_iter
-    # Remove zeros from all chains
-    a = [] # the zero-trimmed sampler.chain
-    for p in range(0,np.shape(sampler.chain)[2],1):
-        c = sampler.chain[:,:,p]
-        c_trimmed = [np.delete(c[i,:],np.argwhere(c[i,:]==0)) for i in range(np.shape(c)[0])] # delete any occurence of zero 
-        a.append(c_trimmed)
-    a = np.swapaxes(a,1,0) 
-    a = np.swapaxes(a,2,1)
-
-    # Extract metadata blobs
-    blobs          = sampler.get_blobs()
-    flux_blob      = blobs["fluxes"]
-    eqwidth_blob   = blobs["eqwidths"]
-    cont_flux_blob = blobs["cont_fluxes"]
-    int_vel_disp_blob  = blobs["int_vel_disp"]
-    log_like_blob  = blobs["log_like"]
-
-    return a, burn_in, flux_blob, eqwidth_blob, cont_flux_blob, int_vel_disp_blob, log_like_blob
-
-
-##################################################################################
-
-
 def next_pow_two(n):
     i = 1
     while i < n:
@@ -2951,33 +2555,6 @@ def autocorr_func_1d(x, norm=True):
 
 
 def write_log(output_val,output_type,run_dir):
-    if (output_type=='autocorr_results'): # write autocorrelation results to log
-        # write_log((k+1,burn_in,stop_iter,param_names,tau),42,run_dir)
-        burn_in,stop_iter,param_names,tau,autocorr_tol,tol,ncor_times = output_val
-        with log_file_path.open(mode='a') as logfile:
-            # write_log((min_samp,tol,ntol,atol,ncor_times,conv_type),41,run_dir)
-            i_sort = np.argsort(param_names)
-            param_names = np.array(param_names)[i_sort]
-            tau = np.array(tau)[i_sort]
-            tol = np.array(tol)[i_sort]
-            logfile.write('\n')
-            logfile.write('\n### Autocorrelation Results ###')
-            logfile.write('\n-----------------------------------------------------------------------------------------------------------------')
-            logfile.write('\n{0:<30}{1:<30}'.format('conv iteration', burn_in   ))
-            logfile.write('\n{0:<30}{1:<30}'.format('stop iteration', stop_iter ))
-            logfile.write('\n-----------------------------------------------------------------------------------------------------------------')
-            logfile.write('\n{0:<30}{1:<30}{2:<30}{3:<30}{4:<30}'.format('Parameter','Autocorr. Time','Target Autocorr. Time','Tolerance','Converged?'))
-            logfile.write('\n-----------------------------------------------------------------------------------------------------------------')
-            for i in range(0,len(param_names),1):
-                if (burn_in > (tau[i]*ncor_times)) and (0 < tol[i] < autocorr_tol):
-                    c = 'True'
-                elif (burn_in < (tau[i]*ncor_times)) or (tol[i]>= 0.0):
-                    c = 'False'
-                else: 
-                    c = 'False'
-                logfile.write('\n{0:<30}{1:<30.5f}{2:<30.5f}{3:<30.5f}{4:<30}'.format(param_names[i],tau[i],(tau[i]*ncor_times),tol[i],c))
-            logfile.write('\n-----------------------------------------------------------------------------------------------------------------')
-        return None
 
     if (output_type=='emcee_time'): # write autocorrelation results to log
         # write_log(run_time,43,run_dir)
