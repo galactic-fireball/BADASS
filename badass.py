@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """Bayesian AGN Decomposition Analysis for SDSS Spectra (BADASS3)
 
 BADASS is an open-source spectral analysis tool designed for detailed decomposition
@@ -10,67 +8,37 @@ Carlo sampler emcee for robust parameter and uncertainty estimation, as well
 as autocorrelation analysis to access parameter chain convergence.
 """
 
-import numpy as np
-from numpy.polynomial import hermite
-from numpy import linspace, meshgrid 
-import scipy.optimize as op
-import pandas as pd
-import numexpr as ne
-import matplotlib.pyplot as plt 
-from matplotlib import cm
-import matplotlib.gridspec as gridspec
-from scipy import optimize, linalg, special, fftpack
-from scipy.interpolate import griddata, interp1d
-from scipy.stats import f, chisquare
-from scipy import stats
-import scipy
-from scipy.integrate import simpson
-from astropy.io import fits
-import glob
-import time
-import datetime
-from os import path
-import os
-import shutil
-import sys
-from scipy.special import wofz
-import emcee
-from astroquery.irsa_dust import IrsaDust
-import astropy.units as u
-from astropy import coordinates
+import astropy.constants as const
 from astropy.cosmology import FlatLambdaCDM
-import re
-import natsort
+from astropy.io import fits
+import astropy.units as u
+from astroquery.irsa_dust import IrsaDust
 import copy
-import pickle
-from prettytable import PrettyTable
-# import StringIO
-import psutil
-import pathlib
+from dataclasses import dataclass, field
+import emcee
 import importlib
 import multiprocessing as mp
-# import bifrost
-import spectres
-import corner
-import astropy.constants as const
-from dataclasses import dataclass, field
+import numexpr as ne
+import numpy as np
+import pandas as pd
+import pathlib
+import pickle
+from prettytable import PrettyTable
+from scipy import signal, stats
+from scipy.integrate import simpson
+from scipy.interpolate import interp1d
+import scipy.optimize as op
+import sys
+import time
 from typing import Callable, List, Union
-# Import BADASS tools modules
-# cwd = os.getcwd() # get current working directory
-# print(cwd)
-BADASS_DIR = pathlib.Path(__file__).resolve().parent
-sys.path.insert(0, str(BADASS_DIR))
-sys.path.insert(1,str(BADASS_DIR.joinpath('badass_utils'))) # utility functions
-sys.path.insert(1,str(BADASS_DIR.joinpath('badass_tools'))) # tool functions
 
-import badass_check_input as badass_check_input
+BADASS_DIR = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0,str(BADASS_DIR))
+sys.path.insert(0,str(BADASS_DIR.joinpath('badass_utils'))) # utility functions
+sys.path.insert(0,str(BADASS_DIR.joinpath('badass_tools'))) # tool functions
+
 import badass_test_suite  as badass_test_suite
 import badass_tools as badass_tools
-import gh_alternative as gh_alt # Gauss-Hermite alternative line profiles
-from sklearn.decomposition import PCA
-from astroML.datasets import sdss_corrected_spectra # SDSS templates for PCA analysis
-
-from prodict import Prodict
 
 from utils.options import BadassOptions
 from input.input import BadassInput
@@ -80,12 +48,6 @@ import utils.plotting as plotting
 from line_utils.line_lists.optical_qso import optical_qso_default
 from line_utils.line_profiles import line_constructor
 
-# plt.style.use('dark_background') # For cool tron-style dark plots
-import matplotlib
-matplotlib.rcParams['agg.path.chunksize'] = 100000
-import warnings
-warnings.filterwarnings("ignore", category=RuntimeWarning) 
-warnings.filterwarnings("ignore", category=UserWarning) 
 
 __author__     = "Remington O. Sexton (USNO), Sara M. Doan (GMU), Michael A. Reefe (GMU), William Matzko (GMU), Nicholas Darden (UCR)"
 __copyright__  = "Copyright (c) 2023 Remington Oliver Sexton"
@@ -95,8 +57,6 @@ __version__    = "10.2.0"
 __maintainer__ = "Remington O. Sexton"
 __email__      = "remington.o.sexton.civ@us.navy.mil"
 __status__     = "Release"
-
-##########################################################################################################
 
 
 # TODO: create BadassContext class that contains a target, options, parameters, etc. and the following relevant
@@ -108,7 +68,6 @@ __status__     = "Release"
 # TODO: ability to resume mid run (save status at certain checkpoints?)
 # TODO: ability to multiprocess mcmc runs?
 # TODO: line type classes? or just a general line class?
-# TODO: organize imports
 # TODO: remove any whitespace at ends of lines
 # TODO: use rng seed to be able to reproduce fits
 
@@ -129,7 +88,6 @@ def run_BADASS(inputs, **kwargs):
 
 
 # TODO: move logger to here instead of target
-# TODO: make sure all attrs are initialized
 class BadassRunContext:
 
     def __init__(self, target):
@@ -161,6 +119,8 @@ class BadassRunContext:
         self.comp_dict = {}
 
         self.chain_df = None
+        self.mcmc_results_dict = {}
+        self.mcmc_result_chains = {}
 
 
     def run(self):
@@ -537,8 +497,8 @@ class BadassRunContext:
             # normalize by noise
             norm_csub = galaxy_csub/self.target.noise
 
-            peaks,_ = scipy.signal.find_peaks(norm_csub, height=2.0, width=3.0, prominence=1)
-            troughs,_ = scipy.signal.find_peaks(-norm_csub, height=2.0, width=3.0, prominence=1)
+            peaks,_ = signal.find_peaks(norm_csub, height=2.0, width=3.0, prominence=1)
+            troughs,_ = signal.find_peaks(-norm_csub, height=2.0, width=3.0, prominence=1)
             peak_wave = self.target.wave[peaks]
             trough_wave = self.target.wave[troughs]
         except:
@@ -962,7 +922,7 @@ class BadassRunContext:
 
         test_mode = self.options.test_options.test_mode
         if test_mode not in test_mode_dict:
-            raise Exception('Unimplemented test mode: %s'%self.test_mode)
+            raise Exception('Unimplemented test mode: %s'%test_mode)
 
         # TODO: log test results
         return test_mode_dict[test_mode]()
@@ -1134,7 +1094,7 @@ class BadassRunContext:
                 rchi2 = badass_test_suite.r_chi_squared(mccomps['DATA'][0], mccomps['MODEL'][0], mccomps['NOISE'][0], len(self.param_dict))
                 aon = badass_test_suite.calculate_aon(test_lines, full_line_list, mccomps, self.target.noise*np.sqrt(rchi2))
             else:
-                aon = badass_test_suite.calculate_aon(test_lines, full_line_list, mccomps, tself.arget.noise)
+                aon = badass_test_suite.calculate_aon(test_lines, full_line_list, mccomps, self.target.noise)
 
             fit_results = {'mcpars':mcpars,'mccomps':mccomps,'mcLL':mcLL,'line_list':full_line_list,'dof':dof,'npar':len(self.param_dict),'rmse':lowest_rmse, 'aon':aon}
             test_fit_results[test_label] = fit_results
@@ -2113,7 +2073,6 @@ class BadassRunContext:
 
 
         self.fit_model()
-        self.mcmc_results_dict = {}
         self.collect_mcmc_pars(sampler)
         self.mcmc_output()
 
@@ -2329,6 +2288,34 @@ def autocorr_convergence(sampler_chain, c=5.0):
     return tau_est
 
 
+def next_pow_two(n):
+    i = 1
+    while i < n:
+        i = i << 1
+    return i
+
+
+def autocorr_func_1d(x, norm=True):
+    """
+    Estimates the 1d autocorrelation function for a chain.
+    """
+    x = np.atleast_1d(x)
+    if len(x.shape) != 1:
+        raise ValueError("invalid dimensions for 1D autocorrelation function")
+    n = next_pow_two(len(x))
+
+    # Compute the FFT and then (from that) the auto-correlation function
+    f = np.fft.fft(x - np.nanmean(x), n=2 * n)
+    acf = np.fft.ifft(f * np.conjugate(f))[: len(x)].real
+    acf /= 4 * n
+
+    # Optionally normalize
+    if norm:
+        acf /= acf[0]
+
+    return acf
+
+
 def auto_window(taus, c):
     # Automated windowing procedure following Sokal (1989)
     m = np.arange(len(taus)) < c * taus
@@ -2337,19 +2324,6 @@ def auto_window(taus, c):
     return len(taus) - 1
 
 
-
-#################################################################################
-
-
-#### Likelihood function #########################################################
-
-##################################################################################
-
-#### Priors ######################################################################
-# These priors are the same constraints used for outflow testing and maximum likelihood
-# fitting, simply formatted for use by emcee. 
-# To relax a constraint, simply comment out the condition (*not recommended*).
-
 def lnprior_gaussian(x,**kwargs):
     """
     Log-Gaussian prior based on user-input.  If not specified, mu and sigma 
@@ -2357,19 +2331,12 @@ def lnprior_gaussian(x,**kwargs):
     for the maximum plim from the mean.
     """
     sigma_level = 5
-    if "loc" in kwargs["prior"]:
-        loc = kwargs["prior"]["loc"]
-    else:
-        loc = kwargs["init"]
-    #
-    if "scale" in kwargs["prior"]:
-        scale = kwargs["prior"]["scale"]
-    else:
-        scale = np.max(np.abs(kwargs["plim"]))/sigma_level
-    #
+    loc = kwargs['prior'].get('loc', kwargs['init'])
+    scale = kwargs['prior'].get('scale', np.max(np.abs(kwargs['plim']))/sigma_level)
     return stats.norm.logpdf(x,loc=loc,scale=scale)
 
-def lnprior_halfnorm(x,**kwargs):
+
+def lnprior_halfnorm(x, **kwargs):
     """
     Half Log-Normal prior based on user-input.  If not specified, mu and sigma 
     will be derived from the init and plim, with plim occurring at 5-sigma
@@ -2377,50 +2344,37 @@ def lnprior_halfnorm(x,**kwargs):
     """
     sigma_level = 5
     x = np.abs(x)
-    if "loc" in kwargs["prior"]:
-        loc = kwargs["prior"]["loc"]
-    else:
-        loc = kwargs["plim"][0]
-    #
-    if "scale" in kwargs["prior"]:
-        scale = kwargs["prior"]["scale"]
-    else:
-        scale = np.max(np.abs(kwargs["plim"]))/sigma_level
-    #
+    loc = kwargs['prior'].get('loc', kwargs['plim'][0])
+    scale = kwargs['prior'].get('scale', np.max(np.abs(kwargs['plim']))/sigma_level)
     return stats.halfnorm.logpdf(x,loc=loc,scale=scale)
 
 
-def lnprior_jeffreys(x,**kwargs):
+def lnprior_jeffreys(x, **kwargs):
     """
     Log-Jeffreys prior based on user-input.  If not specified, mu and sigma 
     will be derived from the init and plim, with plim occurring at 5-sigma
     for the maximum plim from the mean.
     """
     x = np.abs(x)
-    if np.any(x) <=0: x = 1.e-6
+    if np.any(x) <= 0: x = 1.e-6
     scale = 1
-    if "loc" in kwargs["prior"]:
-        loc = np.abs(kwargs["prior"]["loc"])
+    if 'loc' in kwargs['prior']:
+        loc = np.abs(kwargs['prior']['loc'])
     else:
-        loc = np.min(np.abs(kwargs["plim"]))
-    a, b = np.min(np.abs(kwargs["plim"])),np.max(np.abs(kwargs["plim"]))
+        loc = np.min(np.abs(kwargs['plim']))
+    a, b = np.min(np.abs(kwargs['plim'])), np.max(np.abs(kwargs['plim']))
     if a <= 0: a = 1e-6
     return stats.loguniform.logpdf(x,a=a,b=b,loc=loc,scale=scale)
 
-def lnprior_flat(x,**kwargs):
 
-    if (x>=kwargs["plim"][0]) & (x<=kwargs["plim"][1]):
+def lnprior_flat(x, **kwargs):
+    if (x >= kwargs['plim'][0]) and (x <= kwargs['plim'][1]):
         return 1.0
-    else:
-        return -np.inf
+    return -np.inf
 
-
-#### Model Function ##############################################################
 
 def combined_fwhm(lam_gal, full_profile, disp_res, velscale ):
-    """
-    Calculate fwhm of combined lines directly from the model.
-    """
+    # Calculate fwhm of combined lines directly from the model
     def lin_interp(x, y, i, half):
         return x[i] + (x[i+1] - x[i]) * ((half - y[i]) / (y[i+1] - y[i]))
 
@@ -2429,41 +2383,36 @@ def combined_fwhm(lam_gal, full_profile, disp_res, velscale ):
         signs = np.sign(np.add(y, -half))
         zero_crossings = (signs[0:-2] != signs[1:-1])
         zero_crossings_i = np.where(zero_crossings)[0]
-        if len(zero_crossings_i)==2:
+        if len(zero_crossings_i) == 2:
             return [lin_interp(x, y, zero_crossings_i[0], half),
                     lin_interp(x, y, zero_crossings_i[1], half)]
-        else:
-            return [0.0, 0.0]
+        return [0.0, 0.0]
 
     hmx = half_max_x(range(len(lam_gal)),full_profile)
     fwhm_pix = np.abs(hmx[1]-hmx[0])
     fwhm = fwhm_pix*velscale
     # fwhm = np.sqrt((fwhm_pix*velscale)**2 - (disp_res*2.3548)**2)
-    if ~np.isfinite(fwhm):
-        fwhm = 0.0
-    #
-    return fwhm
+    return fwhm if np.isfinite(fwhm) else 0.0
 
-##################################################################################
 
 def calculate_w80(lam_gal, full_profile, disp_res, velscale, center ):
-    """
-    Calculate W80 of the full line profile for all lines.
-    """
+    # Calculate W80 of the full line profile for all lines
+
+    # TODO: use astropy consts
     c = 299792.458 # speed of light (km/s)
     # Calculate the normalized CDF of the line profile
     cdf = np.cumsum(full_profile/np.sum(full_profile))
-    v   = (lam_gal-center)/center*c
+    v = (lam_gal-center)/center*c
     w80 = np.interp(0.91,cdf,v) - np.interp(0.10,cdf,v)
-    # Correct for intrinsic W80.  
+
+    # Correct for intrinsic W80
     # The formula for a Gaussian W80 = 1.09*FWHM = 2.567*disp_res (Harrison et al. 2014; Manzano-King et al. 2019)
     # w80 = np.sqrt((w80)**2-(2.567*disp_res)**2)
-    if ~np.isfinite(w80):
-        w80 = 0.0
-    #
-    return w80
+
+    return w80 if np.isfinite(w80) else 0.0
 
 
+# TODO: move to separate template
 def simple_power_law(x,amp,alpha):
     """
     Simple power-low function to model
@@ -2483,15 +2432,11 @@ def simple_power_law(x,amp,alpha):
     C    : array
             AGN continuum model the same length as x
     """
-    # This works
     xb = np.max(x)-(0.5*(np.max(x)-np.min(x))) # take to be half of the wavelength range
-    C = amp*(x/xb)**alpha # un-normalized
-    return C
+    return amp*(x/xb)**alpha # un-normalized
 
-##################################################################################
 
-#### Smoothly-Broken Power-Law Template ##########################################
-
+# TODO: move to separate template
 def broken_power_law(x, amp, x_break, alpha_1, alpha_2, delta):
     """
     Smoothly-broken power law continuum model; for use 
@@ -2520,78 +2465,4 @@ def broken_power_law(x, amp, x_break, alpha_1, alpha_2, delta):
             AGN continuum model the same length as x
     """
 
-    C = amp * (x/x_break)**(alpha_1) * (0.5*(1.0+(x/x_break)**(1.0/delta)))**((alpha_2-alpha_1)*delta)
-
-    return C
-
-
-def next_pow_two(n):
-    i = 1
-    while i < n:
-        i = i << 1
-    return i
-
-def autocorr_func_1d(x, norm=True):
-    """
-    Estimates the 1d autocorrelation function for a chain.
-    """
-    x = np.atleast_1d(x)
-    if len(x.shape) != 1:
-        raise ValueError("invalid dimensions for 1D autocorrelation function")
-    n = next_pow_two(len(x))
-
-    # Compute the FFT and then (from that) the auto-correlation function
-    f = np.fft.fft(x - np.nanmean(x), n=2 * n)
-    acf = np.fft.ifft(f * np.conjugate(f))[: len(x)].real
-    acf /= 4 * n
-
-    # Optionally normalize
-    if norm:
-        acf /= acf[0]
-
-    return acf
-
-
-
-
-def write_log(output_val,output_type,run_dir):
-
-    if (output_type=='emcee_time'): # write autocorrelation results to log
-        # write_log(run_time,43,run_dir)
-        run_time = output_val
-        a = str(datetime.datetime.now())
-        with log_file_path.open(mode='a') as logfile:
-            # write_log((min_samp,tol,ntol,atol,ncor_times,conv_type),41,run_dir)
-            logfile.write('\n{0:<30}{1:<30}'.format('end_time',  a ))
-            logfile.write('\n{0:<30}{1:<30}'.format('emcee_runtime',run_time ))
-            logfile.write('\n-----------------------------------------------------------------------------------------------------------------')
-        return None
-
-    if (output_type=='emcee_results'): # write best fit parameters results to log
-        par_names,par_best,ci_68_low,ci_68_upp,ci_95_low,ci_95_upp,mean,std_dev,median,med_abs_dev,flags = output_val 
-        # write_log((par_names,par_best,sig_low,sig_upp),50,run_dir)
-        with log_file_path.open(mode='a') as logfile:
-            logfile.write('\n')
-            logfile.write('\n### Best-fit Parameters & Uncertainties ###')
-            logfile.write('\n-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------')
-            logfile.write('\n{0:<30}{1:<16}{2:<16}{3:<16}{4:<16}{5:<16}{6:<16}{7:<16}{8:<16}{9:<16}{10:<16}'.format('Parameter','Best-fit Value','68% CI low','68% CI upp','95% CI low','95% CI upp','Mean','Std. Dev.','Median','Med. Abs. Dev.','Flag'))
-            logfile.write('\n-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------')
-            for par in range(0,len(par_names),1):
-                logfile.write('\n{0:<30}{1:<16.5f}{2:<16.5f}{3:<16.5f}{4:<16.5f}{5:<16.5f}{6:<16.5f}{7:<16.5f}{8:<16.5f}{9:<16.5f}{10:<16.5f}'.format(par_names[par],par_best[par],ci_68_low[par],ci_68_upp[par],ci_95_low[par],ci_95_upp[par],mean[par],std_dev[par],median[par],med_abs_dev[par],flags[par]))
-            logfile.write('\n-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------')
-        return None
-
-    # Total runtime
-    if (output_type=='total_time'): # write total time to log
-        # write_log(run_time,43,run_dir)
-        tot_time = output_val
-        a = str(datetime.datetime.now())
-        with log_file_path.open(mode='a') as logfile:
-            # write_log((min_samp,tol,ntol,atol,ncor_times,conv_type),41,run_dir)
-            logfile.write('\n{0:<30}{1:<30}'.format('total_runtime',time_convert(tot_time) ))
-            logfile.write('\n{0:<30}{1:<30}'.format('end_time',a ))
-            logfile.write('\n-----------------------------------------------------------------------------------------------------------------')
-        return None
-
-    return None
-
+    return amp * (x/x_break)**(alpha_1) * (0.5*(1.0+(x/x_break)**(1.0/delta)))**((alpha_2-alpha_1)*delta)
