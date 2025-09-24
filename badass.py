@@ -53,6 +53,8 @@ import multiprocessing as mp
 import spectres
 import corner
 import astropy.constants as const
+from dataclasses import dataclass, field
+from typing import Callable, List, Union
 # Import BADASS tools modules
 # cwd = os.getcwd() # get current working directory
 # print(cwd)
@@ -962,6 +964,7 @@ class BadassRunContext:
         if test_mode not in test_mode_dict:
             raise Exception('Unimplemented test mode: %s'%self.test_mode)
 
+        # TODO: log test results
         return test_mode_dict[test_mode]()
 
 
@@ -1747,13 +1750,16 @@ class BadassRunContext:
         ndim = len(self.cur_params)
 
         # Keep original burn_in and max_iter to reset convergence if jumps out of convergence
-        orig_burn_in = self.options.mcmc_options.burn_in
-        orig_max_iter = self.options.mcmc_options.max_iter
+        max_iter = self.options.mcmc_options.max_iter
+        min_iter = self.options.mcmc_options.min_iter
         write_iter = self.options.mcmc_options.write_iter
         write_thresh = self.options.mcmc_options.write_thresh
 
-        burn_in = orig_burn_in
-        max_iter = orig_max_iter
+        # TODO: for testing
+        # max_iter = 10
+        # min_iter = 3
+        # write_iter = 3
+        # write_thresh = 3
 
         # TODO: create Backend class that supports objects (pickle-based? npz-based?)
         # backend = emcee.backends.HDFBackend(self.target.outdir.joinpath('log', 'MCMC_chain.h5'))
@@ -1769,18 +1775,101 @@ class BadassRunContext:
         dtype = [('full_blob',dict),]
         sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob_wrapper, blobs_dtype=dtype)#, backend=backend)
 
+
+        autocorr = None
+        if self.options.mcmc_options.auto_stop:
+
+            @dataclass
+            class AutoCorr:
+                ctx: BadassRunContext = None
+                times: List[np.ndarray] = field(default_factory=list)
+                tolerances: List[np.ndarray] = field(default_factory=list)
+                prev_tau: np.ndarray = field(default_factory=lambda: np.full(len(self.cur_params), np.inf))
+
+                max_tol: float = 0.0
+                min_samp: int = 0
+                ncor_times: int = 0
+                conv_type: Union[str,tuple] = ''
+                conv_func: Callable = None
+
+                stop_iter: int = 0
+                burn_in: int = 0
+                converged: bool = False
+
+                def mean_conv(self, sampler, tau, tol):
+                    par_conv = np.array([x for x in range(len(tau)) if round(tau[x],1) > 1.0]) # TODO: print converged params
+                    return (par_conv.size > 0) and (sampler.iteration > (np.nanmean(tau[par_conv]) * self.ncor_times) and (np.nanmean(tol[par_conv]) < self.max_tol))
+
+                def median_conv(self, sampler, tau, tol):
+                    par_conv = np.array([x for x in range(len(tau)) if round(tau[x],1) > 1.0]) # TODO: print converged params
+                    return (par_conv.size > 0) and (sampler.iteration > (np.nanmedian(tau[par_conv]) * self.ncor_times) and (np.nanmedian(tol[par_conv]) < self.max_tol))
+
+                def all_conv(self, sampler, tau, tol):
+                    return (all(sampler.iteration > tau*self.ncor_times)) and (all(tau > 1.0)) and (all(tol < self.max_tol))
+
+                def param_conv(self, sampler, tau, tol):
+                    par_idx = np.array([i for i, key in enumerate(self.ctx.cur_params.keys()) if key in self.conv_type])
+                    target_tau = tau[par_idx]
+                    return (all(sampler.iteration > target_tau*self.ncor_times)) and (all(target_tau > 1.0)) and (all(tol < self.max_tol))
+
+                def __post_init__(self):
+                    self.prev_tau = np.full(len(self.ctx.cur_params), np.inf)
+                    self.max_tol = self.ctx.options.mcmc_options.autocorr_tol
+                    self.min_samp = self.ctx.options.mcmc_options.min_samp
+                    self.ncor_times = self.ctx.options.mcmc_options.ncor_times
+                    self.conv_type = self.ctx.options.mcmc_options.conv_type
+
+                    conv_types = {
+                        'mean': self.mean_conv,
+                        'median': self.median_conv,
+                        'all': self.all_conv,
+                    }
+
+                    if isinstance(self.conv_type,tuple):
+                        self.conv_func = self.param_conv
+                    elif self.conv_type in conv_types:
+                        self.conv_func = conv_types[self.conv_type]
+                    else:
+                        self.conv_func = self.all_conv
+
+                    self.stop_iter = self.ctx.options.mcmc_options.max_iter
+                    self.burn_in = self.ctx.options.mcmc_options.burn_in
+
+
+                def check_convergence(self, sampler):
+                    it = sampler.iteration
+                    self.past_miniter = ((it >= write_thresh) and (it >= min_iter))
+                    if not self.past_miniter:
+                        return
+
+                    tau = autocorr_convergence(sampler.chain) # autocorr time for each parameter
+                    self.times.append(tau)
+                    tol = (np.abs(tau-self.prev_tau)/self.prev_tau) * 100 # tolerances
+                    self.tolerances.append(tol)
+
+                    if (not self.converged) and (self.conv_func(sampler, tau, tol)):
+                        print('Converged at %d iterations\nPerforming %d iterations of sampling'%(it, self.min_samp))
+                        self.burn_in = it
+                        self.stop_iter = it+self.min_samp
+                        # self.conv_tau = tau
+                        self.converged = True
+                        return
+
+                    if (self.converged) and (not self.conv_func(sampler, tau, tol)):
+                        print('Iteration: %d - Jumped out of convergence, resetting burn_in and max_iter'%it)
+                        self.burn_in = self.ctx.options.mcmc_options.burn_in
+                        self.stop_iter = self.options.mcmc_options.max_iter
+                        self.converged = False
+
+
+            autocorr = AutoCorr(ctx=self)
+
+
         # TODO: do something with
         start_time = time.time()
 
         # TODO
         # write_log((ndim,nwalkers,auto_stop,conv_type,burn_in,write_iter,write_thresh,min_iter,max_iter),'emcee_options',run_dir)
-
-        # TODO: if auto_stop
-
-        # TODO: for testing
-        # max_iter = 10
-        # write_iter = 3
-        # write_thresh = 3
 
         # self.add_chain()
         # sampler.run_mcmc(pos, write_thresh)
@@ -1794,10 +1883,16 @@ class BadassRunContext:
 
 
         self.add_chain()
-        for k, result in enumerate(sampler.sample(pos, iterations=max_iter)):
-            if (k+1) % write_iter == 0:
-                print('MCMC iteration: %d' % sampler.iteration)
+        for result in sampler.sample(pos, iterations=max_iter):
+            it = sampler.iteration
+            if (it >= write_thresh) and (it % write_iter == 0):
+                print('MCMC iteration: %d' % it)
                 self.add_chain(sampler=sampler)
+
+                if not autocorr:
+                    continue
+
+                autocorr.check_convergence(sampler)
 
 
         elap_time = (time.time() - start_time)
@@ -1810,15 +1905,15 @@ class BadassRunContext:
         # TODO: remove excess zeros on convergence
 
         # TODO: output files
-        self.collect_mcmc_results(sampler)
+        self.collect_mcmc_results(sampler, autocorr)
 
         if self.options.plot_options.plot_HTML:
             plotting.plotly_best_fit(self)
 
         if self.options.plot_options.plot_param_hist:
             for key in self.param_dict.keys():
-                plotting.posterior_plot(key, self.mcmc_results_dict[key], self.mcmc_result_chains['chains'][key], burn_in, self.target.outdir)
-            plotting.posterior_plot('LOG_LIKE', self.mcmc_results_dict['LOG_LIKE'], self.mcmc_result_chains['chains']['LOG_LIKE'], burn_in, self.target.outdir)
+                plotting.posterior_plot(key, self.mcmc_results_dict[key], self.mcmc_result_chains['chains'][key], autocorr.burn_in, self.target.outdir)
+            plotting.posterior_plot('LOG_LIKE', self.mcmc_results_dict['LOG_LIKE'], self.mcmc_result_chains['chains']['LOG_LIKE'], autocorr.burn_in, self.target.outdir)
 
         if self.options.plot_options.plot_corner:
             plotting.corner_plot(self)
@@ -1924,9 +2019,9 @@ class BadassRunContext:
         return blob_dict
 
 
-    def collect_mcmc_results(self, sampler):
+    def collect_mcmc_results(self, sampler, autocorr):
         nwalkers, niters, nparams = sampler.chain.shape
-        burn_in = self.options.mcmc_options.burn_in
+        burn_in = autocorr.burn_in if autocorr else self.options.mcmc_options.burn_in
         if burn_in >= niters: burn_in = int(niters/2)
 
         self.mcmc_result_chains = {'chains':{}, 'flat_chains':{}}
@@ -2187,6 +2282,39 @@ def get_continuums(components, size):
         host_cont += components[key]
 
     return total_cont, agn_cont, host_cont
+
+
+# Autocorrelation analysis
+def autocorr_convergence(sampler_chain, c=5.0):
+    """
+    Estimates the autocorrelation times using the 
+    methods outlined on the Autocorrelation page 
+    on the emcee website:
+    https://emcee.readthedocs.io/en/stable/tutorials/autocorr/
+    """
+
+    npar = np.shape(sampler_chain)[2] # Number of parameters
+
+    tau_est = np.empty(npar)
+    for p in range(npar):
+        y = sampler_chain[:,:,p]
+        f = np.zeros(y.shape[1])
+        for yy in y:
+            f += autocorr_func_1d(yy)
+        f /= len(y)
+        taus = 2.0 * np.cumsum(f) - 1.0
+        window = auto_window(taus, c)
+        tau_est[p] = taus[window]
+    return tau_est
+
+
+def auto_window(taus, c):
+    # Automated windowing procedure following Sokal (1989)
+    m = np.arange(len(taus)) < c * taus
+    if np.any(m):
+        return np.argmin(m)
+    return len(taus) - 1
+
 
 
 #################################################################################
@@ -2792,37 +2920,6 @@ def run_emcee(pos,ndim,nwalkers,run_dir,lnprob_args,init_params,param_names,
 
 ##################################################################################
 
-# Autocorrelation analysis 
-##################################################################################
-
-def autocorr_convergence(sampler_chain, c=5.0):
-    """
-    Estimates the autocorrelation times using the 
-    methods outlined on the Autocorrelation page 
-    on the emcee website:
-    https://emcee.readthedocs.io/en/stable/tutorials/autocorr/
-    """
-    
-    nwalker = np.shape(sampler_chain)[0] # Number of walkers
-    niter   = np.shape(sampler_chain)[1] # Number of iterations
-    npar    = np.shape(sampler_chain)[2] # Number of parameters
-        
-    tau_est = np.empty(npar)
-    # Iterate over all parameters
-    for p in range(npar):
-        
-        y = sampler_chain[:,:,p]
-        f = np.zeros(y.shape[1])
-        for yy in y:
-            f += autocorr_func_1d(yy)
-        f /= len(y)
-        taus = 2.0 * np.cumsum(f) - 1.0
-        window = auto_window(taus, c)
-        tau_est[p] = taus[window]
-    
-    
-    return tau_est
-
 
 def next_pow_two(n):
     i = 1
@@ -2850,73 +2947,10 @@ def autocorr_func_1d(x, norm=True):
 
     return acf
 
-def auto_window(taus, c):
-    """
-    Automated windowing procedure following Sokal (1989)
-    """
-    m = np.arange(len(taus)) < c * taus
-    if np.any(m):
-        return np.argmin(m)
-    return len(taus) - 1
+
 
 
 def write_log(output_val,output_type,run_dir):
-    """
-    This function writes values to a log file as the code runs.
-    """
-
-    log_file_path = run_dir.joinpath('log', 'log_file.txt')
-    log_file_path.parent.mkdir(parents=True, exist_ok=True)
-    if not log_file_path.is_file():
-        with log_file_path.open(mode='w') as logfile:
-            logfile.write(f'\n############################### BADASS {__version__} LOGFILE ####################################\n')
-
-    if (output_type=='line_test'):
-        ptbl = output_val
-        with log_file_path.open(mode='a') as logfile:
-            logfile.write('\n')
-            # logfile.write('-----------------------------------------------------------------------------------------------------')
-            logfile.write('\n Line Test Results:\n')
-            logfile.write(ptbl.get_string())
-            logfile.write("\n")
-
-        return None
-
-    # run_emcee
-    if (output_type=='emcee_options'): # write user input emcee options
-        ndim,nwalkers,auto_stop,conv_type,burn_in,write_iter,write_thresh,min_iter,max_iter = output_val
-        # write_log((ndim,nwalkers,auto_stop,burn_in,write_iter,write_thresh,min_iter,max_iter),40)
-        a = str(datetime.datetime.now())
-        with log_file_path.open(mode='a') as logfile:
-            logfile.write('\n')
-            logfile.write('\n### Emcee Options ###')
-            logfile.write('\n-----------------------------------------------------------------------------------------------------------------')
-            logfile.write('\n{0:<30}{1:<30}'.format('ndim'      , ndim ))
-            logfile.write('\n{0:<30}{1:<30}'.format('nwalkers'  , nwalkers ))
-            logfile.write('\n{0:<30}{1:<30}'.format('auto_stop'   , str(auto_stop) ))
-            logfile.write('\n{0:<30}{1:<30}'.format('user burn_in', burn_in ))
-            logfile.write('\n{0:<30}{1:<30}'.format('write_iter'  , write_iter ))
-            logfile.write('\n{0:<30}{1:<30}'.format('write_thresh', write_thresh ))
-            logfile.write('\n{0:<30}{1:<30}'.format('min_iter'  , min_iter ))
-            logfile.write('\n{0:<30}{1:<30}'.format('max_iter'  , max_iter ))
-            logfile.write('\n{0:<30}{1:<30}'.format('start_time'  , a ))
-            logfile.write('\n-----------------------------------------------------------------------------------------------------------------')
-        return None
-
-    if (output_type=='autocorr_options'): # write user input auto_stop options
-        min_samp,autocorr_tol,ncor_times,conv_type = output_val
-        with log_file_path.open(mode='a') as logfile:
-            # write_log((min_samp,tol,ntol,atol,ncor_times,conv_type),41,run_dir)
-            logfile.write('\n')
-            logfile.write('\n### Autocorrelation Options ###')
-            logfile.write('\n-----------------------------------------------------------------------------------------------------------------')
-            logfile.write('\n{0:<30}{1:<30}'.format('min_samp'  , min_samp   ))
-            logfile.write('\n{0:<30}{1:<30}'.format('tolerance%', autocorr_tol ))
-            logfile.write('\n{0:<30}{1:<30}'.format('ncor_times', ncor_times   ))
-            logfile.write('\n{0:<30}{1:<30}'.format('conv_type' , str(conv_type)    ))
-            logfile.write('\n-----------------------------------------------------------------------------------------------------------------')
-        return None
-
     if (output_type=='autocorr_results'): # write autocorrelation results to log
         # write_log((k+1,burn_in,stop_iter,param_names,tau),42,run_dir)
         burn_in,stop_iter,param_names,tau,autocorr_tol,tol,ncor_times = output_val
