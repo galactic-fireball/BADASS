@@ -73,7 +73,7 @@ class BadassLogger:
         self.logger.info('{0:<30}{1:<30}'.format('fitting region:', '(%d,%d) [A]' % (self.ctx.fit_reg.min,self.ctx.fit_reg.max)))
         self.logger.info('{0:<30}{1:<30}'.format('velocity scale:', '%0.2f [km/s/pixel]' % self.ctx.velscale))
         # self.logger.info('{0:<30}{1:<30}'.format('Galactic E(B-V):', '%0.3f' % self.ctx.ebv)) # TODO
-        self.logger.info('{0:<30}{1:<30}'.format('Flux Normalization:', '%0.0e' % self.ctx.options.fit_options.flux_norm))
+        self.logger.info('{0:<30}{1:<30}'.format('Flux Normalization:', '%0.0e' % self.ctx.flux_norm))
         self.logger.info('{0:<30}{1:<30}'.format('Fit Normalization:', '%0.5f' % self.ctx.fit_norm))
 
         self.logger.info('\n')

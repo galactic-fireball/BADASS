@@ -7,6 +7,8 @@ import pathlib
 from input.input import BadassInput
 from utils.utils import dered
 
+SDSS_FLUX_NORM = 1e-17
+
 class SDSSReader(BadassInput):
 
     def __init__(self, input_data, options):
@@ -34,6 +36,7 @@ class SDSSReader(BadassInput):
             obs_wave = np.power(10, t['loglam'])
             self.noise = np.sqrt(1 / t['ivar'])
             self.bad_pix = np.where(t['and_mask'] != 0)[0] # TODO: need?
+            self.flux_norm = SDSS_FLUX_NORM
 
             frac = obs_wave[1]/obs_wave[0] # Constant lambda fraction per pixel
             dlam_gal = (frac - 1)*obs_wave # Size of every pixel in Angstrom

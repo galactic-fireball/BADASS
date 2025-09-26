@@ -340,6 +340,7 @@ class BadassRunContext:
                 continue
 
             # Check if we are fitting lines of this type
+            # TODO: just remove the non-fitted types from the line list
             if not comp_options['fit_'+line_type]:
                 continue
 
@@ -623,6 +624,12 @@ class BadassRunContext:
             shape_lim = (0.0,1.0)
             return shape_init, shape_lim    
 
+        # TODO: remove
+        line_types = {
+            'na': 'narrow',
+            'br': 'broad',
+            'abs': 'absorp',
+        }
 
         line_par_input = {}
 
@@ -632,6 +639,10 @@ class BadassRunContext:
 
             line_type = line_dict['line_type']
             line_center = line_dict['center']
+
+            # Check if we are fitting lines of this type
+            if not self.options.comp_options['fit_'+line_types[line_type]]:
+                continue
 
             # Velocity offsets determine both the intial guess in line velocity as well as amplitude, so it makes sense to perform the voff for each line first.
             if (('voff' in line_dict) and (line_dict['voff'] == 'free')):
@@ -1218,7 +1229,7 @@ class BadassRunContext:
                 if (accepted_count > 1) and (basinhop_count >= force_basinhop) and (((lowest_rmse-accept_thresh) <= self.force_thresh) or (lowest_rmse <= self.force_thresh)):
                     terminate = True
 
-                print('\tFit Status: %s\n\tForce threshold: %0.4f\n\tLowest RMSE: %0.4f\n\tCurrent RMSE: %0.4f\n\tAccepted Count: %d\n\tBasinhop Count:%d'%(terminate,self.force_thresh,lowest_rmse,rmse,accepted_count,basinhop_count))
+                # print('\tFit Status: %s\n\tForce threshold: %0.4f\n\tLowest RMSE: %0.4f\n\tCurrent RMSE: %0.4f\n\tAccepted Count: %d\n\tBasinhop Count:%d'%(terminate,self.force_thresh,lowest_rmse,rmse,accepted_count,basinhop_count))
                 return terminate
 
 
@@ -1228,7 +1239,7 @@ class BadassRunContext:
 
         minimizer_args = {'method':'SLSQP', 'bounds':param_bounds,'constraints':cons,'options':{'disp':False,}}
         result = op.basinhopping(func=lnprob_wrapper, x0=list(self.cur_params.values()), stepsize=1.0, interval=1, niter=2500, minimizer_kwargs=minimizer_args,
-                                 disp=self.verbose, niter_success=n_basinhop, callback=callback_ftn)
+                                 disp=False, niter_success=n_basinhop, callback=callback_ftn)
 
         best_fit = result['x']
         self.cur_params = dict(zip(self.cur_params.keys(), best_fit))
@@ -1320,7 +1331,7 @@ class BadassRunContext:
     def update_mc_store(self, n, fun_result):
 
         wave_comp = self.comp_dict['WAVE']
-        flux_norm = self.target.options.fit_options.flux_norm
+        flux_norm = self.target.flux_norm
         fit_norm = self.target.fit_norm
         blob_pars = self.blob_pars
 
@@ -1390,9 +1401,11 @@ class BadassRunContext:
 
 
         for line, line_dict in {**self.line_list,**self.combined_line_list}.items():
+            if not line in self.comp_dict:
+                continue # TODO: remove unfit lines from the line_list
             line_comp = self.comp_dict[line]
-            self.mc_attr_store[line+'_FWHM'][n] = combined_fwhm(wave_comp, np.abs(line_comp), line_dict['disp_res_kms'], self.target.velscale)
-            self.mc_attr_store[line+'_W80'][n] = calculate_w80(wave_comp, np.abs(line_comp), line_dict['disp_res_kms'], self.target.velscale, line_dict['center'])
+            self.mc_attr_store[line+'_FWHM'][n] = combined_fwhm(wave_comp, np.abs(line_comp), self.target.velscale)
+            self.mc_attr_store[line+'_W80'][n] = calculate_w80(wave_comp, np.abs(line_comp), line_dict['center'])
 
             # compute number of pixels (NPIX) for each line in the line list;
             # this is done by determining the number of pixels of the line model
@@ -1459,6 +1472,8 @@ class BadassRunContext:
 
         # Add dispersion resolution (in km/s) for each line
         for line_name, line_dict in {**self.line_list,**self.combined_line_list}.items():
+            if not line_name in self.comp_dict:
+                continue # TODO: remove unfit lines from line_list
             disp_res = line_dict['disp_res_kms']
             self.fit_results[line_name+'_DISP_RES'] = {'med': disp_res, 'std': np.nan, 'flag': 0}
 
@@ -1490,7 +1505,7 @@ class BadassRunContext:
 
         # Rescale components
         for key in comp_dict:
-            if key not in ['WAVE']:
+            if not key in ['WAVE']:
                 comp_dict[key] *= self.target.fit_norm
 
         result_dict = dict(sorted(result_dict.items()))
@@ -1511,7 +1526,7 @@ class BadassRunContext:
         hdr['med_noise'] = np.nanmedian(self.target.noise)
         hdr['velscale'] = self.target.velscale
         hdr['fit_norm'] = self.target.fit_norm
-        hdr['flux_norm'] = self.target.options.fit_options.flux_norm
+        hdr['flux_norm'] = self.target.flux_norm
 
         primary = fits.PrimaryHDU(header=hdr)
         hdu = fits.HDUList([primary, table_hdu])
@@ -1655,9 +1670,19 @@ class BadassRunContext:
             # TODO: don't need to return comp_dict
             self.comp_dict, host_model = template.add_components(self.cur_params, self.comp_dict, host_model)
 
+        # TODO: remove
+        line_types = {
+            'na': 'narrow',
+            'br': 'broad',
+            'abs': 'absorp',
+        }
 
         # Emission Line Components
         for line_name, line_dict in self.line_list.items():
+            # Check if we are fitting lines of this type
+            if not self.options.comp_options['fit_'+line_types[line_dict['line_type']]]:
+                continue
+
             line_model = line_constructor(self, line_name, line_dict)
             if line_model is None:
                 continue
@@ -1672,6 +1697,8 @@ class BadassRunContext:
         for comb_line, line_dict in self.combined_line_list.items():
             self.comp_dict[comb_line] = np.zeros(len(self.fit_wave))
             for line_name in line_dict['lines']:
+                if not self.options.comp_options['fit_'+line_types[self.line_list[line_name]['line_type']]]:
+                    continue # TODO: also check if there's only one component left in the combined line
                 self.comp_dict[comb_line] += self.comp_dict[line_name]
 
         # Add last components to comp_dict for plotting purposes
@@ -1956,8 +1983,8 @@ class BadassRunContext:
 
         for line_name, line_dict in {**self.line_list, **self.combined_line_list}.items():
             line_comp = self.comp_dict[line_name]
-            blob_dict[line_name+'_FWHM'] = combined_fwhm(wave, np.abs(line_comp), line_dict['disp_res_kms'], self.target.velscale)
-            blob_dict[line_name+'_W80'] = calculate_w80(wave, np.abs(line_comp), line_dict['disp_res_kms'], self.target.velscale, line_dict['center'])
+            blob_dict[line_name+'_FWHM'] = combined_fwhm(wave, np.abs(line_comp), self.target.velscale)
+            blob_dict[line_name+'_W80'] = calculate_w80(wave, np.abs(line_comp), line_dict['center'])
             blob_dict[line_name+'_NPIX'] = len(np.where(np.abs(line_comp) > noise)[0])
             blob_dict[line_name+'_SNR'] = np.nanmax(np.abs(line_comp)) / np.nanmean(noise)
 
@@ -2042,7 +2069,7 @@ class BadassRunContext:
             val = get_key_chain(all_chains, key).astype(float)
 
             if (key.split('_')[-1] == 'FLUX') or (key[:6] == 'F_CONT'):
-                val = val * self.options.fit_options.flux_norm * self.target.fit_norm * (1.0+self.target.z)
+                val = val * self.target.flux_norm * self.target.fit_norm * (1.0+self.target.z)
 
             elif key.split('_')[-1] == 'EW':
                 val = val * (1.0+self.target.z)
@@ -2218,7 +2245,7 @@ class BadassRunContext:
         hdr['med_noise'] = np.nanmedian(self.target.noise)
         hdr['velscale'] = self.target.velscale
         hdr['fit_norm'] = self.target.fit_norm
-        hdr['flux_norm'] = self.target.options.fit_options.flux_norm
+        hdr['flux_norm'] = self.target.flux_norm
         primary = fits.PrimaryHDU(header=hdr)
 
         cols_dict = {'parameter': []}
@@ -2373,7 +2400,7 @@ def lnprior_flat(x, **kwargs):
     return -np.inf
 
 
-def combined_fwhm(lam_gal, full_profile, disp_res, velscale ):
+def combined_fwhm(lam_gal, full_profile, velscale):
     # Calculate fwhm of combined lines directly from the model
     def lin_interp(x, y, i, half):
         return x[i] + (x[i+1] - x[i]) * ((half - y[i]) / (y[i+1] - y[i]))
@@ -2391,15 +2418,13 @@ def combined_fwhm(lam_gal, full_profile, disp_res, velscale ):
     hmx = half_max_x(range(len(lam_gal)),full_profile)
     fwhm_pix = np.abs(hmx[1]-hmx[0])
     fwhm = fwhm_pix*velscale
-    # fwhm = np.sqrt((fwhm_pix*velscale)**2 - (disp_res*2.3548)**2)
     return fwhm if np.isfinite(fwhm) else 0.0
 
 
-def calculate_w80(lam_gal, full_profile, disp_res, velscale, center ):
+def calculate_w80(lam_gal, full_profile, center):
     # Calculate W80 of the full line profile for all lines
 
-    # TODO: use astropy consts
-    c = 299792.458 # speed of light (km/s)
+    c = const.c.to(u.km/u.s).value
     # Calculate the normalized CDF of the line profile
     cdf = np.cumsum(full_profile/np.sum(full_profile))
     v = (lam_gal-center)/center*c

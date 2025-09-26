@@ -246,6 +246,8 @@ def plot_best_model(ctx, plot_name):
     for line_name, line_dict in ctx.line_list.items():
         if not line_dict['line_type'] in line_params:
             continue
+        if not line_name in comp_dict:
+            continue # TODO: remove line from line_list
         label, color, linewidth, linestyle = line_params[line_dict['line_type']]
         ax1.plot(wave, comp_dict[line_name], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
 
@@ -360,6 +362,8 @@ def plotly_best_fit(ctx):
     for line_name, line_dict in ctx.line_list.items():
         if not line_dict['line_type'] in line_params:
             continue
+        if not line_name in comp_dict:
+            continue # TODO: remove line from line_list
 
         legendgroup, color, legendrank = line_params[line_dict['line_type']]
         fig.add_trace(go.Scatter(x=wave, y=comp_dict[line_name], mode='lines', line=go.scatter.Line(color=color, width=1), name=line_name, legendgroup=legendgroup, legendgrouptitle_text=legendgroup, legendrank=legendrank), row=1, col=1)
