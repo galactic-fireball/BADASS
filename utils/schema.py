@@ -33,16 +33,19 @@ rules_set_registry.add('poly_dict', {
 
 class DefaultValidator(Validator):
     def _validate_min_ex(self, test_val, field, value):
+        "{'type': ['integer', 'float']}"
         if value <= test_val:
             self._error(field, '%s must be strictly greater than %s' % (field, str(test_val)))
 
 
     def _validate_max_ex(self, test_val, field, value):
+        "{'type': ['integer', 'float']}"
         if value >= test_val:
             self._error(field, '%s must be strictly less than %s' % (field, str(test_val)))
 
 
     def _validate_lt_other(self, other, field, value):
+        "{'type': 'string'}"
         if other not in self.document:
             return False
         if value >= self.document[other]:
@@ -50,6 +53,7 @@ class DefaultValidator(Validator):
 
 
     def _validate_gt_other(self, other, field, value):
+        "{'type': 'string'}"
         if other not in self.document:
             return False
         if value <= self.document[other]:
@@ -57,6 +61,7 @@ class DefaultValidator(Validator):
 
 
     def _validate_le_other(self, other, field, value):
+        "{'type': 'string'}"
         if other not in self.document:
             return False
         if value > self.document[other]:
@@ -64,6 +69,7 @@ class DefaultValidator(Validator):
 
 
     def _validate_ge_other(self, other, field, value):
+        "{'type': 'string'}"
         if other not in self.document:
             return False
         if value < self.document[other]:
@@ -71,6 +77,7 @@ class DefaultValidator(Validator):
 
 
     def _validate_is_lohi(self, constraint, field, value):
+        "{'type': 'boolean'}"
         if not constraint:
             return
 

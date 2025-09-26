@@ -1,10 +1,10 @@
 """Bayesian AGN Decomposition Analysis for SDSS Spectra (BADASS3)
 
 BADASS is an open-source spectral analysis tool designed for detailed decomposition
-of Sloan Digital Sky Survey (SDSS) spectra, and specifically designed for the 
-fitting of Type 1 ("broad line") Active Galactic Nuclei (AGN) in the optical. 
-The fitting process utilizes the Bayesian affine-invariant Markov-Chain Monte 
-Carlo sampler emcee for robust parameter and uncertainty estimation, as well 
+of Sloan Digital Sky Survey (SDSS) spectra, and specifically designed for the
+fitting of Type 1 ("broad line") Active Galactic Nuclei (AGN) in the optical.
+The fitting process utilizes the Bayesian affine-invariant Markov-Chain Monte
+Carlo sampler emcee for robust parameter and uncertainty estimation, as well
 as autocorrelation analysis to access parameter chain convergence.
 """
 
@@ -32,43 +32,42 @@ import sys
 import time
 from typing import Callable, List, Union
 
+# TODO: fix warnings
+# import warnings
+# warnings.simplefilter('error')
+
 BADASS_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0,str(BADASS_DIR))
-sys.path.insert(0,str(BADASS_DIR.joinpath('badass_utils'))) # utility functions
-sys.path.insert(0,str(BADASS_DIR.joinpath('badass_tools'))) # tool functions
+sys.path.insert(0,str(BADASS_DIR.joinpath('badass_utils')))
+sys.path.insert(0,str(BADASS_DIR.joinpath('badass_tools')))
 
-import badass_test_suite  as badass_test_suite
+import badass_test_suite as badass_test_suite
 import badass_tools as badass_tools
 
 from utils.options import BadassOptions
 from input.input import BadassInput
 import utils.utils as ba_utils
-from templates.common import initialize_templates
+from templates.common import initialize_templates, simple_power_law, broken_power_law
 import utils.plotting as plotting
 from line_utils.line_lists.optical_qso import optical_qso_default
 from line_utils.line_profiles import line_constructor
 
 
-__author__     = "Remington O. Sexton (USNO), Sara M. Doan (GMU), Michael A. Reefe (GMU), William Matzko (GMU), Nicholas Darden (UCR)"
-__copyright__  = "Copyright (c) 2023 Remington Oliver Sexton"
-__credits__    = ["Remington O. Sexton (GMU/USNO)", "Sara M. Doan (GMU)", "Michael A. Reefe (GMU)", "William Matzko (GMU)", "Nicholas Darden (UCR)"]
-__license__    = "MIT"
-__version__    = "10.2.0"
-__maintainer__ = "Remington O. Sexton"
-__email__      = "remington.o.sexton.civ@us.navy.mil"
-__status__     = "Release"
+__author__ = 'Remington O. Sexton (USNO), Sara M. Doan (GMU), Michael A. Reefe (GMU), William Matzko (GMU), Nicholas Darden (UCR)'
+__copyright__ = 'Copyright (c) 2023 Remington Oliver Sexton'
+__credits__ = ['Remington O. Sexton (GMU/USNO)', 'Sara Doan (GMU)', 'Michael A. Reefe (GMU)', 'William Matzko (GMU)', 'Nicholas Darden (UCR)']
+__license__ = 'MIT'
+__version__ = '11.0.0'
+__maintainer__ = 'Sara Doan'
+__email__ = 'sdoan2@gmu.edu'
+__status__ = 'Release'
 
 
-# TODO: create BadassContext class that contains a target, options, parameters, etc. and the following relevant
-#       functions are instance functions
-# TODO: all print statements to logger
-# TODO: all 'if verbose' checks to logger
 # TODO: all init/plim values to config file
 # TODO: ability to resume from line test and ml results
 # TODO: ability to resume mid run (save status at certain checkpoints?)
 # TODO: ability to multiprocess mcmc runs?
 # TODO: line type classes? or just a general line class?
-# TODO: remove any whitespace at ends of lines
 # TODO: use rng seed to be able to reproduce fits
 
 class FitStage:
@@ -78,7 +77,7 @@ class FitStage:
 
 
 def run_BADASS(inputs, **kwargs):
-    # utils.options.BadassOptions.get_options_dep(kwargs)
+    # utils.options.BadassOptions.get_options_dep(kwargs) # TODO
     opts = BadassOptions.get_options(kwargs['options_file'])
     targets = BadassInput.get_inputs(inputs, opts)
 
@@ -93,7 +92,6 @@ class BadassRunContext:
     def __init__(self, target):
         self.target = target
         self.options = target.options
-        self.verbose = self.options.output_options.verbose
         self.fit_stage = FitStage.INIT
 
         # The spectral data currently being fit
@@ -147,7 +145,7 @@ class BadassRunContext:
         if (self.options.plot_options.plot_HTML) and (not importlib.util.find_spec('plotly')):
             self.options.plot_options.plot_HTML = False
 
-        print('\n > Starting fit for %s' % self.target.infile.parent.name)
+        self.target.log.info('> Starting fit for %s' % self.target.infile.parent.name)
         self.target.log.log_target_info()
 
         sys.stdout.flush()
@@ -165,14 +163,13 @@ class BadassRunContext:
             self.force_thresh = np.inf
 
         # Initialize free parameters (all components, lines, etc.)
-        self.target.log.info('\n Initializing parameters...')
-        self.target.log.info('----------------------------------------------------------------------------------------------------')
+        self.target.log.info('Initializing parameters...')
 
         # TODO: don't need to do this before line/config testing
         self.initialize_pars()
 
         # Output all free parameters of fit prior to fitting (useful for diagnostics)
-        if self.options.fit_options.output_pars or self.verbose:
+        if self.options.fit_options.output_pars:
             self.target.log.output_free_pars(self.line_list, self.param_dict, self.soft_cons)
         self.target.log.output_line_list(self.line_list, self.soft_cons)
 
@@ -181,11 +178,8 @@ class BadassRunContext:
 
 
     def initialize_pars(self, user_lines=None):
-        """
-        Initializes all free parameters for the fit based on user input and options.
-        """
+        # Initializes all free parameters for the fit based on user input and options
 
-        # Initial conditions for some parameters
         max_flux = np.nanmax(self.fit_spec)*1.5
         median_flux = np.nanmedian(self.fit_spec)
 
@@ -202,13 +196,11 @@ class BadassRunContext:
         # TODO: separate classes?
         if self.options.comp_options.fit_poly:
             if (self.options.poly_options.apoly.bool) and (self.options.poly_options.apoly.order >= 0):
-                if self.verbose:
-                    print('\t- Fitting additive legendre polynomial component')
+                self.target.log.info('\t- Fitting additive legendre polynomial component')
                 for n in range(1, int(self.options.poly_options.apoly.order)+1):
                     par_input['APOLY_COEFF_%d' % n] = {'init':0.0, 'plim':(-1.0e2,1.0e2),}
             if (self.options.poly_options.mpoly.bool) and (self.options.poly_options.mpoly.order >= 0):
-                if self.verbose:
-                    print('\t- Fitting multiplicative legendre polynomial component')
+                self.target.log.info('\t- Fitting multiplicative legendre polynomial component')
                 for n in range(1, int(self.options.poly_options.mpoly.order)+1):
                     par_input['MPOLY_COEFF_%d' % n] = {'init':0.0,'plim':(-1.0e2,1.0e2),}
 
@@ -216,17 +208,15 @@ class BadassRunContext:
         if self.options.comp_options.fit_power:
             #### Simple Power-Law (AGN continuum)
             if self.options.power_options.type == 'simple':
-                if self.verbose:
-                    print('\t- Fitting Simple AGN power-law continuum')
+                self.target.log.info('\t- Fitting Simple AGN power-law continuum')
                 # AGN simple power-law amplitude
                 par_input['POWER_AMP'] = {'init':(0.5*median_flux), 'plim':(0,max_flux),}
                 # AGN simple power-law slope
                 par_input['POWER_SLOPE'] = {'init':-1.0, 'plim':(-6.0,6.0),}
-                
+
             #### Smoothly-Broken Power-Law (AGN continuum)
             if self.options.power_options.type == 'broken':
-                if self.verbose:
-                    print('\t- Fitting Smoothly-Broken AGN power-law continuum.')
+                self.target.log.info('\t- Fitting Smoothly-Broken AGN power-law continuum.')
                 # AGN simple power-law amplitude
                 par_input['POWER_AMP'] = {'init':(0.5*median_flux), 'plim':(0,max_flux),}
                 # AGN simple power-law break wavelength
@@ -244,7 +234,7 @@ class BadassRunContext:
         self.line_list = user_lines if user_lines else self.options.user_lines if self.options.user_lines else optical_qso_default()
         self.add_line_comps()
 
-        # Add the FWHM resolution and central pixel locations for each line so we don't have to find them during the fit.
+        # Add the FWHM resolution and central pixel locations for each line so we don't have to find them during the fit
         self.add_disp_res()
 
         # Generate line free parameters based on input line_list
@@ -261,33 +251,31 @@ class BadassRunContext:
         # Append line_par_input to par_input
         self.param_dict = {**par_input, **line_par_input}
 
-        # The default line list is automatically generated from lines with multiple components.
-        # User can provide a combined line list, which can override the default.
+        # The default line list is automatically generated from lines with multiple components
+        # User can provide a combined line list, which can override the default
         self.generate_comb_line_list()
 
         # Check soft-constraints
         # Default soft constraints
         # Soft constraints: If you want to vary a free parameter relative to another free parameter (such as
         # requiring that broad lines have larger widths than narrow lines), these are called "soft" constraints,
-        # or "inequality" constraints. 
-        # These are passed through a separate list of tuples which are used by the maximum likelihood constraints 
+        # or "inequality" constraints.
+        # These are passed through a separate list of tuples which are used by the maximum likelihood constraints
         # and prior constraints by emcee.  Soft constraints have a very specific format following
-        # the scipy optimize SLSQP syntax: 
-        #
-        #               (parameter1 - parameter2) >= 0.0 OR (parameter1 >= parameter2)
-        #
+        # the scipy optimize SLSQP syntax:
+        #   (parameter1 - parameter2) >= 0.0 OR (parameter1 >= parameter2)
         self.check_soft_cons()
 
 
     def add_line_comps(self):
         """
         Checks each entry in the complete (narrow, broad, absorption, and user) line list
-        and ensures all necessary keywords are input. It also checks every line entry against the 
-        front-end component options (comp_options). The only required keyword for a line entry is 
+        and ensures all necessary keywords are input. It also checks every line entry against the
+        front-end component options (comp_options). The only required keyword for a line entry is
         the "center" wavelength of the line. If "amp", "disp", "voff", "h3" and "h4" (for Gauss-Hermite)
-        line profiles are missing, it assumes these are all "free" parameters in the fitting of that line. 
-        If "line_type" is not defined, it is assumed to be "na" (narrow).  If "line_profile" is not defined, 
-        it is assumed to be "gaussian". 
+        line profiles are missing, it assumes these are all "free" parameters in the fitting of that line.
+        If "line_type" is not defined, it is assumed to be "na" (narrow).  If "line_profile" is not defined,
+        it is assumed to be "gaussian".
 
         Line list hyper-parameters:
         amp, amp_init, amp_plim
@@ -303,7 +291,6 @@ class BadassRunContext:
         """
 
         comp_options = self.options.comp_options
-        verbose = self.options.output_options.verbose
         edge_pad = 10 # TODO: config
 
         # TODO: better handle types + 'user'
@@ -322,7 +309,7 @@ class BadassRunContext:
 
             line_type_s = line_dict['line_type'] # short name
             if (not line_type_s == 'user') and (not line_type_s in line_types):
-                print('Unsupported line type: %s' % line_type_s)
+                self.target.log.warn('Unsupported line type: %s' % line_type_s)
                 continue
 
             line_type = line_types[line_type_s] if line_type_s in line_types else 'user'
@@ -332,7 +319,7 @@ class BadassRunContext:
             # TODO: center is unit-configurable
             if ('center' not in line_dict) or (not isinstance(line_dict['center'],(int,float))):
                 # TODO: just log and continue?
-                raise ValueError('\n Line list entry requires at least \'center\' wavelength (in Angstroms) to be defined as an int or float type\n')
+                raise ValueError('Line list entry requires at least \'center\' wavelength (in Angstroms) to be defined as an int or float type')
 
             # TODO: should use fitting region?
             # Check line in wavelength region
@@ -352,7 +339,7 @@ class BadassRunContext:
 
             line_profile = line_dict['line_profile']
             if line_profile not in line_profiles:
-                print('Unsupported line profile: %s' % line_profile)
+                self.target.log.warn('Unsupported line profile: %s' % line_profile)
 
             for attr in line_attrs:
                 if attr not in line_dict:
@@ -367,8 +354,8 @@ class BadassRunContext:
                         if attr not in line_dict:
                             line_dict[attr] = 'free'
 
-                # If the line profile is Gauss-Hermite, but the number of higher-order moments is 
-                # less than or equal to 2 (for which the line profile is just Gaussian), remove any 
+                # If the line profile is Gauss-Hermite, but the number of higher-order moments is
+                # less than or equal to 2 (for which the line profile is just Gaussian), remove any
                 # unnecessary higher-order line parameters that may be in the line dictionary.
                 for m in range(type_options['n_moments']+1, 11):
                     attr = 'h%d'%m
@@ -377,7 +364,7 @@ class BadassRunContext:
                     line_dict.pop(attr+'_plim', None)
 
 
-            # Higher-order moments for laplace and uniform (h3 and h4) only for each narrow, broad, and absorp.
+            # Higher-order moments for laplace and uniform (h3 and h4) only for each narrow, broad, and absorp
             if line_profile in ['laplace','uniform']:
                 if 'h3' not in line_dict:
                     line_dict['h3'] = 'free'
@@ -400,7 +387,7 @@ class BadassRunContext:
                 line_dict.pop('shape_init', None)
                 line_dict.pop('shape_plim', None)
 
-            # line widths (narrow, broad, and absorption disp) are tied, respectively.
+            # line widths (narrow, broad, and absorption disp) are tied, respectively
             if comp_options.tie_line_disp:
                 for m in range(3, 3+type_options['n_moments']-2):
                     line_dict.pop('h%d'%m, None)
@@ -419,7 +406,7 @@ class BadassRunContext:
                     line_dict['h3'] = type_prefix + '_H3'
                     line_dict['h4'] = type_prefix + '_H4'
 
-            # line velocity offsets (narrow, broad, and absorption voff) are tied, respectively.
+            # line velocity offsets (narrow, broad, and absorption voff) are tied, respectively
             if comp_options.tie_line_voff:
                 type_prefix = line_type_s.upper()
                 if line_type == 'user': type_prefix = 'NA' # default to narrow
@@ -446,12 +433,12 @@ class BadassRunContext:
         for line_dict in self.line_list.values():
             for key in line_dict.keys():
                 if key not in valid_keys:
-                    raise ValueError('\n %s not a valid keyword for the line list!\n'%key)
+                    raise ValueError('%s not a valid keyword for the line list!'%key)
 
 
     def add_disp_res(self):
-        # Perform linear interpolation on the disp_res array as a function of wavelength 
-        # We will use this to determine the dispersion resolution as a function of wavelenth for each 
+        # Perform linear interpolation on the disp_res array as a function of wavelength
+        # We will use this to determine the dispersion resolution as a function of wavelenth for each
         # emission line so we can correct for the resolution at every iteration.
         disp_res_ftn = interp1d(self.target.wave,self.target.disp_res,kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
         # Interpolation function that maps x (in angstroms) to pixels so we can get the exact
@@ -471,7 +458,7 @@ class BadassRunContext:
 
     def initialize_line_pars(self):
         """
-        This function initializes the initial guess, parameter limits (lower and upper), and 
+        This function initializes the initial guess, parameter limits (lower and upper), and
         priors if not explicily defined by the user in the line list for each line.
 
         Special care is taken with tring to determine the location of the particular line
@@ -489,7 +476,7 @@ class BadassRunContext:
             'out': ('outflow', 100.0, (0.0,800.0), 0.0, (-0.5,0.5), 0.0, (0.0,1.0),),
         }
 
-        # First we remove the continuum 
+        # First we remove the continuum
         galaxy_csub = badass_tools.continuum_subtract(self.target.wave,self.target.spec,self.target.noise,sigma_clip=2.0,clip_iter=25,filter_size=[25,50,100,150,200,250,500],
                        noise_scale=1.0,opt_rchi2=True,plot=False,
                        fig_scale=8,fontsize=16,verbose=False)
@@ -503,8 +490,7 @@ class BadassRunContext:
             peak_wave = self.target.wave[peaks]
             trough_wave = self.target.wave[troughs]
         except:
-            if self.verbose:
-                print('\n Warning! Peak finding algorithm used for initial guesses of amplitude and velocity failed! Defaulting to user-defined locations...')
+            self.target.log.warn('Warning! Peak finding algorithm used for initial guesses of amplitude and velocity failed! Defaulting to user-defined locations...')
             peak_wave = np.array([line_dict['center'] for line_dict in self.line_list.values() if line_dict['line_type'] in ['na','br']])
             trough_wave = np.array([line_dict['center'] for line_dict in self.line_list.values() if line_dict['line_type'] in ['abs']])
             if len(peak_wave) == 0:
@@ -514,9 +500,8 @@ class BadassRunContext:
 
 
         def amp_hyperpars(line_type, line_center, voff_init, voff_plim, amp_factor):
-            """
-            Assigns the user-defined or default line amplitude initial guesses and limits.
-            """
+            # Assigns the user-defined or default line amplitude initial guesses and limits
+
             line_center = float(line_center)
 
             line_types = {
@@ -551,10 +536,7 @@ class BadassRunContext:
 
 
         def disp_hyperpars(line_type,line_center,line_profile): # FWHM hyperparameters
-            """
-            Assigns the user-defined or default line width (dispersion)
-            initial guesses and limits.
-            """
+            # Assigns the user-defined or default line width (dispersion) initial guesses and limits
 
             # TODO: in config file
             line_types = {
@@ -574,10 +556,7 @@ class BadassRunContext:
 
 
         def voff_hyperpars(line_type, line_center):
-            """
-            Assigns the user-defined or default line velocity offset (voff)
-            initial guesses and limits.
-            """
+            # Assigns the user-defined or default line velocity offset (voff) initial guesses and limits
 
             voff_default_init = 0.0
 
@@ -618,11 +597,11 @@ class BadassRunContext:
             return h_init, h_lim
 
 
-        def shape_hyperpars(): # shape of the Voigt profile; if line_profile="voigt"
+        def shape_hyperpars(): # shape of the Voigt profile; if line_profile='voigt'
             # TODO: config file
             shape_init = 0.0
             shape_lim = (0.0,1.0)
-            return shape_init, shape_lim    
+            return shape_init, shape_lim
 
         # TODO: remove
         line_types = {
@@ -634,7 +613,7 @@ class BadassRunContext:
         line_par_input = {}
 
         # We start with standard lines and options. These are added one-by-one. Then we check specific line options and then override any lines that have
-        # been already added. Params are added regardless of component options as long as the parameter is set to "free"
+        # been already added. Params are added regardless of component options as long as the parameter is set to 'free'
         for line_name, line_dict in self.line_list.items():
 
             line_type = line_dict['line_type']
@@ -644,10 +623,10 @@ class BadassRunContext:
             if not self.options.comp_options['fit_'+line_types[line_type]]:
                 continue
 
-            # Velocity offsets determine both the intial guess in line velocity as well as amplitude, so it makes sense to perform the voff for each line first.
+            # Velocity offsets determine both the intial guess in line velocity as well as amplitude, so it makes sense to perform the voff for each line first
             if (('voff' in line_dict) and (line_dict['voff'] == 'free')):
                 voff_default_init, voff_default_plim = voff_hyperpars(line_type, line_center)
-                line_par_input[line_name+'_VOFF'] = {'init': line_dict.get('voff_init', voff_default_init), 
+                line_par_input[line_name+'_VOFF'] = {'init': line_dict.get('voff_init', voff_default_init),
                                                      'plim':line_dict.get('voff_plim', voff_default_plim),
                                                      'prior':line_dict.get('voff_prior', {'type':'gaussian'}),
                                                     }
@@ -655,16 +634,16 @@ class BadassRunContext:
 
                 # Check to make sure init value is within limits of plim
                 if (line_par_input[line_name+'_VOFF']['init'] < line_par_input[line_name+'_VOFF']['plim'][0]) or (line_par_input[line_name+'_VOFF']['init'] > line_par_input[line_name+'_VOFF']['plim'][1]):
-                    raise ValueError('\n Velocity offset (voff) initial value (voff_init) for %s outside of parameter limits (voff_plim)!\n' % (line_name))
+                    raise ValueError('Velocity offset (voff) initial value (voff_init) for %s outside of parameter limits (voff_plim)!' % (line_name))
 
 
             if (('amp' in line_dict) and (line_dict['amp'] == 'free')):
-                # If amplitude parameter limits are already set in (narrow,broad,absorp)_options, then use those, otherwise, automatically generate them
+                # if amplitude parameter limits are already set in (narrow,broad,absorp)_options, then use those, otherwise, automatically generate them
                 amp_factor = 1
                 if 'ncomp' in line_dict:
-                    # Get number of components that are in the line list for this line
+                    # get number of components that are in the line list for this line
                     total_ncomp = [1]
-                    # If line is a parent line
+                    # if line is a parent line
                     if line_dict['ncomp'] == 1:
                         for ld in self.line_list.values():
                             if ('parent' in ld) and (ld['parent'] == line_name):
@@ -679,7 +658,7 @@ class BadassRunContext:
 
                     amp_factor = np.max(total_ncomp)
 
-                # Amplitude is dependent on velocity offset from expected location, which we determined above.  If the amplitude is free but voff 
+                # Amplitude is dependent on velocity offset from expected location, which we determined above.  If the amplitude is free but voff
                 # is tied to another line, we must extract whatever tied voff is
                 # TODO: config file
                 voff_init = 0.0
@@ -689,7 +668,7 @@ class BadassRunContext:
                     voff_plim = line_par_input[line_name+'_VOFF']['plim']
 
                 amp_default_init, amp_default_plim = amp_hyperpars(line_type, line_center, voff_init, voff_plim, amp_factor)
-                line_par_input[line_name+'_AMP'] = {'init': line_dict.get('amp_init', amp_default_init), 
+                line_par_input[line_name+'_AMP'] = {'init': line_dict.get('amp_init', amp_default_init),
                                                     'plim': line_dict.get('amp_plim', amp_default_plim),
                                                     'prior': line_dict.get('amp_prior'),
                                                    }
@@ -697,12 +676,12 @@ class BadassRunContext:
 
                 # Check to make sure init value is within limits of plim
                 if (line_par_input[line_name+'_AMP']['init'] < line_par_input[line_name+'_AMP']['plim'][0]) or (line_par_input[line_name+'_AMP']['init'] > line_par_input[line_name+'_AMP']['plim'][1]):
-                    raise ValueError('\n Amplitude (amp) initial value (amp_init) for %s outside of parameter limits (amp_plim)!\n' % (line_name))
+                    raise ValueError('Amplitude (amp) initial value (amp_init) for %s outside of parameter limits (amp_plim)!' % (line_name))
 
 
             if (('disp' in line_dict) and (line_dict['disp'] == 'free')):
                 disp_default_init, disp_default_plim = disp_hyperpars(line_type, line_center, line_dict['line_profile'])
-                line_par_input[line_name+'_DISP'] = {'init': line_dict.get('disp_init', disp_default_init), 
+                line_par_input[line_name+'_DISP'] = {'init': line_dict.get('disp_init', disp_default_init),
                                                      'plim': line_dict.get('disp_plim', disp_default_plim),
                                                      'prior':line_dict.get('disp_prior')
                                                     }
@@ -710,7 +689,7 @@ class BadassRunContext:
 
                 # Check to make sure init value is within limits of plim
                 if (line_par_input[line_name+'_DISP']['init'] < line_par_input[line_name+'_DISP']['plim'][0]) or (line_par_input[line_name+'_DISP']['init'] > line_par_input[line_name+'_DISP']['plim'][1]):
-                    raise ValueError('\n DISP (disp) initial value (disp_init) for %s outside of parameter limits (disp_plim)!\n' % (line_name))
+                    raise ValueError('DISP (disp) initial value (disp_init) for %s outside of parameter limits (disp_plim)!' % (line_name))
 
 
             if (line_dict['line_profile'] == 'gauss-hermite'):
@@ -730,8 +709,8 @@ class BadassRunContext:
                     if line_par_input[par_attr]['prior'] is None: line_par_input[par_attr].pop('prior',None)
 
                     # Check to make sure init value is within limits of plim
-                    if (line_par_input[par_attr]['init'] < line_par_input[par_attr]['plim'][0]) or (line_par_input[par_attr]["init"] > line_par_input[par_attr]['plim'][1]):
-                        raise ValueError('\n Gauss-Hermite moment h%d initial value (h%d_init) for %s outside of parameter limits (h%d_plim)!\n' % (m,m,line_name,m))
+                    if (line_par_input[par_attr]['init'] < line_par_input[par_attr]['plim'][0]) or (line_par_input[par_attr]['init'] > line_par_input[par_attr]['plim'][1]):
+                        raise ValueError('Gauss-Hermite moment h%d initial value (h%d_init) for %s outside of parameter limits (h%d_plim)!' % (m,m,line_name,m))
 
 
             if line_dict['line_profile'] in ['laplace','uniform']:
@@ -748,7 +727,7 @@ class BadassRunContext:
 
                     # Check to make sure init value is within limits of plim
                     if (line_par_input[par_attr]['init'] < line_par_input[par_attr]['plim'][0]) or (line_par_input[par_attr]['init'] > line_par_input[par_attr]['plim'][1]):
-                        raise ValueError('\n Laplace or Uniform moment h%d initial value (h%d_init) for %s outside of parameter limits (h%d_plim)!\n' % (m,m,line_name,m))
+                        raise ValueError('Laplace or Uniform moment h%d initial value (h%d_init) for %s outside of parameter limits (h%d_plim)!' % (m,m,line_name,m))
 
                 # TODO: config file
                 # add exceptions for h4 in each line profile; laplace h4>=0, uniform h4<0
@@ -774,10 +753,10 @@ class BadassRunContext:
 
                 # Check to make sure init value is within limits of plim
                 if (line_par_input[par_attr]['init'] < line_par_input[par_attr]['plim'][0]) or (line_par_input[par_attr]['init'] > line_par_input[par_attr]['plim'][1]):
-                    raise ValueError('\n Voigt profile shape parameter (shape) initial value (shape_init) for %s outside of parameter limits (shape_plim)!\n' % (line_name))
+                    raise ValueError('Voigt profile shape parameter (shape) initial value (shape_init) for %s outside of parameter limits (shape_plim)!' % (line_name))
 
 
-        # If tie_line_disp, we tie all widths (including any higher order moments) by respective line groups (Na, Br, Out, Abs)
+        # If tie_line_disp, we tie all widths (including any higher order moments) by respective line groups (na, br, abs)
         comp_options = self.options.comp_options
         if comp_options.tie_line_disp:
             for line_type, type_attrs in line_types.items():
@@ -793,7 +772,7 @@ class BadassRunContext:
                     for m in range(3,5):
                         line_par_input[line_type.upper()+'_H%d'%m] = {'init': type_attrs[3], 'plim': type_attrs[4]}
 
-        # If tie_line_voff, we tie all velocity offsets (including any higher order moments) by respective line groups (Na, Br, Out, Abs)   
+        # If tie_line_voff, we tie all velocity offsets (including any higher order moments) by respective line groups (na, br, abs)
         if comp_options.tie_line_voff:
             for line_type, type_attrs in line_types.items():
                 if (comp_options['fit_'+type_attrs[0]]) or (line_type in [line_dict['line_type'] for line_dict in self.line_list.values()]):
@@ -818,12 +797,10 @@ class BadassRunContext:
                 # hpar value is an expression, make sure it's valid
                 if ne.validate(value, local_dict=param_dict) is not None:
                     if remove_lines:
-                        if self.verbose:
-                            print('\n WARNING: Hard-constraint %s not found in parameter list or could not be parsed; removing %s line from line list.\n' % (value,line_name))
+                        self.target.log.warn('WARNING: Hard-constraint %s not found in parameter list or could not be parsed; removing %s line from line list' % (value,line_name))
                         self.line_list.pop(line, None)
                     else:
-                        if self.verbose:
-                            print('Hard-constraint %s not found in parameter list or could not be parsed; converting to free parameter.\n' % value)
+                        self.target.log.info('Hard-constraint %s not found in parameter list or could not be parsed; converting to free parameter' % value)
                         line_dict[hpar] = 'free'
 
 
@@ -836,7 +813,7 @@ class BadassRunContext:
         for con in soft_cons:
             # validate returns None if successful
             if any([ne.validate(c,local_dict=expr_dict) for c in con]):
-                print('\n - %s soft constraint removed because one or more free parameters is not available.' % str(con))
+                self.target.log.info('- %s soft constraint removed because one or more free parameters is not available' % str(con))
             else:
                 out_cons.append(con)
 
@@ -845,17 +822,17 @@ class BadassRunContext:
             val1 = ne.evaluate(con[0],local_dict=expr_dict).item()
             val2 = ne.evaluate(con[1],local_dict=expr_dict).item()
             if val1 < val2:
-                raise ValueError('\n The initial value for %s is less than the initial value for %s, but the constraint %s says otherwise.  Either remove the constraint or initialize the values appropriately.\n' % (con[0],con[1],con))
+                raise ValueError('The initial value for %s is less than the initial value for %s, but the constraint %s says otherwise.  Either remove the constraint or initialize the values appropriately' % (con[0],con[1],con))
 
         self.soft_cons = out_cons
 
 
     def generate_comb_line_list(self):
         """
-        Generate a list of 'combined lines' for lines with multiple components, for which 
-        velocity moments (integrated velocity and dispersion) and other quantities will 
+        Generate a list of 'combined lines' for lines with multiple components, for which
+        velocity moments (integrated velocity and dispersion) and other quantities will
         be calculated during the fit. This is done automatically for lines that have a valid
-        "parent" explicitly defined, for which the parent line is the 1st component
+        'parent' explicitly defined, for which the parent line is the 1st component
         """
         if len(self.line_list) == 0:
             self.combined_line_list = {}
@@ -893,11 +870,11 @@ class BadassRunContext:
 
     def set_blob_pars(self):
         """
-        The blob-parameter dictionary is a dictionary for any non-free "blob" parameters for values that need 
-        to be calculated during the fit. For MCMC, these equate to non-fitted parameters like fluxes, equivalent widths, 
+        The blob-parameter dictionary is a dictionary for any non-free 'blob' parameters for values that need
+        to be calculated during the fit. For MCMC, these equate to non-fitted parameters like fluxes, equivalent widths,
         or continuum fluxes that aren't explicitly fit as free paramters, but need to be calculated as output /during the fitting process/
         such that full chains can be constructed out of their values (as opposed to calculated after the fitting is over).
-        We mainly use blob-pars for the indices of the wavelength vector at which to calculate continuum luminosities, so we don't have to 
+        We mainly use blob-pars for the indices of the wavelength vector at which to calculate continuum luminosities, so we don't have to
         interpolate during the fit, which is computationally expensive.
         This needs to be passed throughout the fit_model() algorithm so it can be used.
         """
@@ -907,7 +884,7 @@ class BadassRunContext:
         # Values of velocity scale corresponding to wavelengths; this is used to calculate
         # integrated dispersions and velocity offsets for combined lines.
         interp_ftn = interp1d(self.target.wave, np.arange(len(self.target.wave))*self.target.velscale, kind='linear', bounds_error=False)
-        
+
         for line_name, line_dict in self.combined_line_list.items():
             blob_pars[line_name+'_LINE_VEL'] = interp_ftn(line_dict['center'])
 
@@ -947,8 +924,7 @@ class BadassRunContext:
         if not self.options.user_lines:
             raise ValueError('The input user line list is None or empty. There are no lines to test. You cannot use the default line list to test for lines, as they must be explicitly defined by user lines. See examples for details...')
 
-        if self.verbose:
-            print('Performing line testing for %s' % (test_options.lines))
+        self.target.log.debug('Performing line testing for %s' % (test_options.lines))
 
         # TODO: validate lines to test are in line list and within the fitting region
 
@@ -1023,7 +999,7 @@ class BadassRunContext:
         if not self.options.user_lines:
             raise ValueError('The input user line list is None or empty.  There are no lines to test.  You cannot use the default line list to test for lines, as they must be explicitly defined by user lines.  See examples for details...')
 
-        if len(test_options.lines) < 2: 
+        if len(test_options.lines) < 2:
             raise ValueError('The number of configurations to test must be more than 1!')
 
         # Check to see that each line in each configuration is in the line list
@@ -1031,9 +1007,7 @@ class BadassRunContext:
             if not np.all([True if line in self.line_list else False for line in config]):
                 raise ValueError('A line in a configuration is not defined in the input line list!')
 
-        if self.verbose:
-            print('Performing configuration testing for %d configurations...' % len(test_options.lines))
-            print('----------------------------------------------------------------------------------------------------')
+        self.target.log.debug('Performing configuration testing for %d configurations...' % len(test_options.lines))
 
         # test_set = [(label, [test_lines], {full_line_list}), ...]
         test_set = []
@@ -1097,8 +1071,7 @@ class BadassRunContext:
             # Calculate degrees of freedom of fit; nu = n - m (n number of observations minus m degrees of freedom (free fitted parameters))
             dof = len(self.target.wave)-len(self.param_dict)
             if dof <= 0:
-                if self.verbose:
-                    print('WARNING: Degrees-of-Freedom in fit is <= 0.  One should increase the test range and/or decrease the number of free parameters of the model appropriately')
+                self.target.log.warn('WARNING: Degrees-of-Freedom in fit is <= 0.  One should increase the test range and/or decrease the number of free parameters of the model appropriately')
                 dof = 1
 
             if self.options.fit_options.reweighting:
@@ -1147,11 +1120,11 @@ class BadassRunContext:
             ptbl = PrettyTable()
             ptbl.field_names = ['TEST A', 'TEST B'] + list(metrics.keys()) + ['AON', 'PASS']
             ptbl.add_row([prev_label, test_label] + ['%f'%v for v in metrics.values()] + ['%f'%aon, test_pass])
-            print(ptbl)
+            self.target.log.debug(ptbl)
 
-            print('(Test %s)' % 'Passed' if test_pass else 'Failed')
+            self.target.log.debug('(Test %s)' % 'Passed' if test_pass else 'Failed')
             if test_pass and self.target.options.test_options.auto_stop:
-                print('metric thresholds met, stopping')
+                self.target.log.debug('metric thresholds met, stopping')
                 break
 
             prev_label, prev_results = test_label, fit_results
@@ -1160,19 +1133,19 @@ class BadassRunContext:
         ptbl.field_names = ['TEST A', 'TEST B'] + list(test_metrics[0][2].keys()) + ['AON', 'PASS']
         for label_A, label_B, metrics in test_metrics:
             ptbl.add_row([label_A, label_B] + ['%f'%v for v in metrics.values()] + ['%f'%test_fit_results[label_B]['aon'], test_fit_results[label_B]['pass']])
-        print('Test Results:')
-        print(ptbl)
+        self.target.log.info('Test Results:')
+        self.target.log.info(ptbl)
 
         return test_fit_results, test_metrics
 
 
     skip_comps = ['DATA','WAVE','MODEL','NOISE','RESID','POWER','HOST_GALAXY','BALMER_CONT','APOLY','MPOLY',]
-    cont_comps = ['POWER', 'HOST_GALAXY', 'BALMER_CONT', 'APOLY', 'MPOLY']
-    tied_target_pars = ['amp', 'disp', 'voff', 'shape', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9', 'h10']
+    cont_comps = ['POWER', 'HOST_GALAXY', 'BALMER_CONT', 'APOLY', 'MPOLY',]
+    tied_target_pars = ['amp', 'disp', 'voff', 'shape', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9', 'h10',]
 
     def max_likelihood(self, line_test=False):
 
-        print('Performing max likelihood fitting')
+        self.target.log.debug('Performing max likelihood fitting')
 
         self.prior_params = [key for key,val in self.param_dict.items() if ('prior' in val)]
         self.cur_params = {k:v['init'] for k,v in self.param_dict.items()}
@@ -1192,7 +1165,7 @@ class BadassRunContext:
         lowest_rmse = badass_test_suite.root_mean_squared_error(self.fit_spec, np.zeros(len(self.fit_spec)))
         callback_ftn = None
         if np.isfinite(self.force_thresh):
-            print('Required Maximum Likelihood RMSE threshold: %0.4f' % (self.force_thresh))
+            self.target.log.debug('Required Maximum Likelihood RMSE threshold: %0.4f' % (self.force_thresh))
             force_basinhop = n_basinhop
             # TODO: config
             n_basinhop = 250 # Set to arbitrarily high threshold
@@ -1222,14 +1195,14 @@ class BadassRunContext:
 
                 accept_thresh = 0.001 # Define an acceptance threshold
                 if (basinhop_count > n_basinhop) and (accepted_count >=1) and ((lowest_rmse-accept_thresh > self.force_thresh) or (lowest_rmse > self.force_thresh)):
-                    print('Warning: basinhopping has exceeded %d attemps to find a new global maximum. Terminating fit...'%n_basinhop)
+                    self.target.log.warn('Warning: basinhopping has exceeded %d attemps to find a new global maximum. Terminating fit...'%n_basinhop)
                     return True
 
                 terminate = False
                 if (accepted_count > 1) and (basinhop_count >= force_basinhop) and (((lowest_rmse-accept_thresh) <= self.force_thresh) or (lowest_rmse <= self.force_thresh)):
                     terminate = True
 
-                # print('\tFit Status: %s\n\tForce threshold: %0.4f\n\tLowest RMSE: %0.4f\n\tCurrent RMSE: %0.4f\n\tAccepted Count: %d\n\tBasinhop Count:%d'%(terminate,self.force_thresh,lowest_rmse,rmse,accepted_count,basinhop_count))
+                self.target.log.debug('\tFit Status: %s\n\tForce threshold: %0.4f\n\tLowest RMSE: %0.4f\n\tCurrent RMSE: %0.4f\n\tAccepted Count: %d\n\tBasinhop Count:%d'%(terminate,self.force_thresh,lowest_rmse,rmse,accepted_count,basinhop_count))
                 return terminate
 
 
@@ -1252,7 +1225,7 @@ class BadassRunContext:
         self.update_mc_store(0, fun_result)
 
         if max_like_niter:
-            print('Performing Monte Carlo bootstrapping')
+            self.target.log.info('Performing Monte Carlo bootstrapping')
             orig_fit_spec = self.fit_spec.copy()
 
             for n in range(1, max_like_niter+1):
@@ -1262,7 +1235,7 @@ class BadassRunContext:
                 mcgal[~np.isfinite(mcgal)] = np.nanmedian(mcgal)
                 self.fit_spec = mcgal
 
-                resultmc = op.minimize(fun=lnprob_wrapper, x0=list(self.cur_params.values()), method='SLSQP', 
+                resultmc = op.minimize(fun=lnprob_wrapper, x0=list(self.cur_params.values()), method='SLSQP',
                                        bounds=param_bounds, constraints=cons, options={'maxiter':1000,'disp': False})
 
                 # return original spectrum for fitting model
@@ -1353,19 +1326,13 @@ class BadassRunContext:
             # TODO: utility functions for calculations
             # TODO: use rest -> obs frame util
             # TODO: better way to integrate?
-            # FLUX
             # Correct for redshift (integrate over observed wavelength, not rest)
             flux = np.trapz(val, wave_comp)*(1.0+self.target.z)
             flux = np.abs(flux)*flux_norm*fit_norm
             self.mc_attr_store[key+'_FLUX'][n] = np.log10(flux)
-
-            # LUM
             self.mc_attr_store[key+'_LUM'][n] = np.log10(self.flux_to_lum(flux))
-
-            # EW
             ew = np.trapz(val/cont, wave_comp)*(1.0+self.target.z)
             self.mc_attr_store[key+'_EW'][n] = ew if np.isfinite(ew) else 0.0
-
 
         total_cont, agn_cont, host_cont = get_continuums(self.comp_dict, len(wave_comp))
 
@@ -1409,11 +1376,11 @@ class BadassRunContext:
 
             # compute number of pixels (NPIX) for each line in the line list;
             # this is done by determining the number of pixels of the line model
-            # that are above the raw noise. 
+            # that are above the raw noise.
             self.mc_attr_store[line+'_NPIX'][n] = len(np.where(np.abs(line_comp) > self.fit_noise)[0])
 
             # compute the signal-to-noise ratio (SNR) for each line;
-            # this is done by calculating the maximum value of the line model 
+            # this is done by calculating the maximum value of the line model
             # above the MEAN value of the noise within the channels.
             self.mc_attr_store[line+'_SNR'][n] = np.nanmax(np.abs(line_comp)) / np.nanmean(self.fit_noise)
 
@@ -1522,7 +1489,7 @@ class BadassRunContext:
         table_hdu = fits.BinTableHDU.from_columns(cols)
 
         hdr = fits.Header()
-        hdr['z_sdss'] = self.target.z
+        hdr['z'] = self.target.z
         hdr['med_noise'] = np.nanmedian(self.target.noise)
         hdr['velscale'] = self.target.velscale
         hdr['fit_norm'] = self.target.fit_norm
@@ -1546,18 +1513,18 @@ class BadassRunContext:
         hdu.writeto(self.target.outdir.joinpath('log', 'best_model_components.fits'), overwrite=True)
 
         plotting.plot_ml_results(self)
-        print('Done ML fitting %s! \n' % self.target.options.io_options.output_dir)
+        self.target.log.info('Done ML fitting %s!' % self.target.options.io_options.output_dir)
 
 
     def reweight(self):
         if not self.options.fit_options.reweighting:
             return
-        print('Reweighting noise to achieve a reduced chi-squared ~ 1')
+        self.target.log.debug('Reweighting noise to achieve a reduced chi-squared ~ 1')
         cur_rchi2 = badass_test_suite.r_chi_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'], self.fit_noise, len(self.cur_params))
-        print('\tCurrent reduced chi-squared = %0.5f' % cur_rchi2)
+        self.target.log.debug('\tCurrent reduced chi-squared = %0.5f' % cur_rchi2)
         self.fit_noise = self.fit_noise*np.sqrt(cur_rchi2)
         new_rchi2 = badass_test_suite.r_chi_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'], self.fit_noise, len(self.cur_params))
-        print('\tNew reduced chi-squared = %0.5f' % new_rchi2)
+        self.target.log.debug('\tNew reduced chi-squared = %0.5f' % new_rchi2)
 
 
     def lnprob(self):
@@ -1609,7 +1576,7 @@ class BadassRunContext:
             con_pass = ne.evaluate(expr1, local_dict=self.cur_params).item() - ne.evaluate(expr2, local_dict=self.cur_params).item() >= 0
             lp_arr.append(0.0 if con_pass else -np.inf)
 
-        # Loop through parameters with priors on them 
+        # Loop through parameters with priors on them
         prior_map = {'gaussian': lnprior_gaussian, 'halfnorm': lnprior_halfnorm, 'jeffreys': lnprior_jeffreys, 'flat': lnprior_flat}
         p = [prior_map[self.param_dict[key]['prior']['type']](self.cur_params[key],**self.param_dict[key]) for key in self.prior_params]
 
@@ -1617,7 +1584,7 @@ class BadassRunContext:
         return np.sum(lp_arr)
 
 
-    # The fit_model function controls the model for both the initial and MCMC fits.
+    # The fit_model function controls the model for both the initial and MCMC fits
     def fit_model(self):
         # Constructs galaxy model
         host_model = np.copy(self.fit_spec)
@@ -1730,7 +1697,7 @@ class BadassRunContext:
 
         nwalkers = self.options.mcmc_options.nwalkers
         if nwalkers < 2*len(self.cur_params):
-            print('Number of walkers < 2 x (# of parameters)! Setting nwalkers = %d' % (2*len(self.cur_params)))
+            self.target.log.info('Number of walkers < 2 x (# of parameters)! Setting nwalkers = %d' % (2*len(self.cur_params)))
             nwalkers = 2*len(self.cur_params)
 
         pos = self.initialize_walkers(nwalkers)
@@ -1741,12 +1708,6 @@ class BadassRunContext:
         min_iter = self.options.mcmc_options.min_iter
         write_iter = self.options.mcmc_options.write_iter
         write_thresh = self.options.mcmc_options.write_thresh
-
-        # TODO: for testing
-        max_iter = 10
-        min_iter = 3
-        write_iter = 3
-        write_thresh = 3
 
         # TODO: create Backend class that supports objects (pickle-based? npz-based?)
         # backend = emcee.backends.HDFBackend(self.target.outdir.joinpath('log', 'MCMC_chain.h5'))
@@ -1761,7 +1722,6 @@ class BadassRunContext:
 
         dtype = [('full_blob',dict),]
         sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob_wrapper, blobs_dtype=dtype)#, backend=backend)
-
 
         autocorr = None
         if self.options.mcmc_options.auto_stop:
@@ -1835,14 +1795,14 @@ class BadassRunContext:
                     self.tolerances.append(tol)
 
                     if (not self.converged) and (self.conv_func(sampler, tau, tol)):
-                        print('Converged at %d iterations\nPerforming %d iterations of sampling'%(it, self.min_samp))
+                        self.target.log.info('Converged at %d iterations\nPerforming %d iterations of sampling'%(it, self.min_samp))
                         self.burn_in = it
                         self.stop_iter = it+self.min_samp
                         self.conv_tau = tau
                         self.converged = True
 
                     elif (self.converged) and (not self.conv_func(sampler, tau, tol)):
-                        print('Iteration: %d - Jumped out of convergence, resetting burn_in and max_iter'%it)
+                        self.target.log.info('Iteration: %d - Jumped out of convergence, resetting burn_in and max_iter'%it)
                         self.burn_in = self.ctx.options.mcmc_options.burn_in
                         self.stop_iter = self.options.mcmc_options.max_iter
                         self.converged = False
@@ -1863,7 +1823,7 @@ class BadassRunContext:
         # self.add_chain(sampler=sampler)
 
         # while sampler.iteration < max_iter:
-        #     print('MCMC iteration: %d' % sampler.iteration)
+        #     self.target.log.info('MCMC iteration: %d' % sampler.iteration)
         #     sampler.run_mcmc(pos, min(write_iter, max_iter-sampler.iteration))
         #     self.add_chain(sampler=sampler)
             # TODO: verbose -> print current parameter values
@@ -1873,7 +1833,7 @@ class BadassRunContext:
         for result in sampler.sample(pos, iterations=max_iter):
             it = sampler.iteration
             if (it >= write_thresh) and (it % write_iter == 0):
-                print('MCMC iteration: %d' % it)
+                self.target.log.info('MCMC iteration: %d' % it)
                 self.add_chain(sampler=sampler)
                 # TODO: log current parameter values
 
@@ -1885,7 +1845,7 @@ class BadassRunContext:
 
         elap_time = (time.time() - start_time)
         run_time = ba_utils.time_convert(elap_time)
-        print('emcee Runtime = %s' % (run_time))
+        self.target.log.debug('emcee Runtime = %s' % (run_time))
 
         # TODO
         # write_log(run_time,'emcee_time',run_dir)
@@ -1910,7 +1870,7 @@ class BadassRunContext:
             ptbl.field_names = ['Parameter', 'Autocorr. Time', 'Target Autocorr. Time', 'Tolerance', 'Converged?']
             for i, pname in enumerate(self.cur_params.keys()):
                 ptbl.add_row([pname, tau[i], autocorr.max_tol, tol[i], autocorr.ncor_times])
-            print(ptbl)
+            self.target.log.debug(ptbl)
 
         # TODO: output files
         self.collect_mcmc_results(sampler, autocorr)
@@ -1929,12 +1889,12 @@ class BadassRunContext:
         plotting.plot_best_model(self, 'best_fit_model.pdf')
 
         elap_time = (time.time() - start_time)
-        print('Total Runtime = %s' % (ba_utils.time_convert(elap_time)))
+        self.target.log.debug('Total Runtime = %s' % (ba_utils.time_convert(elap_time)))
 
         # TODO:
         # write_log(elap_time,'total_time',run_dir)
 
-        print('Done MCMC fitting %s! \n' % self.target.options.io_options.output_dir)
+        self.target.log.info('Done MCMC fitting %s!' % self.target.options.io_options.output_dir)
 
 
     def initialize_walkers(self, nwalkers):
@@ -2241,7 +2201,7 @@ class BadassRunContext:
         # TODO: remove redundancy with ml pt.fits
         # Write parameter table
         hdr = fits.Header()
-        hdr['z_sdss'] = self.target.z
+        hdr['z'] = self.target.z
         hdr['med_noise'] = np.nanmedian(self.target.noise)
         hdr['velscale'] = self.target.velscale
         hdr['fit_norm'] = self.target.fit_norm
@@ -2294,13 +2254,13 @@ def get_continuums(components, size):
 # Autocorrelation analysis
 def autocorr_convergence(sampler_chain, c=5.0):
     """
-    Estimates the autocorrelation times using the 
-    methods outlined on the Autocorrelation page 
+    Estimates the autocorrelation times using the
+    methods outlined on the Autocorrelation page
     on the emcee website:
     https://emcee.readthedocs.io/en/stable/tutorials/autocorr/
     """
 
-    npar = np.shape(sampler_chain)[2] # Number of parameters
+    npar = np.shape(sampler_chain)[2]
 
     tau_est = np.empty(npar)
     for p in range(npar):
@@ -2315,6 +2275,7 @@ def autocorr_convergence(sampler_chain, c=5.0):
     return tau_est
 
 
+# TODO: to utils
 def next_pow_two(n):
     i = 1
     while i < n:
@@ -2323,12 +2284,11 @@ def next_pow_two(n):
 
 
 def autocorr_func_1d(x, norm=True):
-    """
-    Estimates the 1d autocorrelation function for a chain.
-    """
+    # Estimates the 1d autocorrelation function for a chain.
+
     x = np.atleast_1d(x)
     if len(x.shape) != 1:
-        raise ValueError("invalid dimensions for 1D autocorrelation function")
+        raise ValueError('invalid dimensions for 1D autocorrelation function')
     n = next_pow_two(len(x))
 
     # Compute the FFT and then (from that) the auto-correlation function
@@ -2351,9 +2311,10 @@ def auto_window(taus, c):
     return len(taus) - 1
 
 
+# TODO: all in line_profile util
 def lnprior_gaussian(x,**kwargs):
     """
-    Log-Gaussian prior based on user-input.  If not specified, mu and sigma 
+    Log-Gaussian prior based on user-input. If not specified, mu and sigma
     will be derived from the init and plim, with plim occurring at 5-sigma
     for the maximum plim from the mean.
     """
@@ -2365,7 +2326,7 @@ def lnprior_gaussian(x,**kwargs):
 
 def lnprior_halfnorm(x, **kwargs):
     """
-    Half Log-Normal prior based on user-input.  If not specified, mu and sigma 
+    Half Log-Normal prior based on user-input. If not specified, mu and sigma
     will be derived from the init and plim, with plim occurring at 5-sigma
     for the maximum plim from the mean.
     """
@@ -2378,7 +2339,7 @@ def lnprior_halfnorm(x, **kwargs):
 
 def lnprior_jeffreys(x, **kwargs):
     """
-    Log-Jeffreys prior based on user-input.  If not specified, mu and sigma 
+    Log-Jeffreys prior based on user-input.  If not specified, mu and sigma
     will be derived from the init and plim, with plim occurring at 5-sigma
     for the maximum plim from the mean.
     """
@@ -2435,59 +2396,3 @@ def calculate_w80(lam_gal, full_profile, center):
     # w80 = np.sqrt((w80)**2-(2.567*disp_res)**2)
 
     return w80 if np.isfinite(w80) else 0.0
-
-
-# TODO: move to separate template
-def simple_power_law(x,amp,alpha):
-    """
-    Simple power-low function to model
-    the AGN continuum (Calderone et al. 2017).
-
-    Parameters
-    ----------
-    x    : array_like
-            wavelength vector (angstroms)
-    amp   : float 
-            continuum amplitude (flux density units)
-    alpha : float
-            power-law slope
-
-    Returns
-    ----------
-    C    : array
-            AGN continuum model the same length as x
-    """
-    xb = np.max(x)-(0.5*(np.max(x)-np.min(x))) # take to be half of the wavelength range
-    return amp*(x/xb)**alpha # un-normalized
-
-
-# TODO: move to separate template
-def broken_power_law(x, amp, x_break, alpha_1, alpha_2, delta):
-    """
-    Smoothly-broken power law continuum model; for use 
-    when there is sufficient coverage in near-UV.
-    (See https://docs.astropy.org/en/stable/api/astropy.modeling.
-     powerlaws.SmoothlyBrokenPowerLaw1D.html#astropy.modeling.powerlaws.
-     SmoothlyBrokenPowerLaw1D)
-
-    Parameters
-    ----------
-    x       : array_like
-              wavelength vector (angstroms)
-    amp  : float [0,max]
-              continuum amplitude (flux density units)
-    x_break : float [x_min,x_max]
-              wavelength of the break
-    alpha_1 : float [-4,2]
-              power-law slope on blue side.
-    alpha_2 : float [-4,2]
-              power-law slope on red side.
-    delta   : float [0.001,1.0]
-
-    Returns
-    ----------
-    C    : array
-            AGN continuum model the same length as x
-    """
-
-    return amp * (x/x_break)**(alpha_1) * (0.5*(1.0+(x/x_break)**(1.0/delta)))**((alpha_2-alpha_1)*delta)

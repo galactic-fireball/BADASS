@@ -48,7 +48,7 @@ class HostTemplate(BadassTemplate):
         disp_temp = fwhm_temp/2.3548
 
         hdu = fits.open(self.temp_file)
-        ssp = hdu[0].data 
+        ssp = hdu[0].data
         h = hdu[0].header
         hdu.close()
 
@@ -92,7 +92,7 @@ class HostTemplate(BadassTemplate):
                 lam_temp_new = np.arange(int(self.ctx.wave[0]-npad), np.ceil(self.ctx.wave[-1]+npad), 1)
                 interp_ftn = interp1d(lam_temp, ssp, kind='linear', bounds_error=False, fill_value=(0.0,0.0))
                 ssp = interp_ftn(lam_temp_new)
-                lam_temp = lam_temp_new 
+                lam_temp = lam_temp_new
 
             ssp = ssp[mask]
             ssp = gaussian_filter1d(ssp, sigma)  # perform convolution with variable sigma
@@ -108,12 +108,12 @@ class HostTemplate(BadassTemplate):
             host_vel = host_options.vel_const.val
             host_disp = host_options.disp_const.val
 
-            self.conv_host = convolve_gauss_hermite(self.ssp_fft, self.npad, float(self.ctx.velscale), \
+            self.conv_host = convolve_gauss_hermite(self.ssp_fft, self.npad, float(self.ctx.velscale),
                            [host_vel, host_disp], np.shape(self.ctx.wave)[0], vsyst=self.vsyst)
 
 
     def initialize_parameters(self, params, args):
-        self.ctx.log.info('- Fitting a SSP host-galaxy template.')
+        self.ctx.log.info('- Fitting a SSP host-galaxy template')
         host_options = self.ctx.options.host_options
 
         if len(host_options.age) == 1:
@@ -143,11 +143,11 @@ class HostTemplate(BadassTemplate):
             host_vel = val('vel_const', 'val', 'HOST_TEMP_VEL')
             host_disp = val('disp_const', 'val', 'HOST_TEMP_DISP')
 
-            self.conv_host = convolve_gauss_hermite(self.ssp_fft, self.npad, float(self.ctx.velscale), \
+            self.conv_host = convolve_gauss_hermite(self.ssp_fft, self.npad, float(self.ctx.velscale),
                            [host_vel, host_disp], np.shape(self.ctx.wave)[0], vsyst=self.vsyst)
 
 
-        if np.shape(self.conv_host)[1] == 1 :
+        if np.shape(self.conv_host)[1] == 1:
             host_galaxy = (self.conv_host * params['HOST_TEMP_AMP']).reshape(-1)
         elif np.shape(self.conv_host)[1] > 1:
             host_model[~np.isfinite(host_model)] = 0
@@ -161,4 +161,3 @@ class HostTemplate(BadassTemplate):
         # Subtract off continuum from galaxy, since we only want template weights to be fit
         host_model -= host_galaxy
         return comp_dict, host_model
-

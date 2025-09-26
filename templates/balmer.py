@@ -20,7 +20,7 @@ class BalmerTemplate(BadassTemplate):
             return None
 
         if ctx.wave[0] >= BALMER_TEMP_WAVE_MAX:
-            ctx.log.warn('Balmer continuum disabled because template is outside of fitting region.')
+            ctx.log.warn('Balmer continuum disabled because template is outside of fitting region')
             ctx.log.update_balmer()
             return None
 
@@ -42,10 +42,10 @@ class BalmerTemplate(BadassTemplate):
         lam_balmer = np.arange(np.min(self.ctx.wave)-npad, np.max(self.ctx.wave)+npad, dlam_balmer) # angstroms
 
         # Interpolate the original template onto the new grid
-        interp_ftn_balmer = interp1d(df["angstrom"].to_numpy(),df["flux"].to_numpy(),kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
+        interp_ftn_balmer = interp1d(df['angstrom'].to_numpy(),df['flux'].to_numpy(),kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
         spec_high_balmer = interp_ftn_balmer(lam_balmer)
 
-        # Calculate the difference in instrumental dispersion between SDSS and the template
+        # Calculate the difference in instrumental dispersion between the instrument and the template
         lamRange_balmer = [np.min(lam_balmer), np.max(lam_balmer)]
         fwhm_balmer = 1.0
         disp_balmer = fwhm_balmer/2.3548
@@ -53,7 +53,7 @@ class BalmerTemplate(BadassTemplate):
         disp_diff = np.sqrt((disp_res_interp**2 - disp_balmer**2).clip(0))
         sigma = disp_diff/dlam_balmer # Sigma difference in pixels
 
-        # Convolve the FeII templates to the SDSS resolution
+        # Convolve the FeII templates to the instrument resolution
         spec_high_balmer = gaussian_filter1d(spec_high_balmer, sigma)
 
         # Log-rebin to same velocity scale as galaxy
@@ -159,8 +159,8 @@ class BalmerTemplate(BadassTemplate):
         vsyst = np.log(self.lam_balmer[0]/self.ctx.wave[0])*consts.c
 
         # Broaden the higher-order Balmer lines
-        conv_temp = convolve_gauss_hermite(balmer_fft, balmer_npad, float(self.ctx.velscale),\
-                                           [balmer_voff, balmer_disp], self.ctx.wave.shape[0], 
+        conv_temp = convolve_gauss_hermite(balmer_fft, balmer_npad, float(self.ctx.velscale),
+                                           [balmer_voff, balmer_disp], self.ctx.wave.shape[0],
                                            velscale_ratio=1, sigma_diff=0, vsyst=vsyst)
 
         conv_temp = conv_temp/conv_temp[find_nearest(self.ctx.wave,BALMER_EDGE_WAVE)[1]] * balmer_ratio
@@ -173,4 +173,3 @@ class BalmerTemplate(BadassTemplate):
         host_model -= balmer_cont
 
         return comp_dict, host_model
-

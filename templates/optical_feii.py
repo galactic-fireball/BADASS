@@ -24,7 +24,7 @@ class OpticalFeIITemplate(BadassTemplate):
         temp_class = globals()[class_name]
 
         if (temp_class.TEMP_LAM_RANGE[1] > 0.0 and ctx.wave[0] > temp_class.TEMP_LAM_RANGE[1]) or (ctx.wave[-1] < temp_class.TEMP_LAM_RANGE[0]):
-            ctx.log.warn('Optical FeII template disabled because template is outside of fitting region.')
+            ctx.log.warn('Optical FeII template disabled because template is outside of fitting region')
             ctx.log.update_opt_feii()
             ctx.options.comp_options.fit_opt_feii = False
             return None
@@ -39,17 +39,16 @@ class OpticalFeIITemplate(BadassTemplate):
     def convolve(self, fft, feii_voff, feii_disp, npad=None):
         if npad is None:
             npad = self.npad
-        return convolve_gauss_hermite(fft, npad, float(self.ctx.velscale),\
-                                    [feii_voff, feii_disp/2.3548], self.ctx.wave.shape[0], 
-                                    velscale_ratio=1, sigma_diff=0, vsyst=self.vsyst)
-
+        return convolve_gauss_hermite(fft, npad, float(self.ctx.velscale),
+                                     [feii_voff, feii_disp/2.3548], self.ctx.wave.shape[0],
+                                     velscale_ratio=1, sigma_diff=0, vsyst=self.vsyst)
 
 
 class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
     """
-    'VC04' : Veron-Cetty et al. (2004) template, which utilizes a single broad 
-             and single narrow line template with fixed relative intensities. 
-             One can choose to fix FWHM and VOFF for each, and only vary 
+    'VC04' : Veron-Cetty et al. (2004) template, which utilizes a single broad
+             and single narrow line template with fixed relative intensities.
+             One can choose to fix FWHM and VOFF for each, and only vary
              amplitudes (2 free parameters), or vary amplitude, FWHM, and VOFF
              for each template (6 free parameters)
     """
@@ -105,7 +104,7 @@ class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
         self.br_opt_feii_fft, self.npad = template_rfft(spec_feii_br_new)
         self.na_opt_feii_fft, self.npad = template_rfft(spec_feii_na_new)
 
-        # The FeII templates are offset from the input galaxy spectrum by 100 A, so we 
+        # The FeII templates are offset from the input galaxy spectrum by 100 A, so we
         # shift the spectrum to match that of the input galaxy.
         self.vsyst = np.log(lam_feii[0]/self.ctx.wave[0]) * consts.c
 
@@ -141,7 +140,7 @@ class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
                                         }
 
         if not opt_feii_options.opt_disp_const.bool:
-            self.ctx.log.info('\t* varying optical FeII dispersion.')
+            self.ctx.log.info('\t* varying optical FeII dispersion')
             # Narrow FeII DISP
             params['NA_OPT_FEII_DISP'] = {
                                             'init':10.0,
@@ -206,12 +205,12 @@ class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
 
 class K10_OpticalFeIITemplate(OpticalFeIITemplate):
     """
-    'K10'  : Kovacevic et al. (2010) template, which treats the F, S, and G line 
+    'K10'  : Kovacevic et al. (2010) template, which treats the F, S, and G line
              groups as independent templates (each amplitude is a free parameter)
-             and whose relative intensities are temperature dependent (1 free 
-             parameter).  There are additonal lines from IZe1 that only vary in 
-             amplitude.  All 4 line groups share the same FWHM and VOFF, for a 
-             total of 7 free parameters.  This template is only recommended 
+             and whose relative intensities are temperature dependent (1 free
+             parameter).  There are additonal lines from IZe1 that only vary in
+             amplitude.  All 4 line groups share the same FWHM and VOFF, for a
+             total of 7 free parameters.  This template is only recommended
              for objects with very strong FeII emission, for which the LOSVD
              cannot be determined at all.
     """
@@ -299,16 +298,16 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
         super().__init__(ctx)
 
         # The procedure for the K10 templates is slightly difference since their relative intensities
-        # are temperature dependent.  We must create a Gaussian emission line for each individual line, 
+        # are temperature dependent.  We must create a Gaussian emission line for each individual line,
         # and store them as an array, for each of the F, S, G, and Z transitions.  We treat each transition
         # as a group of templates, which will be convolved together, but relative intensities will be calculated
-        # for separately. 
+        # for separately.
 
         def gaussian_angstroms(x, center, amp, disp, voff):
             x = x.reshape((len(x),1))
             g = amp*np.exp(-0.5*(x-(center))**2/(disp)**2) # construct gaussian
             g = np.sum(g,axis=1)
-            # Replace the ends with the same value 
+            # Replace the ends with the same value
             g[0]  = g[1]
             g[-1] = g[-2]
             return g
@@ -326,8 +325,8 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
         npad = 100
         lam_feii = np.arange(np.min(self.ctx.wave)-npad, np.max(self.ctx.wave)+npad, dlam_feii)
         lamRange_feii = [np.min(lam_feii), np.max(lam_feii)]
-        # Get size of output log-rebinned spectrum 
-        ga = gaussian_angstroms(lam_feii, self.transitions[0].wavelength[0], 1.0, disp, 0.0)   
+        # Get size of output log-rebinned spectrum
+        ga = gaussian_angstroms(lam_feii, self.transitions[0].wavelength[0], 1.0, disp, 0.0)
         new_size, loglam_feii, velscale_feii = log_rebin(lamRange_feii, ga, velscale=velscale)
 
         for trans in self.transitions.values():
@@ -336,7 +335,7 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
 
             # Generate templates with an amplitude of 1.0
             for i in range(np.shape(trans.templates)[1]):
-                ga = gaussian_angstroms(lam_feii, trans.wavelength[i], 1.0, disp, 0.0)  
+                ga = gaussian_angstroms(lam_feii, trans.wavelength[i], 1.0, disp, 0.0)
                 new_temp = log_rebin(lamRange_feii, ga, velscale=self.ctx.velscale)[0]
                 templates[:,i] = new_temp/np.max(new_temp)
 
@@ -454,4 +453,3 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
             host_model -= trans.template
 
         return comp_dict, host_model
-

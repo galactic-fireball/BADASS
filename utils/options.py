@@ -72,23 +72,3 @@ class BadassOptions(prodict.Prodict):
         options_file = args.get('options_file')
         ret = cls.parse_py(options_file)
         breakpoint()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

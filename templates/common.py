@@ -8,8 +8,6 @@ import utils.constants as consts
 from utils.utils import log_rebin, rebin
 
 
-#### Common template utils ####
-
 def template_rfft(templates):
     npix_temp = templates.shape[0]
     templates = templates.reshape(npix_temp, -1)
@@ -24,7 +22,6 @@ def losvd_rfft(pars, nspec, moments, nl, ncomp, vsyst, factor, sigma_diff):
     Analytic Fourier Transform (of real input) of the Gauss-Hermite LOSVD.
     Equation (38) of Cappellari M., 2017, MNRAS, 466, 798
     http://adsabs.harvard.edu/abs/2017MNRAS.466..798C
-
     """
     losvd_rfft = np.empty((nl, ncomp, nspec), dtype=complex)
     p = 0
@@ -38,7 +35,7 @@ def losvd_rfft(pars, nspec, moments, nl, ncomp, vsyst, factor, sigma_diff):
 
             if mom > 2:
                 n = np.arange(3, mom + 1)
-                nrm = np.sqrt(special.factorial(n)*2**n)   # Normalization
+                nrm = np.sqrt(special.factorial(n)*2**n) # Normalization
                 coeff = np.append([1, 0, 0], (s*1j)**n * pars[p - 1 + n]/nrm)
                 poly = hermite.hermval(w, coeff)
                 losvd_rfft[:, j, k] *= poly
@@ -79,7 +76,7 @@ def convolve_gauss_hermite(templates_rfft, npad, velscale, start, npix,
     :return: vector or array with convolved spectra
 
     """
-    start = np.array(start,dtype=float)  # make copy
+    start = np.array(start,dtype=float)
     start[:2] /= velscale
     vsyst /= velscale
 
@@ -114,18 +111,18 @@ def gaussian_filter1d(spec, sig):
     if isinstance(sig,(int,float)):
         sig = np.full_like(spec,float(sig))
 
-    sig = sig.clip(0.01)  # forces zero sigmas to have 0.01 pixels
+    sig = sig.clip(0.01) # forces zero sigmas to have 0.01 pixels
     p = int(np.ceil(np.max(3*sig)))
-    m = 2*p + 1  # kernel size
+    m = 2*p + 1 # kernel size
     x2 = np.linspace(-p, p, m)**2
 
     n = spec.size
     a = np.zeros((m, n))
-    for j in range(m):   # Loop over the small size of the kernel
+    for j in range(m): # Loop over the small size of the kernel
         a[j, p:-p] = spec[j:n-m+j+1]
 
     gau = np.exp(-x2[:, None]/(2*sig**2))
-    gau /= np.sum(gau, 0)[None, :]  # Normalize kernel
+    gau /= np.sum(gau, 0)[None, :] # Normalize kernel
 
     conv_spectrum = np.sum(a*gau, 0)
 
@@ -134,8 +131,8 @@ def gaussian_filter1d(spec, sig):
 
 def nnls(A, b, npoly=0):
     """
-    Non-negative least squares.  
-    A nobel prize shall be awarded to whomever makes this 
+    Non-negative least squares.
+    A nobel prize shall be awarded to whomever makes this
     way faster, because it is the choke point of the entire code.
     """
     m, n = A.shape
@@ -157,7 +154,7 @@ def simple_power_law(x,amp,alpha):
     ----------
     x    : array_like
             wavelength vector (angstroms)
-    amp   : float 
+    amp   : float
             continuum amplitude (flux density units)
     alpha : float
             power-law slope
@@ -167,16 +164,14 @@ def simple_power_law(x,amp,alpha):
     C    : array
             AGN continuum model the same length as x
     """
-    # This works
     xb = np.max(x)-(0.5*(np.max(x)-np.min(x))) # take to be half of the wavelength range
-    C = amp*(x/xb)**alpha # un-normalized
-    return C
+    return amp*(x/xb)**alpha # un-normalized
 
 
 # Smoothly-Broken Power-Law Template
 def broken_power_law(x, amp, x_break, alpha_1, alpha_2, delta):
     """
-    Smoothly-broken power law continuum model; for use 
+    Smoothly-broken power law continuum model; for use
     when there is sufficient coverage in near-UV.
     (See https://docs.astropy.org/en/stable/api/astropy.modeling.
      powerlaws.SmoothlyBrokenPowerLaw1D.html#astropy.modeling.powerlaws.
@@ -202,9 +197,7 @@ def broken_power_law(x, amp, x_break, alpha_1, alpha_2, delta):
             AGN continuum model the same length as x
     """
 
-    C = amp * (x/x_break)**(alpha_1) * (0.5*(1.0+(x/x_break)**(1.0/delta)))**((alpha_2-alpha_1)*delta)
-
-    return C
+    return amp * (x/x_break)**(alpha_1) * (0.5*(1.0+(x/x_break)**(1.0/delta)))**((alpha_2-alpha_1)*delta)
 
 
 class BadassTemplate:
@@ -226,7 +219,6 @@ class BadassTemplate:
 
 
 # TODO: template initialize_parameter values in config file
-
 def initialize_templates(ctx):
     # TODO: eventually make templates a list that BADASS
     #       can iterate over as needed

@@ -60,8 +60,8 @@ class DefaultReader(BadassInput):
 
         # TODO: add?
         # Mask pixels exactly equal to zero (but not negative pixels)
-        # mask_zeros = True 
-        # edge_mask_pix = 5 
+        # mask_zeros = True
+        # edge_mask_pix = 5
         # zero_pix = np.where(galaxy==0)[0]
         # if mask_zeros:
         #     for i in zero_pix:

@@ -22,7 +22,7 @@ class UVIronTemplate(BadassTemplate):
 
         if (ctx.wave[0] > UV_IRON_TEMP_WAVE_MAX) or (ctx.wave[-1] < UV_IRON_TEMP_WAVE_MIN):
             ctx.options.comp_options.fit_uv_iron = False
-            ctx.log.warning('UV Iron template disabled because template is outside of fitting region.')
+            ctx.log.warning('UV Iron template disabled because template is outside of fitting region')
             ctx.log.update_uv_iron()
             return None
 
@@ -54,14 +54,14 @@ class UVIronTemplate(BadassTemplate):
         # Pre-compute FFT of templates, since they do not change (only the LOSVD and convolution changes)
         self.uv_iron_fft, self.npad = template_rfft(spec_uviron_new)
 
-        # The FeII templates are offset from the input galaxy spectrum by 100 A, so we 
+        # The FeII templates are offset from the input galaxy spectrum by 100 A, so we
         # shift the spectrum to match that of the input galaxy.
         self.vsyst = np.log(lam_uviron[0]/self.ctx.wave[0])*consts.c
 
 
     def convolve(self, uv_iron_voff, uv_iron_disp):
         return convolve_gauss_hermite(self.uv_iron_fft, self.npad, self.ctx.velscale,
-                                              [uv_iron_voff, uv_iron_disp], self.ctx.wave.shape[0], 
+                                              [uv_iron_voff, uv_iron_disp], self.ctx.wave.shape[0],
                                                velscale_ratio=1, sigma_diff=0, vsyst=self.vsyst)
 
 
@@ -78,7 +78,7 @@ class UVIronTemplate(BadassTemplate):
                                     }
 
         if not uv_iron_options.uv_disp_const.bool:
-            self.ctx.log.info('\t* varying UV iron dispersion.')
+            self.ctx.log.info('\t* varying UV iron dispersion')
             # Narrow FeII DISP
             params['UV_IRON_DISP'] = {
                                         'init':1000.0,
@@ -126,4 +126,3 @@ class UVIronTemplate(BadassTemplate):
         host_model -= template
 
         return comp_dict, host_model
-

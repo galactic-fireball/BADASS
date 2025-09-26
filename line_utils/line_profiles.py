@@ -4,7 +4,6 @@ import numpy as np
 from numpy.polynomial import hermite
 from scipy import special
 
-
 def line_constructor(ctx, line_name, line_dict):
 
 	line_profile = line_dict['line_profile']
@@ -86,7 +85,7 @@ def gaussian_line_profile(wave, amp, disp, voff, center_pix, velscale):
 def lorentzian_line_profile(wave, amp, disp, voff, center_pix, velscale):
     # Produces a lorentzian vector the length of x with the specified parameters
     # (See: https://docs.astropy.org/en/stable/api/astropy.modeling.functional_models.Lorentz1D.html)
-    
+
     fwhm = disp*2.3548
     fwhm_pix = fwhm / velscale # fwhm in pixels (velscale = km/s/pixel)
     if fwhm_pix <= 0.01: fwhm_pix = 0.01
@@ -108,7 +107,7 @@ def lorentzian_line_profile(wave, amp, disp, voff, center_pix, velscale):
 
 def gauss_hermite_line_profile(wave, amp, disp, voff, hmoments, center_pix, velscale):
     # Produces a Gauss-Hermite vector the length of x with the specified parameters
-    
+
     sigma_pix = disp / velscale # dispersion in pixels (velscale = km/s/pixel)
     if sigma_pix <= 0.01: sigma_pix = 0.01
     voff_pix = voff / velscale # velocity offset in pixels
@@ -139,7 +138,7 @@ def gauss_hermite_line_profile(wave, amp, disp, voff, hmoments, center_pix, vels
     g = g/np.max(g) # Normalize to 1
     g = amp*g # Apply amplitude
 
-    # Replace the ends with the same value 
+    # Replace the ends with the same value
     g[(g > -1e-6) & (g < 1e-6)] = 0.0
     g[0] = g[1]
     g[-1] = g[-2]
@@ -165,16 +164,17 @@ def laplace_line_profile(wave, amp, disp, voff, hmoments, center_pix, velscale):
     g = g/np.nanmax(g) # Normalize to 1
     g = amp*g # Apply amplitude
 
-    # Replace the ends with the same value 
+    # Replace the ends with the same value
     g[(g > -1e-6) & (g < 1e-6)] = 0.0
     g[0] = g[1]
     g[-1] = g[-2]
     return g
 
+
 def uniform_line_profile(wave, amp, disp, voff, hmoments, center_pix, velscale):
-    # Produces a Uniform kernel vector the length of x with the specified parameters.
+    # Produces a Uniform kernel vector the length of x with the specified parameters
     # Uniform kernel from Sanders & Evans (2020): https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.5806S/abstract
-    
+
     sigma_pix = disp / velscale # dispersion in pixels (velscale = km/s/pixel)
     if sigma_pix <= 0.01: sigma_pix = 0.01
     voff_pix = voff / velscale # velocity offset in pixels
@@ -190,7 +190,7 @@ def uniform_line_profile(wave, amp, disp, voff, hmoments, center_pix, velscale):
     g = g/np.nanmax(g) # Normalize to 1
     g = amp*g # Apply amplitude
 
-    # Replace the ends with the same value 
+    # Replace the ends with the same value
     g[(g > -1e-6) & (g < 1e-6)] = 0.0
     g[0] = g[1]
     g[-1] = g[-2]
@@ -226,9 +226,8 @@ def voigt_line_profile(wave, amp, disp, voff, shape, center_pix, velscale):
     # Normalize and multiply by amplitude
     pv = pv/np.max(pv)*amp
 
-    # Replace the ends with the same value 
+    # Replace the ends with the same value
     pv[(pv > -1e-6) & (pv < 1e-6)] = 0.0
     pv[0] = pv[1]
     pv[-1] = pv[-2]
     return pv
-

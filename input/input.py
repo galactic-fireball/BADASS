@@ -5,7 +5,7 @@ import pathlib
 import utils.constants as constants
 from utils.logger import BadassLogger
 from utils.pca import pca_reconstruction
-from utils.utils import emline_masker, metal_masker
+from utils.utils import ccm_unred, emline_masker, get_ebv, metal_masker
 
 # TODO: account for user_mask
 # TODO: make sure all input classes have consistent attrs
@@ -55,7 +55,8 @@ class BadassInput():
         fit_mask_bad = np.sort(np.unique(fit_mask_bad))
         self.fit_mask = np.setdiff1d(np.arange(0,len(self.wave),1,dtype=int),fit_mask_bad)
 
-        # TODO: galaxy extinction
+        ebv = get_ebv(self.ra, self.dec)
+        self.spec = ccm_unred(self.wave, self.spec, ebv)
 
         self.fit_norm = np.round(np.nanmax(self.spec), 5)
         self.spec = self.spec / self.fit_norm
@@ -65,10 +66,7 @@ class BadassInput():
 
 
     def set_fit_region(self):
-        """
-        Determines the fitting region for an input spectrum and fit options.
-        Set self.fit_reg to None on error
-        """
+        # Determines the fitting region for an input spectrum and fit options
 
         # Fitting region initially the edges of wavelength vector
         self.fit_reg = (self.wave[0], self.wave[-1])
@@ -88,9 +86,9 @@ class BadassInput():
                 return
 
             if (user_fit_reg[0] < self.fit_reg[0]) or (user_fit_reg[1] > self.fit_reg[1]):
-                self.log.warning("Input fitting region exceeds available wavelength range.  BADASS will adjust your fitting range automatically...")
-                self.log.warning("\t- Input fitting range: (%d, %d)" % (user_fit_reg[0], user_fit_reg[1]))
-                self.log.warning("\t- Available wavelength range: (%d, %d)" % (self.fit_reg[0], self.fit_reg[1]))
+                self.log.warning('Input fitting region exceeds available wavelength range. BADASS will adjust your fitting range automatically...')
+                self.log.warning('\t- Input fitting range: (%d, %d)' % (user_fit_reg[0], user_fit_reg[1]))
+                self.log.warning('\t- Available wavelength range: (%d, %d)' % (self.fit_reg[0], self.fit_reg[1]))
 
             self.fit_reg = (np.max([user_fit_reg[0], self.fit_reg[0]]), np.min([user_fit_reg[1], self.fit_reg[1]]))
 
