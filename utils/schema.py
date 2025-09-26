@@ -115,10 +115,17 @@ DEFAULT_IO_OPTIONS = {
         'default': 'warning',
     },
     'multiprocess': 'bool_true',
-    'flux_norm': {
-        'type': ['integer', 'float'],
-        'default': 1e-17,
-    }
+    'redshift': {
+        'type': 'float',
+        'default': 0.0,
+    },
+    'spaxel': {
+        'type': 'list',
+        'minlength': 2,
+        'maxlength': 2,
+        'schema': {'type': 'integer'},
+        'default': (0,0),
+    },
 }
 
 
