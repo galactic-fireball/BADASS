@@ -122,6 +122,15 @@ DEFAULT_IO_OPTIONS = {
         'default': 'warning',
     },
     'multiprocess': 'bool_true',
+    'filter': {
+        'type': 'string',
+        'default': '',
+    },
+    'disperser': {
+        'type': 'string',
+        'allowed': ['M', 'H', 'm', 'h'],
+        'default': 'M',
+    },
     'redshift': {
         'type': 'float',
         'default': 0.0,
