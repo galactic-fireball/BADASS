@@ -193,7 +193,7 @@ class BadassRunContext:
             template.initialize_parameters(par_input, template_args)
 
         # Emission Lines
-        self.line_list = user_lines if user_lines else self.options.user_lines if self.options.user_lines else optical_qso_default()
+        self.line_list = user_lines if user_lines else self.options.user_lines if self.options.user_lines else {}
         self.add_line_comps()
 
         # Add the FWHM resolution and central pixel locations for each line so we don't have to find them during the fit
