@@ -47,7 +47,7 @@ import badass_tools as badass_tools
 from utils.options import BadassOptions
 from input.input import BadassInput
 import utils.utils as ba_utils
-from templates.common import initialize_templates, simple_power_law, broken_power_law
+from templates.common import initialize_templates
 import utils.plotting as plotting
 from line_utils.line_lists.optical_qso import optical_qso_default
 from line_utils.line_profiles import line_constructor
@@ -86,12 +86,12 @@ def run_BADASS(inputs, **kwargs):
         BadassRunContext(target).run()
 
 
-# TODO: move logger to here instead of target
 class BadassRunContext:
 
     def __init__(self, target):
         self.target = target
         self.options = target.options
+        self.log = self.target.log
         self.fit_stage = FitStage.INIT
 
         # The spectral data currently being fit
@@ -154,7 +154,7 @@ class BadassRunContext:
 
         self.target.log.log_fit_information()
         # TODO: the templates ctx is BadassRunContext
-        self.templates = initialize_templates(self.target)
+        self.templates = initialize_templates(self)
 
         # TODO: input from past line test or user config
         # Set force_thresh to np.inf. This will get overridden if the user does the line test
@@ -191,44 +191,6 @@ class BadassRunContext:
 
         for template in self.templates.values():
             template.initialize_parameters(par_input, template_args)
-
-        # TODO: config file
-        # TODO: separate classes?
-        if self.options.comp_options.fit_poly:
-            if (self.options.poly_options.apoly.bool) and (self.options.poly_options.apoly.order >= 0):
-                self.target.log.info('\t- Fitting additive legendre polynomial component')
-                for n in range(1, int(self.options.poly_options.apoly.order)+1):
-                    par_input['APOLY_COEFF_%d' % n] = {'init':0.0, 'plim':(-1.0e2,1.0e2),}
-            if (self.options.poly_options.mpoly.bool) and (self.options.poly_options.mpoly.order >= 0):
-                self.target.log.info('\t- Fitting multiplicative legendre polynomial component')
-                for n in range(1, int(self.options.poly_options.mpoly.order)+1):
-                    par_input['MPOLY_COEFF_%d' % n] = {'init':0.0,'plim':(-1.0e2,1.0e2),}
-
-        # TODO: config file
-        if self.options.comp_options.fit_power:
-            #### Simple Power-Law (AGN continuum)
-            if self.options.power_options.type == 'simple':
-                self.target.log.info('\t- Fitting Simple AGN power-law continuum')
-                # AGN simple power-law amplitude
-                par_input['POWER_AMP'] = {'init':(0.5*median_flux), 'plim':(0,max_flux),}
-                # AGN simple power-law slope
-                par_input['POWER_SLOPE'] = {'init':-1.0, 'plim':(-6.0,6.0),}
-
-            #### Smoothly-Broken Power-Law (AGN continuum)
-            if self.options.power_options.type == 'broken':
-                self.target.log.info('\t- Fitting Smoothly-Broken AGN power-law continuum.')
-                # AGN simple power-law amplitude
-                par_input['POWER_AMP'] = {'init':(0.5*median_flux), 'plim':(0,max_flux),}
-                # AGN simple power-law break wavelength
-                par_input['POWER_BREAK'] = {'init':(np.max(self.target.wave) - (0.5*(np.max(self.target.wave)-np.min(self.target.wave)))),
-                                            'plim':(np.min(self.target.wave), np.max(self.target.wave)),}
-                # AGN simple power-law slope 1 (blue side)
-                par_input['POWER_SLOPE_1'] = {'init':-1.0, 'plim':(-6.0,6.0),}
-                # AGN simple power-law slope 2 (red side)
-                par_input['POWER_SLOPE_2'] = {'init':-1.0, 'plim':(-6.0,6.0),}
-                # Power-law curvature parameter (Delta)
-                par_input['POWER_CURVATURE'] = {'init':0.10, 'plim':(0.01,1.0),}
-
 
         # Emission Lines
         self.line_list = user_lines if user_lines else self.options.user_lines if self.options.user_lines else optical_qso_default()
@@ -312,7 +274,7 @@ class BadassRunContext:
                 self.target.log.warn('Unsupported line type: %s' % line_type_s)
                 continue
 
-            line_type = line_types[line_type_s] if line_type_s in line_types else 'user'
+            line_type = line_types.get(line_type_s, 'user')
             is_user = line_type == 'user'
             type_options = self.options[line_type+'_options']
 
@@ -1202,7 +1164,7 @@ class BadassRunContext:
                 if (accepted_count > 1) and (basinhop_count >= force_basinhop) and (((lowest_rmse-accept_thresh) <= self.force_thresh) or (lowest_rmse <= self.force_thresh)):
                     terminate = True
 
-                self.target.log.debug('\tFit Status: %s\n\tForce threshold: %0.4f\n\tLowest RMSE: %0.4f\n\tCurrent RMSE: %0.4f\n\tAccepted Count: %d\n\tBasinhop Count:%d'%(terminate,self.force_thresh,lowest_rmse,rmse,accepted_count,basinhop_count))
+                self.target.log.debug('\tFit Status: %s\n\tForce threshold: %0.4f\n\tLowest RMSE: %0.4f\n\tCurrent RMSE: %0.4f\n\tAccepted Count: %d\n\tBasinhop Count: %d'%(terminate,self.force_thresh,lowest_rmse,rmse,accepted_count,basinhop_count))
                 return terminate
 
 
@@ -1591,52 +1553,6 @@ class BadassRunContext:
 
         self.comp_dict = {}
 
-        # Power-law Component
-        # TODO: Create a template model for the power-law continuum
-        if self.options.comp_options.fit_power:
-            if self.options.power_options.type == 'simple':
-                power = simple_power_law(self.fit_wave, self.cur_params['POWER_AMP'], self.cur_params['POWER_SLOPE'])
-            elif self.options.plot_options.type == 'broken':
-                power = broken_power_law(self.fit_wave, self.cur_params['POWER_AMP'], self.cur_params['POWER_BREAK'],
-                                         self.cur_params['POWER_SLOPE_1'], self.cur_params['POWER_SLOPE_2'],
-                                         self.cur_params['POWER_CURVATURE'])
-
-            # Subtract off continuum from galaxy, since we only want template weights to be fit
-            host_model = host_model - power
-            self.comp_dict['POWER'] = power
-
-
-        # Polynomial Components
-        # TODO: create a template
-        poly_options = self.options.poly_options
-        if self.options.comp_options.fit_poly:
-            if poly_options.apoly.bool:
-                nw = np.linspace(-1, 1, len(self.fit_wave))
-                coeff = np.empty(poly_options.apoly.order+1)
-                coeff[0] = 0.0
-                for n in range(1, len(coeff)):
-                    coeff[n] = self.cur_params['APOLY_COEFF_%d' % n]
-                apoly = np.polynomial.legendre.legval(nw, coeff)
-                host_model = host_model - apoly
-                self.comp_dict['APOLY'] = apoly
-
-            if poly_options.mpoly.bool:
-                nw = np.linspace(-1, 1, len(self.fit_wave))
-                coeff = np.empty(poly_options.mpoly.order+1)
-                for n in range(1, len(coeff)):
-                    coeff[n] = self.cur_params['MPOLY_COEFF_%d' % n]
-                mpoly = np.polynomial.legendre.legval(nw, coeff)
-                self.comp_dict['MPOLY'] = mpoly
-                host_model = host_model * mpoly
-
-
-        # Template Components
-        # TODO: host and losvd template components were processed after emission line components,
-        #       now they will be before; does this affect anything?
-        for template in self.templates.values():
-            # TODO: don't need to return comp_dict
-            self.comp_dict, host_model = template.add_components(self.cur_params, self.comp_dict, host_model)
-
         # TODO: remove
         line_types = {
             'na': 'narrow',
@@ -1656,6 +1572,8 @@ class BadassRunContext:
             self.comp_dict[line_name] = line_model
             host_model = host_model - self.comp_dict[line_name]
 
+        for template in self.templates.values():
+            host_model = template.add_components(self.cur_params, self.comp_dict, host_model)
 
         # The final model
         self.model = np.sum((self.comp_dict[d] for d in self.comp_dict), axis=0)
@@ -1671,6 +1589,7 @@ class BadassRunContext:
         # Add last components to comp_dict for plotting purposes
         # Add galaxy, sigma, model, and residuals to comp_dict
         # TODO: does this need to be done every fit_model call?
+        # TODO: make a separate container for these
         self.comp_dict['DATA']  = self.fit_spec
         self.comp_dict['WAVE']  = self.fit_wave
         self.comp_dict['NOISE'] = self.fit_noise

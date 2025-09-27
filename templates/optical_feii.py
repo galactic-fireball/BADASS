@@ -18,12 +18,12 @@ class OpticalFeIITemplate(BadassTemplate):
         temp_type = ctx.options.opt_feii_options.opt_template.type
         class_name = '%s_OpticalFeIITemplate' % (temp_type)
         if not class_name in globals():
-            ctx.error('Optical FeII template unsupported: %s' % temp_type)
+            ctx.log.error('Optical FeII template unsupported: %s' % temp_type)
             return None
 
         temp_class = globals()[class_name]
 
-        if (temp_class.TEMP_LAM_RANGE[1] > 0.0 and ctx.wave[0] > temp_class.TEMP_LAM_RANGE[1]) or (ctx.wave[-1] < temp_class.TEMP_LAM_RANGE[0]):
+        if (temp_class.TEMP_LAM_RANGE[1] > 0.0 and ctx.fit_wave[0] > temp_class.TEMP_LAM_RANGE[1]) or (ctx.fit_wave[-1] < temp_class.TEMP_LAM_RANGE[0]):
             ctx.log.warn('Optical FeII template disabled because template is outside of fitting region')
             ctx.log.update_opt_feii()
             ctx.options.comp_options.fit_opt_feii = False
@@ -39,8 +39,8 @@ class OpticalFeIITemplate(BadassTemplate):
     def convolve(self, fft, feii_voff, feii_disp, npad=None):
         if npad is None:
             npad = self.npad
-        return convolve_gauss_hermite(fft, npad, float(self.ctx.velscale),
-                                     [feii_voff, feii_disp/2.3548], self.ctx.wave.shape[0],
+        return convolve_gauss_hermite(fft, npad, float(self.ctx.target.velscale),
+                                     [feii_voff, feii_disp/2.3548], self.ctx.fit_wave.shape[0],
                                      velscale_ratio=1, sigma_diff=0, vsyst=self.vsyst)
 
 
@@ -78,7 +78,7 @@ class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
         # Generate a new grid with the original resolution, but the size of the fitting region
         dlam_feii = df_br['angstrom'].to_numpy()[1]-df_br['angstrom'].to_numpy()[0] # angstroms
         npad = 100 # anstroms
-        lam_feii = np.arange(np.min(self.ctx.wave)-npad, np.max(self.ctx.wave)+npad, dlam_feii) # angstroms
+        lam_feii = np.arange(np.min(self.ctx.fit_wave)-npad, np.max(self.ctx.fit_wave)+npad, dlam_feii) # angstroms
 
         # Interpolate the original template onto the new grid
         interp_ftn_br = interp1d(df_br['angstrom'].to_numpy(),df_br['flux'].to_numpy(),kind='linear',bounds_error=False,fill_value=(0.0,0.0))
@@ -89,7 +89,7 @@ class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
         # Convolve templates to the native resolution of SDSS
         fwhm_feii = 1.0 # templates were created with 1.0 FWHM resolution
         disp_feii = fwhm_feii/2.3548
-        disp_res_interp = np.interp(lam_feii, self.ctx.wave, self.ctx.disp_res)
+        disp_res_interp = np.interp(lam_feii, self.ctx.fit_wave, self.ctx.target.disp_res)
         disp_diff = np.sqrt((disp_res_interp**2 - disp_feii**2).clip(0))
         sigma = disp_diff/dlam_feii # Sigma difference in pixels
         spec_feii_br = gaussian_filter1d(spec_feii_br, sigma)
@@ -97,8 +97,8 @@ class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
 
         # log-rebin the spectrum to same velocity scale as the input galaxy
         lamRange_feii = [np.min(lam_feii), np.max(lam_feii)]
-        spec_feii_br_new, loglam_feii, velscale_feii = log_rebin(lamRange_feii, spec_feii_br, velscale=self.ctx.velscale)
-        spec_feii_na_new, loglam_feii, velscale_feii = log_rebin(lamRange_feii, spec_feii_na, velscale=self.ctx.velscale)
+        spec_feii_br_new, loglam_feii, velscale_feii = log_rebin(lamRange_feii, spec_feii_br, velscale=self.ctx.target.velscale)
+        spec_feii_na_new, loglam_feii, velscale_feii = log_rebin(lamRange_feii, spec_feii_na, velscale=self.ctx.target.velscale)
 
         # Pre-compute FFT of templates, since they do not change (only the LOSVD and convolution changes)
         self.br_opt_feii_fft, self.npad = template_rfft(spec_feii_br_new)
@@ -106,7 +106,7 @@ class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
 
         # The FeII templates are offset from the input galaxy spectrum by 100 A, so we
         # shift the spectrum to match that of the input galaxy.
-        self.vsyst = np.log(lam_feii[0]/self.ctx.wave[0]) * consts.c
+        self.vsyst = np.log(lam_feii[0]/self.ctx.fit_wave[0]) * consts.c
 
         # If opt_disp_const AND opt_voff_const, we preconvolve the templates so we don't have to during the fit
         opt_feii_options = self.ctx.options.opt_feii_options
@@ -190,8 +190,8 @@ class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
         na_opt_feii_template = na_opt_feii_template.reshape(-1)
 
         # Set fitting region outside of template to zero to prevent convolution loops
-        br_opt_feii_template[(self.ctx.wave < self.TEMP_LAM_RANGE[0]) & (self.ctx.wave > self.TEMP_LAM_RANGE[1])] = 0
-        na_opt_feii_template[(self.ctx.wave < self.TEMP_LAM_RANGE[0]) & (self.ctx.wave > self.TEMP_LAM_RANGE[1])] = 0
+        br_opt_feii_template[(self.ctx.fit_wave < self.TEMP_LAM_RANGE[0]) & (self.ctx.fit_wave > self.TEMP_LAM_RANGE[1])] = 0
+        na_opt_feii_template[(self.ctx.fit_wave < self.TEMP_LAM_RANGE[0]) & (self.ctx.fit_wave > self.TEMP_LAM_RANGE[1])] = 0
 
         # Update the component dict with the templates
         comp_dict['BR_OPT_FEII_TEMPLATE'] = br_opt_feii_template
@@ -200,7 +200,7 @@ class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
         # Subtract the br and na templates from the host model and return
         host_model -= na_opt_feii_template
         host_model -= br_opt_feii_template
-        return comp_dict, host_model
+        return host_model
 
 
 class K10_OpticalFeIITemplate(OpticalFeIITemplate):
@@ -323,7 +323,7 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
         disp = fwhm/2.3548
         dlam_feii = 0.1 # linear spacing in Angstroms
         npad = 100
-        lam_feii = np.arange(np.min(self.ctx.wave)-npad, np.max(self.ctx.wave)+npad, dlam_feii)
+        lam_feii = np.arange(np.min(self.ctx.fit_wave)-npad, np.max(self.ctx.fit_wave)+npad, dlam_feii)
         lamRange_feii = [np.min(lam_feii), np.max(lam_feii)]
         # Get size of output log-rebinned spectrum
         ga = gaussian_angstroms(lam_feii, self.transitions[0].wavelength[0], 1.0, disp, 0.0)
@@ -336,14 +336,14 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
             # Generate templates with an amplitude of 1.0
             for i in range(np.shape(trans.templates)[1]):
                 ga = gaussian_angstroms(lam_feii, trans.wavelength[i], 1.0, disp, 0.0)
-                new_temp = log_rebin(lamRange_feii, ga, velscale=self.ctx.velscale)[0]
+                new_temp = log_rebin(lamRange_feii, ga, velscale=self.ctx.target.velscale)[0]
                 templates[:,i] = new_temp/np.max(new_temp)
 
             # Pre-compute the FFT for each transition
             trans.fft, trans.npad = template_rfft(templates)
 
         self.npad = self.transitions[0].npad
-        self.vsyst = np.log(lam_feii[0]/self.ctx.wave[0]) * consts.c
+        self.vsyst = np.log(lam_feii[0]/self.ctx.fit_wave[0]) * consts.c
 
         # If opt_disp_const AND opt_voff_const, we preconvolve the templates so we don't have to during the fit
         opt_feii_options = self.ctx.options.opt_feii_options
@@ -447,9 +447,9 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
             # Sum templates along rows
             trans.template = np.sum(trans.conv_temp, axis=1)
             # TODO: should this be an '|'?
-            trans.template[(self.ctx.wave < trans.range_min) & (self.ctx.wave > trans.range_max)] = 0
+            trans.template[(self.ctx.fit_wave < trans.range_min) & (self.ctx.fit_wave > trans.range_max)] = 0
 
             comp_dict[trans.name+'_OPT_FEII_TEMPLATE'] = trans.template
             host_model -= trans.template
 
-        return comp_dict, host_model
+        return host_model

@@ -21,7 +21,7 @@ class HostTemplate(BadassTemplate):
         if not ctx.options.comp_options.fit_host:
             return None
 
-        if ctx.wave[0] < HOST_GAL_TEMP_WAVE_MIN:
+        if ctx.fit_wave[0] < HOST_GAL_TEMP_WAVE_MIN:
             ctx.options.comp_options.fit_host = False
             ctx.warn('Host galaxy SSP template disabled because template is outside of fitting region.')
             return None
@@ -57,25 +57,25 @@ class HostTemplate(BadassTemplate):
         # lam_temp needs to be larger than ctx.wave by npad pixels; if it isn't we need to make it larger
         npad = 100
         interp_temp = False
-        if (self.ctx.wave[0]-npad <= lam_temp[0]) or (self.ctx.wave[-1]+npad >= lam_temp[-1]):
+        if (self.ctx.fit_wave[0]-npad <= lam_temp[0]) or (self.ctx.fit_wave[-1]+npad >= lam_temp[-1]):
             interp_temp = True
-            lam_temp_new = np.arange(int(self.ctx.wave[0]-npad), np.ceil(self.ctx.wave[-1]+npad), 1)
+            lam_temp_new = np.arange(int(self.ctx.fit_wave[0]-npad), np.ceil(self.ctx.fit_wave[-1]+npad), 1)
             interp_ftn = interp1d(lam_temp, ssp, kind='linear', bounds_error=False, fill_value=(0.0,0.0))
             ssp = interp_ftn(lam_temp_new)
             lam_temp = lam_temp_new
 
-        mask = ((lam_temp>=(self.ctx.wave[0]-100.0)) & (lam_temp<=(self.ctx.wave[-1]+100.0)))
+        mask = ((lam_temp>=(self.ctx.fit_wave[0]-100.0)) & (lam_temp<=(self.ctx.fit_wave[-1]+100.0)))
         # Apply mask and get lamRange
         ssp = ssp[mask]
         lam_temp = lam_temp[mask]
         lamRange_temp = [np.min(lam_temp), np.max(lam_temp)]
 
         # Variable sigma
-        disp_res_interp = np.interp(lam_temp, self.ctx.wave, self.ctx.disp_res)
+        disp_res_interp = np.interp(lam_temp, self.ctx.fit_wave, self.ctx.target.disp_res)
         disp_dif = np.sqrt((disp_res_interp**2 - disp_temp**2).clip(0))
         sigma = disp_dif/2.355/h['CDELT1'] # Sigma difference in pixels
 
-        sspNew = log_rebin(lamRange_temp, ssp, velscale=self.ctx.velscale)[0]
+        sspNew = log_rebin(lamRange_temp, ssp, velscale=self.ctx.target.velscale)[0]
         templates = np.empty((sspNew.size, len(host_options.age)))
         for j, age in enumerate(host_options.age):
             atemp = HostTemplate.get_host_template_file(age)
@@ -89,18 +89,18 @@ class HostTemplate(BadassTemplate):
             if interp_temp:
                 h = hdu[0].header
                 lam_temp = np.array(h['CRVAL1'] + h['CDELT1']*np.arange(h['NAXIS1']))
-                lam_temp_new = np.arange(int(self.ctx.wave[0]-npad), np.ceil(self.ctx.wave[-1]+npad), 1)
+                lam_temp_new = np.arange(int(self.ctx.fit_wave[0]-npad), np.ceil(self.ctx.fit_wave[-1]+npad), 1)
                 interp_ftn = interp1d(lam_temp, ssp, kind='linear', bounds_error=False, fill_value=(0.0,0.0))
                 ssp = interp_ftn(lam_temp_new)
                 lam_temp = lam_temp_new
 
             ssp = ssp[mask]
             ssp = gaussian_filter1d(ssp, sigma)  # perform convolution with variable sigma
-            sspNew,loglam_temp,velscale_temp = log_rebin(lamRange_temp, ssp, velscale=self.ctx.velscale)
+            sspNew,loglam_temp,velscale_temp = log_rebin(lamRange_temp, ssp, velscale=self.ctx.target.velscale)
             templates[:, j] = sspNew/np.median(sspNew) # Normalizes templates
             hdu.close()
 
-        self.vsyst = np.log(lam_temp[0]/self.ctx.wave[0]) * consts.c
+        self.vsyst = np.log(lam_temp[0]/self.ctx.fit_wave[0]) * consts.c
         self.ssp_fft, self.npad = template_rfft(templates)
 
         self.pre_convolve = (host_options.vel_const.bool) and (host_options.disp_const.bool)
@@ -108,8 +108,8 @@ class HostTemplate(BadassTemplate):
             host_vel = host_options.vel_const.val
             host_disp = host_options.disp_const.val
 
-            self.conv_host = convolve_gauss_hermite(self.ssp_fft, self.npad, float(self.ctx.velscale),
-                           [host_vel, host_disp], np.shape(self.ctx.wave)[0], vsyst=self.vsyst)
+            self.conv_host = convolve_gauss_hermite(self.ssp_fft, self.npad, float(self.ctx.target.velscale),
+                           [host_vel, host_disp], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
 
 
     def initialize_parameters(self, params, args):
@@ -143,8 +143,8 @@ class HostTemplate(BadassTemplate):
             host_vel = val('vel_const', 'val', 'HOST_TEMP_VEL')
             host_disp = val('disp_const', 'val', 'HOST_TEMP_DISP')
 
-            self.conv_host = convolve_gauss_hermite(self.ssp_fft, self.npad, float(self.ctx.velscale),
-                           [host_vel, host_disp], np.shape(self.ctx.wave)[0], vsyst=self.vsyst)
+            self.conv_host = convolve_gauss_hermite(self.ssp_fft, self.npad, float(self.ctx.target.velscale),
+                           [host_vel, host_disp], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
 
 
         if np.shape(self.conv_host)[1] == 1:
@@ -159,5 +159,4 @@ class HostTemplate(BadassTemplate):
 
         comp_dict['HOST_GALAXY'] = host_galaxy
         # Subtract off continuum from galaxy, since we only want template weights to be fit
-        host_model -= host_galaxy
-        return comp_dict, host_model
+        return host_model - host_galaxy

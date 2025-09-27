@@ -19,7 +19,7 @@ class BalmerTemplate(BadassTemplate):
         if not ctx.options.comp_options.fit_balmer:
             return None
 
-        if ctx.wave[0] >= BALMER_TEMP_WAVE_MAX:
+        if ctx.fit_wave[0] >= BALMER_TEMP_WAVE_MAX:
             ctx.log.warn('Balmer continuum disabled because template is outside of fitting region')
             ctx.log.update_balmer()
             return None
@@ -39,7 +39,7 @@ class BalmerTemplate(BadassTemplate):
         df = pd.read_csv(BALMER_TEMPLATE_FILE)
         # Generate a new grid with the original resolution, but the size of the fitting region
         dlam_balmer = df['angstrom'][1] - df['angstrom'][0]
-        lam_balmer = np.arange(np.min(self.ctx.wave)-npad, np.max(self.ctx.wave)+npad, dlam_balmer) # angstroms
+        lam_balmer = np.arange(np.min(self.ctx.fit_wave)-npad, np.max(self.ctx.fit_wave)+npad, dlam_balmer) # angstroms
 
         # Interpolate the original template onto the new grid
         interp_ftn_balmer = interp1d(df['angstrom'].to_numpy(),df['flux'].to_numpy(),kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
@@ -49,7 +49,7 @@ class BalmerTemplate(BadassTemplate):
         lamRange_balmer = [np.min(lam_balmer), np.max(lam_balmer)]
         fwhm_balmer = 1.0
         disp_balmer = fwhm_balmer/2.3548
-        disp_res_interp = np.interp(lam_balmer, self.ctx.wave, self.ctx.disp_res)
+        disp_res_interp = np.interp(lam_balmer, self.ctx.fit_wave, self.ctx.target.disp_res)
         disp_diff = np.sqrt((disp_res_interp**2 - disp_balmer**2).clip(0))
         sigma = disp_diff/dlam_balmer # Sigma difference in pixels
 
@@ -57,7 +57,7 @@ class BalmerTemplate(BadassTemplate):
         spec_high_balmer = gaussian_filter1d(spec_high_balmer, sigma)
 
         # Log-rebin to same velocity scale as galaxy
-        self.spec_high_balmer, loglam_balmer, self.velscale_balmer = log_rebin(lamRange_balmer, spec_high_balmer, velscale=self.ctx.velscale)
+        self.spec_high_balmer, loglam_balmer, self.velscale_balmer = log_rebin(lamRange_balmer, spec_high_balmer, velscale=self.ctx.target.velscale)
         if (np.sum(self.spec_high_balmer)>0):
             # Normalize to 1
             self.spec_high_balmer = self.spec_high_balmer/np.max(self.spec_high_balmer)
@@ -156,20 +156,18 @@ class BalmerTemplate(BadassTemplate):
 
         # Pre-compute the FFT and vsyst
         balmer_fft, balmer_npad = template_rfft(full_balmer)
-        vsyst = np.log(self.lam_balmer[0]/self.ctx.wave[0])*consts.c
+        vsyst = np.log(self.lam_balmer[0]/self.ctx.fit_wave[0])*consts.c
 
         # Broaden the higher-order Balmer lines
-        conv_temp = convolve_gauss_hermite(balmer_fft, balmer_npad, float(self.ctx.velscale),
-                                           [balmer_voff, balmer_disp], self.ctx.wave.shape[0],
+        conv_temp = convolve_gauss_hermite(balmer_fft, balmer_npad, float(self.ctx.target.velscale),
+                                           [balmer_voff, balmer_disp], self.ctx.fit_wave.shape[0],
                                            velscale_ratio=1, sigma_diff=0, vsyst=vsyst)
 
-        conv_temp = conv_temp/conv_temp[find_nearest(self.ctx.wave,BALMER_EDGE_WAVE)[1]] * balmer_ratio
+        conv_temp = conv_temp/conv_temp[find_nearest(self.ctx.fit_wave,BALMER_EDGE_WAVE)[1]] * balmer_ratio
         conv_temp = conv_temp.reshape(-1)
 
         # Normalize the full continuum to 1
         balmer_cont = conv_temp/np.max(conv_temp) * balmer_amp
 
         comp_dict['BALMER_CONT'] = balmer_cont
-        host_model -= balmer_cont
-
-        return comp_dict, host_model
+        return host_model - balmer_cont

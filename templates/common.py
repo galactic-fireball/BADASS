@@ -143,63 +143,6 @@ def nnls(A, b, npoly=0):
     return np.array(x[:n])
 
 
-# TODO: move these to their own Template subclass?
-# Simple Power-Law Template
-def simple_power_law(x,amp,alpha):
-    """
-    Simple power-low function to model
-    the AGN continuum (Calderone et al. 2017).
-
-    Parameters
-    ----------
-    x    : array_like
-            wavelength vector (angstroms)
-    amp   : float
-            continuum amplitude (flux density units)
-    alpha : float
-            power-law slope
-
-    Returns
-    ----------
-    C    : array
-            AGN continuum model the same length as x
-    """
-    xb = np.max(x)-(0.5*(np.max(x)-np.min(x))) # take to be half of the wavelength range
-    return amp*(x/xb)**alpha # un-normalized
-
-
-# Smoothly-Broken Power-Law Template
-def broken_power_law(x, amp, x_break, alpha_1, alpha_2, delta):
-    """
-    Smoothly-broken power law continuum model; for use
-    when there is sufficient coverage in near-UV.
-    (See https://docs.astropy.org/en/stable/api/astropy.modeling.
-     powerlaws.SmoothlyBrokenPowerLaw1D.html#astropy.modeling.powerlaws.
-     SmoothlyBrokenPowerLaw1D)
-
-    Parameters
-    ----------
-    x       : array_like
-              wavelength vector (angstroms)
-    amp  : float [0,max]
-              continuum amplitude (flux density units)
-    x_break : float [x_min,x_max]
-              wavelength of the break
-    alpha_1 : float [-4,2]
-              power-law slope on blue side.
-    alpha_2 : float [-4,2]
-              power-law slope on red side.
-    delta   : float [0.001,1.0]
-
-    Returns
-    ----------
-    C    : array
-            AGN continuum model the same length as x
-    """
-
-    return amp * (x/x_break)**(alpha_1) * (0.5*(1.0+(x/x_break)**(1.0/delta)))**((alpha_2-alpha_1)*delta)
-
-
 class BadassTemplate:
     def __init__(self, ctx):
         self.ctx = ctx
@@ -226,13 +169,15 @@ def initialize_templates(ctx):
     #       which template is which?
     templates = {}
 
-    from templates.host import HostTemplate
-    from templates.stellar import StellarTemplate
+    from templates.power_law import PowerLawTemplate
+    from templates.polynomial import PolynomialTemplate
     from templates.optical_feii import OpticalFeIITemplate
     from templates.uv_iron import UVIronTemplate
     from templates.balmer import BalmerTemplate
+    from templates.host import HostTemplate
+    from templates.stellar import StellarTemplate
 
-    for temp_class in [HostTemplate, StellarTemplate, OpticalFeIITemplate, UVIronTemplate, BalmerTemplate]:
+    for temp_class in [PowerLawTemplate, PolynomialTemplate, OpticalFeIITemplate, UVIronTemplate, BalmerTemplate, HostTemplate, StellarTemplate]:
         temp = temp_class.initialize_template(ctx)
         if temp:
             templates[temp_class.__name__] = temp

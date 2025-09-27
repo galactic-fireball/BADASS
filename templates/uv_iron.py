@@ -20,7 +20,7 @@ class UVIronTemplate(BadassTemplate):
         if not ctx.options.comp_options.fit_uv_iron:
             return None
 
-        if (ctx.wave[0] > UV_IRON_TEMP_WAVE_MAX) or (ctx.wave[-1] < UV_IRON_TEMP_WAVE_MIN):
+        if (ctx.fit_wave[0] > UV_IRON_TEMP_WAVE_MAX) or (ctx.fit_wave[-1] < UV_IRON_TEMP_WAVE_MIN):
             ctx.options.comp_options.fit_uv_iron = False
             ctx.log.warning('UV Iron template disabled because template is outside of fitting region')
             ctx.log.update_uv_iron()
@@ -41,7 +41,7 @@ class UVIronTemplate(BadassTemplate):
 
         # Generate a new grid with the original resolution, but the size of the fitting region
         dlam_uviron = df_uviron['angstrom'][1] - df_uviron['angstrom'][0]
-        lam_uviron = np.arange(np.min(self.ctx.wave)-npad, np.max(self.ctx.wave)+npad, dlam_uviron) # angstroms
+        lam_uviron = np.arange(np.min(self.ctx.fit_wave)-npad, np.max(self.ctx.fit_wave)+npad, dlam_uviron) # angstroms
 
         # Interpolate the original template onto the new grid
         interp_ftn_uv = interp1d(df_uviron['angstrom'].to_numpy(),df_uviron['flux'].to_numpy(),kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
@@ -49,19 +49,19 @@ class UVIronTemplate(BadassTemplate):
 
         # log-rebin the spectrum to same velocity scale as the input galaxy
         lamRange_uviron = [np.min(lam_uviron), np.max(lam_uviron)]
-        spec_uviron_new, loglam_uviron, velscale_uviron = log_rebin(lamRange_uviron, spec_uviron, velscale=self.ctx.velscale)
+        spec_uviron_new, loglam_uviron, velscale_uviron = log_rebin(lamRange_uviron, spec_uviron, velscale=self.ctx.target.velscale)
 
         # Pre-compute FFT of templates, since they do not change (only the LOSVD and convolution changes)
         self.uv_iron_fft, self.npad = template_rfft(spec_uviron_new)
 
         # The FeII templates are offset from the input galaxy spectrum by 100 A, so we
         # shift the spectrum to match that of the input galaxy.
-        self.vsyst = np.log(lam_uviron[0]/self.ctx.wave[0])*consts.c
+        self.vsyst = np.log(lam_uviron[0]/self.ctx.fit_wave[0])*consts.c
 
 
     def convolve(self, uv_iron_voff, uv_iron_disp):
-        return convolve_gauss_hermite(self.uv_iron_fft, self.npad, self.ctx.velscale,
-                                              [uv_iron_voff, uv_iron_disp], self.ctx.wave.shape[0],
+        return convolve_gauss_hermite(self.uv_iron_fft, self.npad, self.ctx.target.velscale,
+                                              [uv_iron_voff, uv_iron_disp], self.ctx.fit_wave.shape[0],
                                                velscale_ratio=1, sigma_diff=0, vsyst=self.vsyst)
 
 
@@ -120,9 +120,7 @@ class UVIronTemplate(BadassTemplate):
         # to the edges of the fitting region (usually because the region is too 
         # small), then simply return an array of zeros.
         if (isinstance(template,(int,float))) or (np.isnan(np.sum(template))):
-            template = np.zeros(len(self.ctx.wave))
+            template = np.zeros(len(self.ctx.fit_wave))
 
         comp_dict['UV_IRON_TEMPLATE'] = template
-        host_model -= template
-
-        return comp_dict, host_model
+        return host_model - template

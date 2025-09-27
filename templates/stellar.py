@@ -64,7 +64,7 @@ class StellarTemplate(BadassTemplate):
 
         lam_temp = np.array(h2['CRVAL1'] + h2['CDELT1']*np.arange(h2['NAXIS1']))
         # By cropping the templates we save some fitting time
-        mask_temp = ( (lam_temp > (ctx.fit_reg.min-100.0)) & (lam_temp < (ctx.fit_reg.max+100.0)) )
+        mask_temp = ( (lam_temp > (ctx.fit_wave[0]-100.0)) & (lam_temp < (ctx.fit_wave[-1]+100.0)) )
         ssp = ssp[mask_temp]
         lam_temp = lam_temp[mask_temp]
 
@@ -74,10 +74,10 @@ class StellarTemplate(BadassTemplate):
         # of the templates. Outside the range of the galaxy spectrum the resolution
         # will be extrapolated, but this is irrelevant as those pixels cannot be
         # used in the fit anyway.
-        if isinstance(ctx.disp_res, (list,np.ndarray)):
-            disp_res_interp = np.interp(lam_temp, ctx.wave, ctx.disp_res)
-        elif isinstance(ctx.disp_res, (int,float)):
-            disp_res_interp = np.full_like(lam_temp, ctx.disp_res)
+        if isinstance(ctx.target.disp_res, (list,np.ndarray)):
+            disp_res_interp = np.interp(lam_temp, ctx.fit_wave, ctx.target.disp_res)
+        elif isinstance(ctx.target.disp_res, (int,float)):
+            disp_res_interp = np.full_like(lam_temp, ctx.target.disp_res)
 
         # Convolve the whole Vazdekis library of spectral templates
         # with the quadratic difference between the SDSS and the
@@ -92,14 +92,14 @@ class StellarTemplate(BadassTemplate):
         disp_dif = np.sqrt((disp_res_interp**2 - disp_temp**2).clip(0))
         sigma = disp_dif/h2['CDELT1'] # Sigma difference in pixels
 
-        sspNew = log_rebin(lamRange_temp, ssp, velscale=ctx.velscale)[0]
+        sspNew = log_rebin(lamRange_temp, ssp, velscale=ctx.target.velscale)[0]
         templates = np.empty((sspNew.size, len(temp_list)))
         for j, fname in enumerate(temp_list):
             hdu = fits.open(fname)
             ssp = hdu[0].data
             ssp = ssp[mask_temp]
             ssp = gaussian_filter1d(ssp, sigma)  # perform convolution with variable sigma
-            sspNew,loglam_temp,velscale_temp = log_rebin(lamRange_temp, ssp, velscale=ctx.velscale)
+            sspNew,loglam_temp,velscale_temp = log_rebin(lamRange_temp, ssp, velscale=ctx.target.velscale)
             templates[:, j] = sspNew/np.median(sspNew) # Normalizes templates
             hdu.close()
 
@@ -110,9 +110,9 @@ class StellarTemplate(BadassTemplate):
         # measured with respect to DV. This assume the redshift is negligible.
         # In the case of a high-redshift galaxy one should de-redshift its
         # wavelength to the rest frame before using the line below (see above).
-        self.vsyst = np.log(lam_temp[0]/ctx.wave[0]) * consts.c
+        self.vsyst = np.log(lam_temp[0]/ctx.fit_wave[0]) * consts.c
 
-        npix = ctx.spec.shape[0] # number of output pixels
+        npix = ctx.fit_spec.shape[0] # number of output pixels
         ntemp = np.shape(templates)[1] # number of templates
 
         # Pre-compute FFT of templates, since they do not change (only the LOSVD and convolution changes)
@@ -125,8 +125,8 @@ class StellarTemplate(BadassTemplate):
             stel_vel = losvd_options.vel_const.val
             stel_disp = losvd_options.disp_const.val
 
-            self.conv_temp = convolve_gauss_hermite(self.temp_fft, self.npad, float(self.ctx.velscale),
-                           [stel_vel, stel_disp], np.shape(self.ctx.wave)[0], vsyst=self.vsyst)
+            self.conv_temp = convolve_gauss_hermite(self.temp_fft, self.npad, float(self.ctx.target.velscale),
+                           [stel_vel, stel_disp], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
 
 
     def initialize_parameters(self, params, args):
@@ -156,8 +156,8 @@ class StellarTemplate(BadassTemplate):
             stel_vel = val('vel_const', 'val', 'STEL_VEL')
             stel_disp = val('disp_const', 'val', 'STEL_DISP')
 
-            self.conv_temp = convolve_gauss_hermite(self.temp_fft, self.npad, float(self.ctx.velscale),
-                           [stel_vel, stel_disp], np.shape(self.ctx.wave)[0], vsyst=self.vsyst)
+            self.conv_temp = convolve_gauss_hermite(self.temp_fft, self.npad, float(self.ctx.target.velscale),
+                           [stel_vel, stel_disp], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
 
 
         host_model[~np.isfinite(host_model)] = 0
@@ -170,5 +170,5 @@ class StellarTemplate(BadassTemplate):
             host_galaxy += -np.min(host_galaxy)
 
         comp_dict['HOST_GALAXY'] = host_galaxy
-        host_model -= host_galaxy # Subtract off continuum from galaxy, since we only want template weights to be fit
-        return comp_dict, host_model
+        # Subtract off continuum from galaxy, since we only want template weights to be fit
+        return host_model - host_galaxy
