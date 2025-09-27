@@ -28,7 +28,7 @@ class NIRSpecReader(JWSTReader):
         inst_data_file = inst_data_dir.joinpath('jwst_nirspec_g%s%s_disp.fits'%(self.grating,self.disperser))
         hdu = fits.open(inst_data_file)
 
-        interp_func = interpolate.interp1d(hdu[1].data['WAVELENGTH'], hdu[1].data['R'], bounds_error=False)
+        interp_func = interpolate.interp1d(hdu[1].data['WAVELENGTH'], hdu[1].data['R'], bounds_error=False, fill_value='extrapolate')
         self.disp_res = obs_wave / interp_func(obs_wave)
 
 
