@@ -4,7 +4,7 @@ import pandas as pd
 from scipy.interpolate import interp1d
 
 import utils.constants as consts
-from templates.common import BadassTemplate, gaussian_filter1d, template_rfft, convolve_gauss_hermite
+from components.templates.common import BadassTemplate, gaussian_filter1d, template_rfft, convolve_gauss_hermite
 from utils.utils import log_rebin, find_nearest
 
 BALMER_TEMP_WAVE_MAX = 3500.0 # Angstroms

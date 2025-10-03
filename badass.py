@@ -47,10 +47,10 @@ import badass_tools as badass_tools
 from utils.options import BadassOptions
 from input.input import BadassInput
 import utils.utils as ba_utils
-from templates.common import initialize_templates
+from components.templates.common import initialize_templates
 import utils.plotting as plotting
-from line_utils.line_lists.optical_qso import optical_qso_default
-from line_utils.line_profiles import line_constructor
+from components.spectral_lines.line_lists.optical_qso import optical_qso_default
+from components.spectral_lines.line_profiles import line_constructor
 
 
 __author__ = 'Remington O. Sexton (USNO), Sara M. Doan (GMU), Michael A. Reefe (GMU), William Matzko (GMU), Nicholas Darden (UCR)'

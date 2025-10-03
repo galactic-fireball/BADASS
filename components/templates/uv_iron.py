@@ -3,7 +3,7 @@ import pandas as pd
 from scipy.interpolate import interp1d
 
 import utils.constants as consts
-from templates.common import BadassTemplate, template_rfft, convolve_gauss_hermite
+from components.templates.common import BadassTemplate, template_rfft, convolve_gauss_hermite
 from utils.utils import log_rebin
 
 UV_IRON_TEMP_WAVE_MIN = 1074.0

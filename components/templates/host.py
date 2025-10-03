@@ -2,7 +2,7 @@ from astropy.io import fits
 import numpy as np
 
 import utils.constants as consts
-from templates.common import BadassTemplate, convolve_gauss_hermite, gaussian_filter1d, nnls, template_rfft
+from components.templates.common import BadassTemplate, convolve_gauss_hermite, gaussian_filter1d, nnls, template_rfft
 from utils.utils import log_rebin
 
 HOST_GAL_TEMP_WAVE_MIN = 1680.2

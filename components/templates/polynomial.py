@@ -1,6 +1,6 @@
 import numpy as np
 
-from templates.common import BadassTemplate
+from components.templates.common import BadassTemplate
 
 class PolynomialTemplate(BadassTemplate):
 

@@ -2,7 +2,7 @@ from astropy.io import fits
 import natsort
 import numpy as np
 
-from templates.common import BadassTemplate, convolve_gauss_hermite, gaussian_filter1d, nnls, template_rfft
+from components.templates.common import BadassTemplate, convolve_gauss_hermite, gaussian_filter1d, nnls, template_rfft
 import utils.constants as consts
 from utils.utils import log_rebin
 

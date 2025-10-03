@@ -1,6 +1,6 @@
 import numpy as np
 
-from templates.common import BadassTemplate
+from components.templates.common import BadassTemplate
 
 def simple_power_law(x, amp, alpha):
     """

@@ -169,13 +169,13 @@ def initialize_templates(ctx):
     #       which template is which?
     templates = {}
 
-    from templates.power_law import PowerLawTemplate
-    from templates.polynomial import PolynomialTemplate
-    from templates.optical_feii import OpticalFeIITemplate
-    from templates.uv_iron import UVIronTemplate
-    from templates.balmer import BalmerTemplate
-    from templates.host import HostTemplate
-    from templates.stellar import StellarTemplate
+    from components.templates.power_law import PowerLawTemplate
+    from components.templates.polynomial import PolynomialTemplate
+    from components.templates.optical_feii import OpticalFeIITemplate
+    from components.templates.uv_iron import UVIronTemplate
+    from components.templates.balmer import BalmerTemplate
+    from components.templates.host import HostTemplate
+    from components.templates.stellar import StellarTemplate
 
     for temp_class in [PowerLawTemplate, PolynomialTemplate, OpticalFeIITemplate, UVIronTemplate, BalmerTemplate, HostTemplate, StellarTemplate]:
         temp = temp_class.initialize_template(ctx)
