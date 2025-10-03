@@ -915,12 +915,12 @@ for option_name, schema in list_options.items():
 
 # TODO: more validation on user line dict
 DEFAULT_OPTIONS_SCHEMA['user_lines'] = {
-    'type': 'dict',
-    'default': {},
-    'keysrules': {'type': 'string'},
-    'valuesrules': {'type': 'dict',},
+    'type': 'list',
+    'default': [],
+    'schema': {'type': 'dict'}
 }
 
+# TODO: remove
 DEFAULT_OPTIONS_SCHEMA['combined_lines'] = {
     'type': 'dict',
     'default': {},

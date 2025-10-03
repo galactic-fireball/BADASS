@@ -4,6 +4,95 @@ import numpy as np
 from numpy.polynomial import hermite
 from scipy import special
 
+from components.spectral_lines.spectral_line import FitParameter
+
+# Valid line profiles: will be populated as each profile class is defined
+line_profiles = {}
+
+class LineProfile:
+
+    @staticmethod
+    def get_line_profile(profile_name):
+        return line_profiles.get(profile_name, None)
+
+
+    @staticmethod
+    def add_parameters(line_dict):
+        pass
+
+
+class GaussianProfile(LineProfile):
+    name = 'GAUSSIAN'
+
+line_profiles[GaussianProfile.name] = GaussianProfile
+
+
+class LorentzianProfile(LineProfile):
+    name = 'LORENTZIAN'
+
+line_profiles[LorentzianProfile.name] = LorentzianProfile
+
+
+class VoigtProfile(LineProfile):
+    name = 'VOIGT'
+
+    @staticmethod
+    def add_parameters(line):
+        par_name = line.name + '_SHAPE'
+        if line.ctx.options.comp_options.tie_line_disp:
+            line.parameters[par_name] = FitParameter(name=par_name, value=line.prefix + '_SHAPE')
+        else:
+            line.parameters[par_name] = FitParameter(name=par_name, value=line.line_dict.get('SHAPE', 'FREE'))
+
+line_profiles[VoigtProfile.name] = VoigtProfile
+
+
+class GaussHermiteProfile(LineProfile):
+    name = 'GAUSS-HERMITE'
+
+    @staticmethod
+    def add_parameters(line):
+        n_moments = line.type_options.n_moments
+        if n_moments < 3:
+            return
+
+        for par in ['H%d'%m for m in range(3, 3+n_moments-2)]:
+            par_name = line.name + '_' + par
+            if line.ctx.options.comp_options.tie_line_disp:
+                line.parameters[par_name] = FitParameter(name=par_name, value=line.prefix + '_' + par)
+            else:
+                line.parameters[par_name] = FitParameter(name=par_name, value=line.line_dict.get(par, 'FREE'))
+
+line_profiles[GaussHermiteProfile.name] = GaussHermiteProfile
+
+
+class LaplaceProfile(LineProfile):
+    name = 'LAPLACE'
+
+    @staticmethod
+    def add_parameters(line):
+        for par in ['H3','H4']:
+            par_name = line.name + '_' + par
+            if line.ctx.options.comp_options.tie_line_disp:
+                line.parameters[par_name] = FitParameter(name=par_name, value=line.prefix + '_' + par)
+            else:
+                line.parameters[par_name] = FitParameter(name=par_name, value=line.line_dict.get(par, 'FREE'))
+
+line_profiles[LaplaceProfile.name] = LaplaceProfile
+
+
+class UniformProfile(LineProfile):
+    name = 'UNIFORM'
+
+    @staticmethod
+    def add_parameters(line):
+        LaplaceProfile.add_parameters(line)
+
+line_profiles[UniformProfile.name] = UniformProfile
+
+
+
+
 def line_constructor(ctx, line_name, line_dict):
 
 	line_profile = line_dict['line_profile']

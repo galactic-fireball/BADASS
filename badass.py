@@ -153,8 +153,11 @@ class BadassRunContext:
         self.start_time = time.time()
 
         self.target.log.log_fit_information()
-        # TODO: the templates ctx is BadassRunContext
         self.templates = initialize_templates(self)
+        line_list = self.options.user_lines or []
+        SpectralLine.initialize_spectral_lines(self, line_list)
+        print([str(l) for l in SpectralLine.line_list])
+        breakpoint()
 
         # TODO: input from past line test or user config
         # Set force_thresh to np.inf. This will get overridden if the user does the line test
@@ -177,7 +180,8 @@ class BadassRunContext:
         self.target.log.output_options()
 
 
-    def initialize_pars(self, user_lines=None):
+    def initialize_pars(self):
+        # TODO: update tests to remove/add lines to line list before calling initialize_pars
         # Initializes all free parameters for the fit based on user input and options
 
         max_flux = np.nanmax(self.fit_spec)*1.5
@@ -193,11 +197,11 @@ class BadassRunContext:
             template.initialize_parameters(par_input, template_args)
 
         # Emission Lines
-        self.line_list = user_lines if user_lines else self.options.user_lines if self.options.user_lines else {}
-        self.add_line_comps()
+        for line in self.spectral_lines:
+            line.initialize_parameters(par_input, template_args)
 
         # Add the FWHM resolution and central pixel locations for each line so we don't have to find them during the fit
-        self.add_disp_res()
+        SpectralLine.add_disp_res(self)
 
         # Generate line free parameters based on input line_list
         line_par_input = self.initialize_line_pars()
@@ -396,26 +400,6 @@ class BadassRunContext:
             for key in line_dict.keys():
                 if key not in valid_keys:
                     raise ValueError('%s not a valid keyword for the line list!'%key)
-
-
-    def add_disp_res(self):
-        # Perform linear interpolation on the disp_res array as a function of wavelength
-        # We will use this to determine the dispersion resolution as a function of wavelenth for each
-        # emission line so we can correct for the resolution at every iteration.
-        disp_res_ftn = interp1d(self.target.wave,self.target.disp_res,kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
-        # Interpolation function that maps x (in angstroms) to pixels so we can get the exact
-        # location in pixel space of the emission line.
-        x_pix = np.array(range(len(self.target.wave)))
-        pix_interp_ftn = interp1d(self.target.wave,x_pix,kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
-
-        # iterate through the line_list and add the keywords
-        for line_dict in self.line_list.values():
-            center = line_dict['center'] # line center in Angstroms
-            line_dict['center_pix'] = float(pix_interp_ftn(center)) # line center in pixels
-            disp_res_ang = float(disp_res_ftn(center)) # instrumental FWHM resolution in angstroms
-            line_dict['disp_res_ang'] = disp_res_ang
-            c = const.c.to('km/s').value
-            line_dict['disp_res_kms'] = (disp_res_ang/center)*c # instrumental FWHM resolution in km/s
 
 
     def initialize_line_pars(self):
