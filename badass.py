@@ -47,6 +47,7 @@ import badass_tools as badass_tools
 
 from utils.options import BadassOptions
 from input.input import BadassInput
+from utils.output import ResultWriter
 import utils.utils as ba_utils
 from components.templates.common import initialize_templates
 import utils.plotting as plotting
@@ -82,9 +83,14 @@ def run_BADASS(inputs, **kwargs):
     opts = BadassOptions.get_options(kwargs['options_file'])
     targets = BadassInput.get_inputs(inputs, opts)
 
+    # TODO: handle multiple option dicts
+    result_writer = ResultWriter(opts[0])
     # TODO: multiprocess
     for target in targets:
-        BadassRunContext(target).run()
+        ctx = BadassRunContext(target)
+        ctx.run()
+        result_writer.add_fit_ctx(ctx)
+    result_writer.compile_results()
 
 
 class BadassRunContext:
@@ -123,6 +129,8 @@ class BadassRunContext:
 
 
     def run(self):
+        # TODO: allow ability to run_emcee without ML first
+        #       - specify inputs and output of each (maybe separate classes?)
         plotting.create_input_plot(self)
         self.initialize_fit()
 
