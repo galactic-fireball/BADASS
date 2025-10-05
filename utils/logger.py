@@ -7,39 +7,48 @@ import toml
 #           check err_level option
 
 class BadassLogger:
-    def __init__(self, ba_ctx):
-        self.ctx = ba_ctx # BadassContext
 
-        self.log_dir = ba_ctx.outdir.joinpath('log')
-        self.log_dir.mkdir(parents=True, exist_ok=True)
+    _logger = None
+
+    def __new__(cls, ba_ctx):
+
+        if cls._logger:
+            return cls._logger
+
+        cls._logger = super().__new__(cls)
+
+        cls._logger.ctx = ba_ctx # BadassContext
+
+        cls._logger.log_dir = ba_ctx.outdir.joinpath('log')
+        cls._logger.log_dir.mkdir(parents=True, exist_ok=True)
 
         # File for useful BADASS output
-        self.log_file_path = self.log_dir.joinpath('log_file.txt')
+        cls._logger.log_file_path = cls._logger.log_dir.joinpath('log_file.txt')
         # File for all BADASS logging
-        self.log_out_path = self.log_dir.joinpath('out_log.txt')
+        cls._logger.log_out_path = cls._logger.log_dir.joinpath('out_log.txt')
 
-        log_lvl = logging.getLevelName(self.ctx.options.io_options.log_level.upper())
+        log_lvl = logging.getLevelName(cls._logger.ctx.options.io_options.log_level.upper())
         log_lvl = log_lvl if isinstance(log_lvl, int) else logging.INFO
 
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
-        self.logger = logging.getLogger('BADASS_log')
-        self.logger.setLevel(log_lvl) # TODO: have a separate log level for default to INFO
-        fh = logging.FileHandler(self.log_file_path)
-        self.logger.addHandler(fh)
+        cls._logger.logger = logging.getLogger('BADASS_log')
+        cls._logger.logger.setLevel(log_lvl) # TODO: have a separate log level for default to INFO
+        fh = logging.FileHandler(cls._logger.log_file_path)
+        cls._logger.logger.addHandler(fh)
 
-        self.logout = logging.getLogger('BADASS_out')
-        self.logout.setLevel(log_lvl)
-        fh = logging.FileHandler(self.log_out_path)
+        cls._logger.logout = logging.getLogger('BADASS_out')
+        cls._logger.logout.setLevel(log_lvl)
+        fh = logging.FileHandler(cls._logger.log_out_path)
         fh.setFormatter(formatter)
-        self.logout.addHandler(fh)
+        cls._logger.logout.addHandler(fh)
         sh = logging.StreamHandler(sys.stdout)
         sh.setFormatter(formatter)
-        self.logout.addHandler(sh)
+        cls._logger.logout.addHandler(sh)
 
-        self.verbose = log_lvl < logging.WARN
-
-        self.log_title()
+        cls._logger.verbose = log_lvl < logging.WARN
+        cls._logger.log_title()
+        return cls._logger
 
 
     def debug(self, msg):

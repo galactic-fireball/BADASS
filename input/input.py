@@ -21,7 +21,7 @@ class BadassInput():
         self.outdir = pathlib.Path(self.options.io_options.output_dir or get_default_outdir(self.infile))
         if not self.outdir.is_absolute():
             self.outdir = self.infile.parent.joinpath(self.outdir)
-        self.outdir.mkdir(parents=True, exist_ok=True)
+        self.outdir.joinpath('log').mkdir(parents=True, exist_ok=True) # TODO: 'log' mkdir eventually happens in separate output class
 
         self.log = BadassLogger(self)
 
@@ -179,6 +179,7 @@ class BadassInput():
 
     @classmethod
     def get_inputs(cls, input_data, options):
+        # TODO: from_previous_run
         if isinstance(input_data, list):
 
             if isinstance(options, list) and (len(options) != 1 and len(options) != len(input_data)):
