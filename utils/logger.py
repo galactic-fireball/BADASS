@@ -48,7 +48,7 @@ class BadassLogger:
     def info(self, msg):
         self.logout.info(msg)
 
-    def warning(self, msg):
+    def warn(self, msg):
         self.logout.warning(msg)
 
     def error(self, msg):

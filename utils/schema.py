@@ -135,13 +135,6 @@ DEFAULT_IO_OPTIONS = {
         'type': 'float',
         'default': 0.0,
     },
-    'spaxel': {
-        'type': 'list',
-        'minlength': 2,
-        'maxlength': 2,
-        'schema': {'type': 'integer'},
-        'default': (0,0),
-    },
 }
 
 

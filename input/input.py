@@ -12,9 +12,10 @@ from utils.utils import ccm_unred, emline_masker, get_ebv, metal_masker
 
 class BadassInput():
 
+    # TODO: make sure this is called from each instance creation method
     def common_postinit(self, input_data, options):
         self.validate_input()
-        self.options = options # BadassOptions
+        if not hasattr(self, 'options'): self.options = options # BadassOptions
 
         # TODO: check for already existing output and overwrite option
         self.outdir = pathlib.Path(self.options.io_options.output_dir or get_default_outdir(self.infile))
@@ -81,14 +82,12 @@ class BadassInput():
                 return
 
             if (user_fit_reg[0] > self.fit_reg[1]) or (user_fit_reg[1] < self.fit_reg[0]):
-                self.log.error('Fitting region not available!')
-                self.fit_reg = None
-                return
+                raise Exception('Fitting region not available!')
 
             if (user_fit_reg[0] < self.fit_reg[0]) or (user_fit_reg[1] > self.fit_reg[1]):
-                self.log.warning('Input fitting region exceeds available wavelength range. BADASS will adjust your fitting range automatically...')
-                self.log.warning('\t- Input fitting range: (%d, %d)' % (user_fit_reg[0], user_fit_reg[1]))
-                self.log.warning('\t- Available wavelength range: (%d, %d)' % (self.fit_reg[0], self.fit_reg[1]))
+                self.log.warn('Input fitting region exceeds available wavelength range. BADASS will adjust your fitting range automatically...')
+                self.log.warn('\t- Input fitting range: (%d, %d)' % (user_fit_reg[0], user_fit_reg[1]))
+                self.log.warn('\t- Available wavelength range: (%d, %d)' % (self.fit_reg[0], self.fit_reg[1]))
 
             self.fit_reg = (np.max([user_fit_reg[0], self.fit_reg[0]]), np.min([user_fit_reg[1], self.fit_reg[1]]))
 
@@ -98,8 +97,8 @@ class BadassInput():
             min_losvd = constants.LOSVD_LIBRARIES[self.options.losvd_options.library].min_losvd
             max_losvd = constants.LOSVD_LIBRARIES[self.options.losvd_options.library].max_losvd
             if (self.fit_reg[0] < min_losvd) or (self.fit_reg[1] > max_losvd):
-                self.log.warning("Warning: Fitting LOSVD requires wavelenth range between {mi} Å and {ma} Å for stellar templates. BADASS will adjust your fitting range to fit the LOSVD...".format(mi=min_losvd, ma=max_losvd))
-                self.log.warning("\t- Available wavelength range: (%d, %d)" % (self.fit_reg[0], self.fit_reg[1]))
+                self.log.warn("Warning: Fitting LOSVD requires wavelenth range between {mi} Å and {ma} Å for stellar templates. BADASS will adjust your fitting range to fit the LOSVD...".format(mi=min_losvd, ma=max_losvd))
+                self.log.warn("\t- Available wavelength range: (%d, %d)" % (self.fit_reg[0], self.fit_reg[1]))
             self.fit_reg = (np.max([min_losvd, self.fit_reg[0]]), np.min([max_losvd, self.fit_reg[1]]))
 
         # allow for more explicit variable name: fit_reg.min and fit_reg.max
@@ -122,8 +121,15 @@ class BadassInput():
 
     # TODO: default reader?
     @classmethod
-    def from_dict(cls, input_data):
-        return cls(input_data)
+    def from_dict(cls, input_data, options={}):
+        reader = cls()
+        reader.__dict__.update(input_data)
+        return reader
+
+
+    @classmethod
+    def parse(cls, input_data, options):
+        return cls(input_data, options)
 
 
     @classmethod
@@ -139,9 +145,12 @@ class BadassInput():
         if not getattr(module, 'Reader', None):
             raise Exception('No Reader specified in %s' % fmt)
 
-        reader = module.Reader(input_data, options)
-        reader.common_postinit(input_data, options)
-        return reader
+        readers = module.Reader.parse(input_data, options)
+        readers = readers if isinstance(readers, list) else [readers]
+        print('inputs: %d'%len(readers))
+        for reader in readers:
+            reader.common_postinit(input_data, options)
+        return readers
 
 
     @classmethod
@@ -187,7 +196,7 @@ class BadassInput():
             return inputs
 
         if isinstance(input_data, dict):
-            return [cls.from_dict(input_data)]
+            return [cls.from_dict(input_data, options)]
 
         if isinstance(input_data, pathlib.Path):
             ret = cls.from_path(input_data, options)

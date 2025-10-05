@@ -33,8 +33,9 @@ import time
 from typing import Callable, List, Union
 
 # TODO: fix warnings
-# import warnings
-# warnings.simplefilter('error')
+import warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning) 
+warnings.filterwarnings("ignore", category=UserWarning) 
 
 BADASS_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0,str(BADASS_DIR))

@@ -6,59 +6,60 @@ from scipy import special
 
 def line_constructor(ctx, line_name, line_dict):
 
-	line_profile = line_dict['line_profile']
+    line_profile = line_dict['line_profile']
 
-	def get_attr(attr):
-		if (isinstance(line_dict[attr], str)) and (line_dict[attr] != 'free'):
-			return ne.evaluate(line_dict[attr], local_dict=ctx.cur_params).item()
-		return ctx.cur_params[line_name+'_'+attr.upper()]
+    def get_attr(attr):
+        attr_val = line_dict.get(attr, 'free')
+        if (isinstance(attr_val, str)) and (attr_val != 'free'):
+            return ne.evaluate(attr_val, local_dict=ctx.cur_params).item()
+        return ctx.cur_params[line_name+'_'+attr.upper()]
 
-	amp = get_attr('amp')
-	amp = amp if np.isfinite(amp) else 0.0
-	disp = get_attr('disp')
-	disp = disp if np.isfinite(disp) else 100.0
-	voff = get_attr('voff')
-	voff = voff if np.isfinite(voff) else 0.0
+    amp = get_attr('amp')
+    amp = amp if np.isfinite(amp) else 0.0
+    disp = get_attr('disp')
+    disp = disp if np.isfinite(disp) else 100.0
+    voff = get_attr('voff')
+    voff = voff if np.isfinite(voff) else 0.0
 
-	if line_profile == 'gaussian':
-		line_model = gaussian_line_profile(ctx.fit_wave, amp, disp, voff, line_dict['center_pix'], ctx.target.velscale)
+    if line_profile == 'gaussian':
+        line_model = gaussian_line_profile(ctx.fit_wave, amp, disp, voff, line_dict['center_pix'], ctx.target.velscale)
 
-	elif line_profile == 'lorentzian':
-		line_model = lorentzian_line_profile(ctx.fit_wave, amp, disp, voff, line_dict['center_pix'], ctx.target.velscale)
+    elif line_profile == 'lorentzian':
+        line_model = lorentzian_line_profile(ctx.fit_wave, amp, disp, voff, line_dict['center_pix'], ctx.target.velscale)
 
-	elif line_profile == 'gauss-hermite':
-		n_moments = len([k for k in line_dict.keys() if k in ['h3','h4','h5','h6','h7','h8','h9','h10']])
-		hmoments = None
-		if n_moments > 0:
-			hmoments = np.empty(n_moments)
-			for i,m in enumerate(range(3,3+n_moments)):
-				hattr = 'h'+str(m)
-				hmoments[i] = get_attr(hattr)
-		line_model = gauss_hermite_line_profile(ctx.fit_wave, amp, disp, voff, hmoments, line_dict['center_pix'], ctx.target.velscale)
+    elif line_profile == 'gauss-hermite':
+        n_moments = len([k for k in line_dict.keys() if k in ['h3','h4','h5','h6','h7','h8','h9','h10']])
+        hmoments = None
+        if n_moments > 0:
+            hmoments = np.empty(n_moments)
+            for i,m in enumerate(range(3,3+n_moments)):
+                hattr = 'h'+str(m)
+                hmoments[i] = get_attr(hattr)
+        line_model = gauss_hermite_line_profile(ctx.fit_wave, amp, disp, voff, hmoments, line_dict['center_pix'], ctx.target.velscale)
 
-	elif line_profile == 'laplace':
-		hmoments = np.empty(2)
-		for i,m in enumerate(range(3,5)):
-			hattr = 'h'+str(m)
-			hmoments[i] = get_attr(hattr)
-		line_model = laplace_line_profile(ctx.fit_wave, amp, disp, voff, hmoments, line_dict['center_pix'], ctx.target.velscale)
+    elif line_profile == 'laplace':
+        hmoments = np.empty(2)
+        for i,m in enumerate(range(3,5)):
+            hattr = 'h'+str(m)
+            hmoments[i] = get_attr(hattr)
+        line_model = laplace_line_profile(ctx.fit_wave, amp, disp, voff, hmoments, line_dict['center_pix'], ctx.target.velscale)
 
-	elif line_profile == 'uniform':
-		hmoments = np.empty(2)
-		for i,m in enumerate(range(3,5)):
-			hattr = 'h'+str(m)
-			hmoments[i] = get_attr(hattr)
-		line_model = uniform_line_profile(ctx.fit_wave, amp, disp, voff, hmoments, line_dict['center_pix'], ctx.target.velscale)
+    elif line_profile == 'uniform':
+        hmoments = np.empty(2)
+        for i,m in enumerate(range(3,5)):
+            hattr = 'h'+str(m)
+            hmoments[i] = get_attr(hattr)
+        line_model = uniform_line_profile(ctx.fit_wave, amp, disp, voff, hmoments, line_dict['center_pix'], ctx.target.velscale)
 
-	elif line_profile == 'voigt':
-		shape = get_attr('shape')
-		line_model = voigt_line_profile(ctx.fit_wave, amp, disp, voff, shape, line_dict['center_pix'], ctx.target.velscale)
+    elif line_profile == 'voigt':
+        shape = get_attr('shape')
+        line_model = voigt_line_profile(ctx.fit_wave, amp, disp, voff, shape, line_dict['center_pix'], ctx.target.velscale)
 
-	else:
-		return None
+    else:
+        return None
 
-	line_model[~np.isfinite(line_model)] = 0.0
-	return line_model
+    line_model[~np.isfinite(line_model)] = 0.0
+    return line_model
 
 
 def gaussian_line_profile(wave, amp, disp, voff, center_pix, velscale):
