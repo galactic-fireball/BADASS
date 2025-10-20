@@ -14,22 +14,23 @@ FILT_GRAT = {
 
 class NIRSpecReader(JWSTReader):
 
-    def set_dispersion(self, options, obs_wave):
+    @classmethod
+    def set_dispersion(cls, cube_data, options, obs_wave):
         if not 'filter' in options.io_options:
             raise Exception('Filter for NIRSpec cube must be provided')
 
         if not 'disperser' in options.io_options:
             raise Exception('Disperser for NIRSpec cube must be provided')
 
-        self.filter = options.io_options.filter
-        self.grating = FILT_GRAT[self.filter]
-        self.disperser = options.io_options.disperser.lower()
+        cube_data['filter'] = options.io_options.filter
+        cube_data['grating'] = FILT_GRAT[cube_data['filter']]
+        cube_data['disperser'] = options.io_options.disperser.lower()
 
-        inst_data_file = inst_data_dir.joinpath('jwst_nirspec_g%s%s_disp.fits'%(self.grating,self.disperser))
+        inst_data_file = inst_data_dir.joinpath('jwst_nirspec_g%s%s_disp.fits'%(cube_data['grating'],cube_data['disperser']))
         hdu = fits.open(inst_data_file)
 
         interp_func = interpolate.interp1d(hdu[1].data['WAVELENGTH'], hdu[1].data['R'], bounds_error=False, fill_value='extrapolate')
-        self.disp_res = obs_wave / interp_func(obs_wave)
+        cube_data['disp_res'] = obs_wave / interp_func(obs_wave)
 
 
 Reader = NIRSpecReader

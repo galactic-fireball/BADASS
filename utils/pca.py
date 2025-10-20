@@ -27,8 +27,15 @@ def pca_reconstruction(target):
 
     # Regardless of PCA, check for nans in flux and flux error arrays. If found, raise an error because they will prevent fit optimization
     if not target.options.pca_options.do_pca:
-        if (np.isnan(target.spec).any()) or (np.isnan(target.noise).any()):
-            raise ValueError("The flux or flux error in fitting region ({mi}, {ma}) is nan, stopping fit. Change fitting region or enable PCA to cover nan region.".format(mi=target.fit_reg.min, ma=target.fit_reg.max))
+        # if (np.isnan(target.spec).any()) or (np.isnan(target.noise).any()):
+        #     raise ValueError("The flux or flux error in fitting region ({mi}, {ma}) is nan, stopping fit. Change fitting region or enable PCA to cover nan region.".format(mi=target.fit_reg.min, ma=target.fit_reg.max))
+        target.wave = target.wave[~np.isnan(target.spec)]
+        target.noise = target.noise[~np.isnan(target.spec)]
+        target.spec = target.spec[~np.isnan(target.spec)]
+
+        target.wave = target.wave[~np.isnan(target.noise)]
+        target.spec = target.spec[~np.isnan(target.noise)]
+        target.noise = target.noise[~np.isnan(target.noise)]
         target.log.pca_information()
         return
 

@@ -1,5 +1,6 @@
 import copy
 import numpy as np
+from photutils.aperture import CircularAperture, ApertureStats
 
 from input.input import BadassInput
 
@@ -10,23 +11,31 @@ class CubeReader(BadassInput):
 		cube_dict = cls.get_cube_data(input_data, options)
 		cube_dict['options'] = options
 
+		# TODO: separate subclasses
 		area_parsers = {
 			'spaxels': cls.spaxel_parse,
 			'bins': cls.bin_parse,
+			'aperture': cls.aperture_parse,
 		}
 
 		fit_area = options.io_options.fit_area
 		fit_area_type = list(fit_area.keys())[0]
+		fit_area_func = area_parsers.get(fit_area_type, None)
 
-		if not fit_area_type in area_parsers:
+		if fit_area_func is None:
 			raise Exception('Fit area type unsupported: %s'%fit_area_type)
 
-		return area_parsers[fit_area_type](cube_dict, input_data, options)
+		return fit_area_func(cube_dict, input_data, options)
 
 
 	@classmethod
 	def spaxel_parse(cls, cube_dict, input_data, options):
 		spaxels = options.io_options.fit_area.spaxels
+
+		if isinstance(spaxels, dict) and 'range' in spaxels:
+			xs = spaxels['range']['x']
+			ys = spaxels['range']['y']
+			spaxels = [(x,y) for x in range(*xs) for y in range(*ys)]
 
 		if not isinstance(spaxels, (tuple,list)) or (len(spaxels) < 1):
 			raise Exception('fit spaxel must be tuple or list!')
@@ -108,6 +117,49 @@ class CubeReader(BadassInput):
 			bnx += 1
 
 		return inputs
+
+
+	@classmethod
+	def aperture_parse(cls, cube_dict, input_data, options):
+		aperture_options = options.io_options.fit_area.aperture
+
+		def get_circular_aperture():
+			ap_center = aperture_options.center
+			radius = aperture_options.radius
+			aperture = CircularAperture(ap_center, r=radius)
+
+			wave = cube_dict['wave']
+			ap_spec = np.zeros(len(wave))
+			ap_err = np.zeros(len(wave))
+
+			for i in range(0, len(wave)):
+				apstat = ApertureStats(cube_dict['spec'][:,:,i], aperture, error=cube_dict['noise'][:,:,i])
+				ap_spec[i] = apstat.sum
+				ap_err[i] = apstat.sum_err
+			return ap_spec, ap_err
+
+		ap_types = {
+			'circular': get_circular_aperture,
+		}
+
+		ap_type = aperture_options.type
+		ap_func = ap_types.get(ap_type, None)
+		if ap_func is None:
+			raise Exception('Unsupported aperture type: %s'%ap_type)
+
+		ap_spec, ap_noise = ap_func()
+		input_dict = cube_dict
+		input_dict['spec'] = ap_spec
+		input_dict['noise'] = ap_noise
+
+		# import matplotlib.pyplot as plt
+		# plt.figure()
+		# plt.plot(input_dict['wave'], input_dict['spec'])
+		# plt.show()
+		# breakpoint()
+
+		return cls.from_dict(input_dict)
+
 
 	@classmethod
 	def get_cube_data(cls, input_data, options):

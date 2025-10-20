@@ -13,7 +13,7 @@ from utils.utils import ccm_unred, emline_masker, get_ebv, metal_masker
 class BadassInput():
 
     # TODO: make sure this is called from each instance creation method
-    def common_postinit(self, input_data, options):
+    def postinit(self, input_data, options):
         self.validate_input()
         if not hasattr(self, 'options'): self.options = options # BadassOptions
 
@@ -27,9 +27,7 @@ class BadassInput():
 
         self.set_fit_region()
 
-        if getattr(self, 'bad_pix', None) is None:
-            self.bad_pix = np.array([])
-
+        self.bad_pix = getattr(self, 'bad_pix', np.array([]))
         reg_mask = ((self.wave >= self.fit_reg.min) & (self.wave <= self.fit_reg.max))
         self.spec = self.spec[reg_mask]
         self.wave = self.wave[reg_mask]
@@ -49,7 +47,7 @@ class BadassInput():
         if self.options.fit_options.mask_emline:
             fit_mask_bad.extend(emline_masker(self.wave,self.spec,self.noise))
         for m in self.options.user_mask:
-            fit_mask_bad.append(np.where((self.wave >= m[0]) & (self.wave <= m[1]))[0])
+            fit_mask_bad.extend(np.where((self.wave >= m[0]) & (self.wave <= m[1]))[0])
         if self.options.fit_options.mask_metal:
             fit_mask_bad.extend(metal_masker(self.wave,self.spec,self.noise))
 
@@ -63,7 +61,18 @@ class BadassInput():
         self.spec = self.spec / self.fit_norm
         self.noise = self.noise / self.fit_norm
 
+        # TODO: should do in BadassContext fit_wave,fit_spec,fit_noise?
+        self.wave = self.wave[self.fit_mask]
+        self.spec = self.spec[self.fit_mask]
+        self.noise = self.noise[self.fit_mask]
+        self.disp_res = self.disp_res[self.fit_mask]
+
         pca_reconstruction(self) # TODO: test
+
+        if np.isnan(self.spec).all():
+            return False
+
+        return True
 
 
     def set_fit_region(self):
@@ -148,9 +157,11 @@ class BadassInput():
         readers = module.Reader.parse(input_data, options)
         readers = readers if isinstance(readers, list) else [readers]
         print('inputs: %d'%len(readers))
+        valid_readers = []
         for reader in readers:
-            reader.common_postinit(input_data, options)
-        return readers
+            if reader.postinit(input_data, options):
+                valid_readers.append(reader)
+        return valid_readers
 
 
     @classmethod

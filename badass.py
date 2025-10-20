@@ -37,13 +37,13 @@ import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning) 
 warnings.filterwarnings("ignore", category=UserWarning) 
 
-BADASS_DIR = pathlib.Path(__file__).resolve().parent
-sys.path.insert(0,str(BADASS_DIR))
-sys.path.insert(0,str(BADASS_DIR.joinpath('badass_utils')))
-sys.path.insert(0,str(BADASS_DIR.joinpath('badass_tools')))
+# BADASS_DIR = pathlib.Path(__file__).resolve().parent
+# sys.path.insert(0,str(BADASS_DIR))
+# sys.path.insert(0,str(BADASS_DIR.joinpath('badass_utils')))
+# sys.path.insert(0,str(BADASS_DIR.joinpath('badass_tools')))
 
-import badass_test_suite as badass_test_suite
-import badass_tools as badass_tools
+from badass_utils import badass_test_suite
+from badass_tools import badass_tools
 
 from utils.options import BadassOptions
 from input.input import BadassInput
@@ -82,6 +82,7 @@ def run_BADASS(inputs, **kwargs):
     # utils.options.BadassOptions.get_options_dep(kwargs) # TODO
     opts = BadassOptions.get_options(kwargs['options_file'])
     targets = BadassInput.get_inputs(inputs, opts)
+    print(len(targets))
 
     # TODO: handle multiple option dicts
     result_writer = ResultWriter(opts[0])
@@ -1059,14 +1060,14 @@ class BadassRunContext:
                 continue
 
             # get metrics
-            resid_A = prev_results['mccomps']['RESID'][0,:][self.target.fit_mask]
-            resid_B = fit_results['mccomps']['RESID'][0,:][self.target.fit_mask]
+            resid_A = prev_results['mccomps']['RESID'][0,:]
+            resid_B = fit_results['mccomps']['RESID'][0,:]
 
             # TODO: test suite util to get all metrics
             metrics = {}
 
             ddof = np.abs(prev_results['dof']-fit_results['dof'])
-            _,_,_,conf,_,_,_,_,_,_ = badass_test_suite.bayesian_AB_test(resid_B, resid_A, self.target.wave[self.target.fit_mask], self.target.noise[self.target.fit_mask], self.target.spec[self.target.fit_mask], np.arange(len(resid_A)), ddof, self.target.options.io_options.output_dir, plot=False)
+            _,_,_,conf,_,_,_,_,_,_ = badass_test_suite.bayesian_AB_test(resid_B, resid_A, self.target.wave, self.target.noise, self.target.spec, np.arange(len(resid_A)), ddof, self.target.options.io_options.output_dir, plot=False)
             metrics['BADASS'] = conf
 
             ssr_ratio, ssr_A, ssr_B = badass_test_suite.ssr_test(resid_B, resid_A, self.target.options.io_options.output_dir)
@@ -1448,8 +1449,8 @@ class BadassRunContext:
 
         result_dict = dict(sorted(result_dict.items()))
 
-        sigma_noise = np.nanmedian(comp_dict['NOISE'][self.target.fit_mask])
-        sigma_resid = np.nanstd(comp_dict['DATA'][self.target.fit_mask]-comp_dict['MODEL'][self.target.fit_mask])
+        sigma_noise = np.nanmedian(comp_dict['NOISE'])
+        sigma_resid = np.nanstd(comp_dict['DATA']-comp_dict['MODEL'])
         self.target.log.log_max_like_fit(result_dict, sigma_noise, sigma_resid)
 
         # Write best-fit parameters
@@ -1475,9 +1476,9 @@ class BadassRunContext:
         for key, val in comp_dict.items():
             cols.append(fits.Column(name=key, format='E', array=val))
 
-        mask = np.zeros(len(comp_dict['WAVE']), dtype=bool)
-        mask[self.target.fit_mask] = True
-        cols.append(fits.Column(name='MASK', format='E', array=mask))
+        # mask = np.zeros(len(comp_dict['WAVE']), dtype=bool)
+        # mask[self.target.fit_mask] = True
+        # cols.append(fits.Column(name='MASK', format='E', array=mask))
 
         cols = fits.ColDefs(cols)
         hdu = fits.BinTableHDU.from_columns(cols)
@@ -1519,12 +1520,11 @@ class BadassRunContext:
         # Log-likelihood function
 
         self.fit_model()
-        fit_mask = self.target.fit_mask
         fit_stat = self.options.fit_options.fit_stat
 
-        data = self.fit_spec[fit_mask]
-        model = self.model[fit_mask]
-        noise = self.fit_noise[fit_mask]
+        data = self.fit_spec
+        model = self.model
+        noise = self.fit_noise
 
         if fit_stat == 'ML':
             return -0.5*np.sum(((data-model)**2/noise**2) + np.log(2*np.pi*noise**2), axis=0)

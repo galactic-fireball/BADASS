@@ -69,7 +69,7 @@ class BadassLogger:
 
     def log_title(self):
         # TODO: get version from central source
-        self.logger.info('############################### BADASS v9.1.1 LOGFILE ####################################')
+        self.logger.info('############################### BADASS v11.0.0 LOGFILE ####################################')
 
 
     # TODO: move to input classes

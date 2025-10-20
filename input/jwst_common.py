@@ -3,33 +3,31 @@ import astropy.units as u
 import numpy as np
 import pathlib
 
-from input.input import BadassInput
+from input.cube_reader import CubeReader
 from utils.utils import dered, log_rebin
 
 TARGET_WAVE_UNIT = u.AA
 TARGET_FLUX_UNIT_UM = u.erg / u.s / (u.cm**2) / u.um
 TARGET_FLUX_UNIT_AA = u.erg / u.s / (u.cm**2) / u.AA
 
-class JWSTReader(BadassInput):
+class JWSTReader(CubeReader):
 
-    def __init__(self, input_data, options):
+    @classmethod
+    def get_cube_data(cls, input_data, options):
         if not isinstance(input_data, pathlib.Path):
             raise Exception('Reading JWST spectra from data currently unsupported') # TODO
 
-        self.infile = input_data
-        if not self.infile.exists():
+        if not input_data.exists():
             raise Exception('Not found: %s'%str(self.infile))
 
         if not 'redshift' in options.io_options:
             raise Exception('Redshift for NIRSpec cube must be provided')
 
-        if not 'spaxel' in options.io_options:
-            raise Exception('Spaxel for NIRSpec cube must be provided')
+        cube_data = {}
+        cube_data['z'] = options.io_options.redshift
+        cube_data['infile'] = input_data
 
-        self.z = options.io_options.redshift
-        self.spaxel = options.io_options.spaxel
-
-        hdu = fits.open(self.infile)
+        hdu = fits.open(input_data)
         header = hdu['SCI'].header
         cunit = header['CUNIT3']
         bunit = header['BUNIT']
@@ -48,35 +46,44 @@ class JWSTReader(BadassInput):
         cube_spec = cube_spec.to(TARGET_FLUX_UNIT_UM, equivalencies=u.spectral_density(obs_wave))
         cube_err = cube_err.to(TARGET_FLUX_UNIT_UM, equivalencies=u.spectral_density(obs_wave))
         cube_err[np.isnan(cube_err)] = np.nanmedian(cube_err)
-        self.ra, self.dec = hdu[0].header['TARG_RA'], hdu[0].header['TARG_DEC']
+        cube_data['ra'], cube_data['dec'] = hdu[0].header['TARG_RA'], hdu[0].header['TARG_DEC']
         hdu.close()
 
-        self.set_dispersion(options, obs_wave.value)
+        cls.set_dispersion(cube_data, options, obs_wave.value)
 
-        self.spec = cube_spec[self.spaxel[0],self.spaxel[1],:]
-        self.noise = cube_err[self.spaxel[0],self.spaxel[1],:]
-
-        self.wave = dered(obs_wave, self.z)
-        self.disp_res = dered(self.disp_res, self.z)
+        wave = dered(obs_wave, cube_data['z'])
+        cube_data['disp_res'] = dered(cube_data['disp_res'], cube_data['z'])
 
         # TODO: after fit, return wave to original units
         # TODO: unit agnostic
-        self.wave = self.wave.to(TARGET_WAVE_UNIT).value
-        self.spec = self.spec.to(TARGET_FLUX_UNIT_AA).value
-        self.noise = self.noise.to(TARGET_FLUX_UNIT_AA).value
+        wave = wave.to(TARGET_WAVE_UNIT).value
+        cube_spec = cube_spec.to(TARGET_FLUX_UNIT_AA).value
+        cube_err = cube_err.to(TARGET_FLUX_UNIT_AA).value
 
-        div = int(np.floor(np.log10(np.abs(np.nanmedian(self.spec)))))
-        self.spec = self.spec / (10**div)
-        self.noise = self.noise / (10**div)
-        self.flux_norm = 10**div
+        div = int(np.floor(np.log10(np.abs(np.nanmedian(cube_spec)))))
+        cube_spec = cube_spec / (10**div)
+        cube_err = cube_err / (10**div)
+        cube_data['flux_norm'] = 10**div
 
+        cube_data['wave'] = wave
+        cube_data['velscale'] = np.nan # will be set when the class is initialized
+        cube_data['spec'] = cube_spec
+        cube_data['noise'] = cube_err
+        cube_data['splitable'] = ['spec', 'noise']
+        return cube_data
+
+
+    def postinit(self, input_data, options):
+        # TODO: LogRebinMixin
         lam_range = (np.min(self.wave),np.max(self.wave))
         self.spec, log_lam, velscale = log_rebin(lam_range, self.spec, velscale=None, flux=False)
         self.noise, _, _ = log_rebin(lam_range, self.noise, velscale=velscale, flux=False)
         self.wave = np.exp(log_lam)
         self.velscale = velscale[0]
+        return super().postinit(input_data, options)
 
 
-    def set_dispersion(self, options, obs_wave):
+    @classmethod
+    def set_dispersion(cls, cube_data, options, obs_wave):
         # Instrument child classes will override
-        self.disp_res = None
+        pass

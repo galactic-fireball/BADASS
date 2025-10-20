@@ -124,7 +124,6 @@ DEFAULT_IO_OPTIONS = {
     'multiprocess': 'bool_true',
     'filter': {
         'type': 'string',
-        'default': '',
     },
     'disperser': {
         'type': 'string',
@@ -133,7 +132,6 @@ DEFAULT_IO_OPTIONS = {
     },
     'redshift': {
         'type': 'float',
-        'default': 0.0,
     },
 }
 

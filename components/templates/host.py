@@ -23,7 +23,7 @@ class HostTemplate(BadassTemplate):
 
         if ctx.fit_wave[0] < HOST_GAL_TEMP_WAVE_MIN:
             ctx.options.comp_options.fit_host = False
-            ctx.warn('Host galaxy SSP template disabled because template is outside of fitting region.')
+            ctx.log.warn('Host galaxy SSP template disabled because template is outside of fitting region.')
             return None
 
         HostTemplate.temp_file = HostTemplate.get_host_template_file(HOST_GAL_TEMP_AGE_MIN)
