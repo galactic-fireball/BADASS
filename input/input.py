@@ -13,9 +13,8 @@ from utils.utils import ccm_unred, emline_masker, get_ebv, metal_masker
 class BadassInput():
 
     # TODO: make sure this is called from each instance creation method
-    def postinit(self, input_data, options):
+    def postinit(self):
         self.validate_input()
-        if not hasattr(self, 'options'): self.options = options # BadassOptions
 
         # TODO: check for already existing output and overwrite option
         self.outdir = pathlib.Path(self.options.io_options.output_dir or get_default_outdir(self.infile))
@@ -157,11 +156,13 @@ class BadassInput():
         readers = module.Reader.parse(input_data, options)
         readers = readers if isinstance(readers, list) else [readers]
         print('inputs: %d'%len(readers))
-        valid_readers = []
-        for reader in readers:
-            if reader.postinit(input_data, options):
-                valid_readers.append(reader)
-        return valid_readers
+        # valid_readers = []
+        # for reader in readers:
+        #     if reader.postinit(input_data, options):
+        #         valid_readers.append(reader)
+        # return valid_readers
+
+        return readers
 
 
     @classmethod

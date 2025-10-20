@@ -73,14 +73,14 @@ class JWSTReader(CubeReader):
         return cube_data
 
 
-    def postinit(self, input_data, options):
+    def postinit(self):
         # TODO: LogRebinMixin
         lam_range = (np.min(self.wave),np.max(self.wave))
         self.spec, log_lam, velscale = log_rebin(lam_range, self.spec, velscale=None, flux=False)
         self.noise, _, _ = log_rebin(lam_range, self.noise, velscale=velscale, flux=False)
         self.wave = np.exp(log_lam)
         self.velscale = velscale[0]
-        return super().postinit(input_data, options)
+        return super().postinit()
 
 
     @classmethod

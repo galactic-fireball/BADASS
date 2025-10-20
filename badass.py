@@ -79,19 +79,34 @@ class FitStage:
 
 
 def run_BADASS(inputs, **kwargs):
-    # utils.options.BadassOptions.get_options_dep(kwargs) # TODO
-    opts = BadassOptions.get_options(kwargs['options_file'])
+    nprocesses = kwargs.get('nprocesses', 1)
+    multiprocess = kwargs.get('multiprocess', nprocesses != 1)
+
+    opts = BadassOptions.get_options_from_args(kwargs)
     targets = BadassInput.get_inputs(inputs, opts)
-    print(len(targets))
 
     # TODO: handle multiple option dicts
     result_writer = ResultWriter(opts[0])
-    # TODO: multiprocess
-    for target in targets:
-        ctx = BadassRunContext(target)
-        ctx.run()
-        result_writer.add_fit_ctx(ctx)
+
+    if multiprocess:
+        pool = mp.Pool(processes=nprocesses, maxtasksperchild=1)
+        pool.imap_unordered(run_context, targets)
+        pool.close()
+        pool.join()
+
+    else:
+        for target in targets:
+            run_context(target)
+
     result_writer.compile_results()
+
+
+def run_context(target):
+    if not target.postinit():
+        return
+    ctx = BadassRunContext(target)
+    ctx.run()
+    # result_writer.add_fit_ctx(ctx)
 
 
 class BadassRunContext:

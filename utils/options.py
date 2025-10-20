@@ -67,9 +67,7 @@ class BadassOptions(prodict.Prodict):
         return []
 
     @classmethod
-    def get_options_dep(cls, args):
+    def get_options_from_args(cls, args):
         # function to handle the traditional way to call run_BADASS
-
-        options_file = args.get('options_file')
-        ret = cls.parse_py(options_file)
-        breakpoint()
+        options_data = args.get('options', args.get('options_file', None))
+        return cls.get_options(options_data)

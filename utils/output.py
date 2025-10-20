@@ -106,14 +106,20 @@ class ResultWriter:
 		elif self.fit_type == FitType.APERTURE:
 			pass
 		elif self.fit_type == FitType.SPAXELS:
-			xmax = max([int(spax_dir.name.split('_')[1]) for spax_dir in out_dir.glob('spaxel_*_*')])
-			ymax = max([int(spax_dir.name.split('_')[2]) for spax_dir in out_dir.glob('spaxel_*_*')])
+			outdirs = list(out_dir.glob('spaxel_*_*'))
+			if len(outdirs) == 0:
+				return
+			xmax = max([int(spax_dir.name.split('_')[1]) for spax_dir in outdirs])
+			ymax = max([int(spax_dir.name.split('_')[2]) for spax_dir in outdirs])
 			shape = (xmax+1,ymax+1)
 			fit_dirs = list(out_dir.glob('spaxel_*_*'))
 			make_maps(fit_dirs, shape)
 		elif self.fit_type == FitType.BINS:
-			xmax = max([int(bin_dir.name.split('_')[1]) for bin_dir in out_dir.glob('bin_*_*')])
-			ymax = max([int(bin_dir.name.split('_')[2]) for bin_dir in out_dir.glob('bin_*_*')])
+			outdirs = list(out_dir.glob('bin_*_*'))
+			if len(outdirs) == 0:
+				return
+			xmax = max([int(bin_dir.name.split('_')[1]) for bin_dir in outdirs])
+			ymax = max([int(bin_dir.name.split('_')[2]) for bin_dir in outdirs])
 			shape = (xmax+1,ymax+1)
 			fit_dirs = list(out_dir.glob('bin_*_*'))
 			make_maps(fit_dirs, shape)
