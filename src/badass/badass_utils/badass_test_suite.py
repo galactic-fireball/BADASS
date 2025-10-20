@@ -417,8 +417,8 @@ def bayesian_AB_test(resid_B, resid_A, wave, noise, data, eval_ind, ddof, run_di
 		ax5.axvline(0.0,color="black",label="\n Confidence = %0.4f +/- (%0.4f, %0.4f)" % (p_conf[1],p_conf[2]-p_conf[1],p_conf[1]-p_conf[0]))
 		ax5.axvline(0.0,color="black",label="\n Statistical Distance = %0.4f" % d)
 		ax5.axvline(0.0,color="black",label="\n Combined Dispersion  = %0.4f" % disp)
-		ax5.axvline(0.0,color="black",label="\n Significance ($\sigma$) = %0.4f" % signif)
-		ax5.axvline(0.0,color="black",label="\n $1\sigma$ Overlap   = %0.4f \n" % overlap)
+		ax5.axvline(0.0,color="black",label=r"\n Significance ($\sigma$) = %0.4f" % signif)
+		ax5.axvline(0.0,color="black",label=r"\n $1\sigma$ Overlap   = %0.4f \n" % overlap)
 		ax5.legend(loc="center",fontsize=fontsize,frameon=False)
 		ax5.axis('off')
 		

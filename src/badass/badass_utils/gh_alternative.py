@@ -69,7 +69,7 @@ def logdiffexp(a, b):
     return a + log1mexp(a - b)
 
 def lnerfc(x): 
-    """ln erfc(x) = ln (1-erf(x)) = ln \sqrt{2/\pi}\int_x^\infty e^{-t^2} dt
+    """ln erfc(x) = ln (1-erf(x)) = ln sqrt{2/pi}int_x^infty e^{-t^2} dt
     
     For positive arguments we use the identity
     ln erfc(x) = ln erfcx(x)-x^2
@@ -136,7 +136,7 @@ def gauss_hermite_series(v,params):
         Returns
         -------
         f : array_like
-            Gauss-Hermite series f(v) = (\gamma/\sigma)\alpha(v)(1+h3 H3(v)+h4 H4(v)) 
+            Gauss-Hermite series f(v) = (gamma/sigma)\alpha(v)(1+h3 H3(v)+h4 H4(v)) 
     '''
     
     gamma,V,sigma,h3,h4 = params
@@ -179,7 +179,7 @@ def gauss_hermite_series_broadened(v, err, params):
         -------
         f : array_like
             Convolution of normal distribution with Gauss-Hermite series 
-                \int dv' N(v-v'|err) f(v')
+                int dv' N(v-v'|err) f(v')
     
     '''
     
@@ -216,7 +216,7 @@ def cumulative_gauss_hermite_series(v, params):
         Returns
         -------
         f : array_like
-            Cumulative distribution for Gauss-Hermite series int_-\infty^v dv f(v)
+            Cumulative distribution for Gauss-Hermite series int_-infty^v dv f(v)
         
     '''
     
@@ -345,7 +345,7 @@ def uniform_kernel_pdf(x,err,mean,sigma,h3,h4):
         
         w' = w-w_0
         t = 1 + b^2 s^2
-        a_\pm = a \pm delta
+        a_pm = a pm delta
         
         Parameters
         ----------
@@ -607,8 +607,8 @@ def laplace_kernel_pdf(x,err,mean,sigma,h3,h4):
         
         where w = (x-mean)/sigma, s = sigma_e/sigma
         
-        f_s(w) = b/(4a_+)exp((t^2-2a_+bw')/(2a_+^2))erfc((t^2-a_+bw')/(\sqrt{2}ta_+))
-                 +b/(4a_-)exp((t^2+2a_-bw')/(2a_-^2))erfc((t^2+a_-bw')/(\sqrt{2}ta_-))
+        f_s(w) = b/(4a_+)exp((t^2-2a_+bw')/(2a_+^2))erfc((t^2-a_+bw')/(sqrt{2}ta_+))
+                 +b/(4a_-)exp((t^2+2a_-bw')/(2a_-^2))erfc((t^2+a_-bw')/(sqrt{2}ta_-))
             
         see equation (41) of Sanders & Evans (2020)
 
@@ -623,7 +623,7 @@ def laplace_kernel_pdf(x,err,mean,sigma,h3,h4):
         
         w' = w-w_0
         t = 1 + b^2 s^2
-        a_\pm = a \pm delta
+        a_pm = a pm delta
         
         Parameters
         ----------
