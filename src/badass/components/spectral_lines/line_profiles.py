@@ -1,4 +1,4 @@
-from badass_utils import gh_alternative as gh_alt
+from badass.badass_utils import gh_alternative as gh_alt
 import numexpr as ne
 import numpy as np
 from numpy.polynomial import hermite

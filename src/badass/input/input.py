@@ -2,10 +2,10 @@ from importlib import import_module
 import numpy as np
 import pathlib
 
-import utils.constants as constants
-from utils.logger import BadassLogger
-from utils.pca import pca_reconstruction
-from utils.utils import ccm_unred, emline_masker, get_ebv, metal_masker
+import badass.utils.constants as constants
+from badass.utils.logger import BadassLogger
+from badass.utils.pca import pca_reconstruction
+from badass.utils.utils import ccm_unred, emline_masker, get_ebv, metal_masker
 
 # TODO: account for user_mask
 # TODO: make sure all input classes have consistent attrs
@@ -146,7 +146,7 @@ class BadassInput():
         fmt = options.io_options.infmt+'_reader'
 
         try:
-            module = import_module('input.'+fmt)
+            module = import_module('badass.input.'+fmt)
         except ImportError as e:
             raise Exception('Could not find Reader Module: %s (%s)' % (fmt,e))
 

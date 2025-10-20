@@ -4,8 +4,8 @@ import numpy as np
 import pandas as pd
 from scipy import fftpack, optimize
 
-import utils.constants as consts
-from utils.utils import log_rebin, rebin
+import badass.utils.constants as consts
+from badass.utils.utils import log_rebin, rebin
 
 
 def template_rfft(templates):
@@ -169,13 +169,13 @@ def initialize_templates(ctx):
     #       which template is which?
     templates = {}
 
-    from components.templates.power_law import PowerLawTemplate
-    from components.templates.polynomial import PolynomialTemplate
-    from components.templates.optical_feii import OpticalFeIITemplate
-    from components.templates.uv_iron import UVIronTemplate
-    from components.templates.balmer import BalmerTemplate
-    from components.templates.host import HostTemplate
-    from components.templates.stellar import StellarTemplate
+    from badass.components.templates.power_law import PowerLawTemplate
+    from badass.components.templates.polynomial import PolynomialTemplate
+    from badass.components.templates.optical_feii import OpticalFeIITemplate
+    from badass.components.templates.uv_iron import UVIronTemplate
+    from badass.components.templates.balmer import BalmerTemplate
+    from badass.components.templates.host import HostTemplate
+    from badass.components.templates.stellar import StellarTemplate
 
     for temp_class in [PowerLawTemplate, PolynomialTemplate, OpticalFeIITemplate, UVIronTemplate, BalmerTemplate, HostTemplate, StellarTemplate]:
         temp = temp_class.initialize_template(ctx)

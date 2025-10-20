@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numexpr as ne
 import numpy as np
 
-import utils.utils as ba_utils
+import badass.utils.utils as ba_utils
 
 plt.rcParams['text.usetex'] = False
 

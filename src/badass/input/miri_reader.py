@@ -2,7 +2,7 @@ from astropy.io import fits
 import pathlib
 from scipy import interpolate
 
-from input.jwst_common import JWSTReader
+from badass.input.jwst_common import JWSTReader
 
 inst_data_file = pathlib.Path(__file__).resolve().parent.joinpath('instrument_data', 'miri', 'MIRI_INST_DATA_FULL.fits')
 

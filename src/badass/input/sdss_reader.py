@@ -4,8 +4,8 @@ import astropy.units as u
 import numpy as np
 import pathlib
 
-from input.input import BadassInput
-from utils.utils import dered
+from badass.input.input import BadassInput
+from badass.utils.utils import dered
 
 SDSS_FLUX_NORM = 1e-17
 

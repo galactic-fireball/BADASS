@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.decomposition import PCA
 from astroML.datasets import sdss_corrected_spectra
 
-from utils.utils import nan_helper
+from badass.utils.utils import nan_helper
 
 def pca_reconstruction(target):
     '''

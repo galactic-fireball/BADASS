@@ -2,8 +2,8 @@ from astropy import constants as const
 import numpy as np
 import spectres
 
-from input.input import BadassInput
-from utils.utils import dered, log_rebin
+from badass.input.input import BadassInput
+from badass.utils.utils import dered, log_rebin
 
 class DefaultReader(BadassInput):
     def __init__(self, input_data, options):

@@ -1,7 +1,7 @@
 from cerberus import Validator
 from cerberus import rules_set_registry
 
-import utils.constants as consts
+import badass.utils.constants as consts
 
 # short hands for some common type rules
 rules_set_registry.add('bool_false', {'type':'boolean', 'default':False})

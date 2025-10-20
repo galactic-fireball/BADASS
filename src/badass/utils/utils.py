@@ -3,7 +3,7 @@ from astropy import coordinates
 import astropy.units as u
 import numexpr as ne
 
-from utils.constants import *
+from badass.utils.constants import *
 
 
 def dered(wave, z=0.0):

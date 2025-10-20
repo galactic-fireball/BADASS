@@ -4,8 +4,8 @@ import astropy.units as u
 import numpy as np
 import pathlib
 
-from input.cube_reader import CubeReader
-from utils.utils import dered
+from badass.input.cube_reader import CubeReader
+from badass.utils.utils import dered
 
 MUSE_FLUX_NORM = 1e-20
 

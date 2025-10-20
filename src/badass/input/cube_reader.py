@@ -2,7 +2,7 @@ import copy
 import numpy as np
 from photutils.aperture import CircularAperture, ApertureStats
 
-from input.input import BadassInput
+from badass.input.input import BadassInput
 
 class CubeReader(BadassInput):
 

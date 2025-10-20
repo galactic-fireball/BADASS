@@ -2,9 +2,9 @@ from astropy.io import fits
 import natsort
 import numpy as np
 
-from components.templates.common import BadassTemplate, convolve_gauss_hermite, gaussian_filter1d, nnls, template_rfft
-import utils.constants as consts
-from utils.utils import log_rebin
+from badass.components.templates.common import BadassTemplate, convolve_gauss_hermite, gaussian_filter1d, nnls, template_rfft
+import badass.utils.constants as consts
+from badass.utils.utils import log_rebin
 
 
 class StellarTemplate(BadassTemplate):

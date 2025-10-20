@@ -3,8 +3,8 @@ import astropy.units as u
 import numpy as np
 import pathlib
 
-from input.cube_reader import CubeReader
-from utils.utils import dered, log_rebin
+from badass.input.cube_reader import CubeReader
+from badass.utils.utils import dered, log_rebin
 
 TARGET_WAVE_UNIT = u.AA
 TARGET_FLUX_UNIT_UM = u.erg / u.s / (u.cm**2) / u.um

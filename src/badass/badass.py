@@ -34,25 +34,21 @@ from typing import Callable, List, Union
 
 # TODO: fix warnings
 import warnings
-warnings.filterwarnings("ignore", category=RuntimeWarning) 
-warnings.filterwarnings("ignore", category=UserWarning) 
+warnings.filterwarnings('ignore', category=RuntimeWarning) 
+warnings.filterwarnings('ignore', category=UserWarning) 
 
-# BADASS_DIR = pathlib.Path(__file__).resolve().parent
-# sys.path.insert(0,str(BADASS_DIR))
-# sys.path.insert(0,str(BADASS_DIR.joinpath('badass_utils')))
-# sys.path.insert(0,str(BADASS_DIR.joinpath('badass_tools')))
+# TODO: reorganize
+from badass.badass_utils import badass_test_suite
+from badass.badass_tools import badass_tools
 
-from badass_utils import badass_test_suite
-from badass_tools import badass_tools
-
-from utils.options import BadassOptions
-from input.input import BadassInput
-from utils.output import ResultWriter
-import utils.utils as ba_utils
-from components.templates.common import initialize_templates
-import utils.plotting as plotting
-from components.spectral_lines.line_lists.optical_qso import optical_qso_default
-from components.spectral_lines.line_profiles import line_constructor
+from badass.utils.options import BadassOptions
+from badass.input.input import BadassInput
+from badass.utils.output import ResultWriter
+import badass.utils.utils as ba_utils
+from badass.components.templates.common import initialize_templates
+import badass.utils.plotting as plotting
+from badass.components.spectral_lines.line_lists.optical_qso import optical_qso_default
+from badass.components.spectral_lines.line_profiles import line_constructor
 
 
 __author__ = 'Remington O. Sexton (USNO), Sara M. Doan (GMU), Michael A. Reefe (GMU), William Matzko (GMU), Nicholas Darden (UCR)'

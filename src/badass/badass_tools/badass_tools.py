@@ -17,7 +17,7 @@ from astropy.io import fits
 import scipy.optimize as op
 from scipy.ndimage import generic_filter
 
-from utils.utils import nan_helper
+from badass.utils.utils import nan_helper
 
 def continuum_subtract(wave,flux,noise,sigma_clip=3.0,clip_iter=25,filter_size=[25,50,100,150,200,250,500],
                       noise_scale=1.0,opt_rchi2=True,plot=True,fig_scale=8,fontsize=16,verbose=True,
