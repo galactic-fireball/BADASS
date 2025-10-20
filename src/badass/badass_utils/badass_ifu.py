@@ -16,7 +16,7 @@ except:
     tqdm = None
 from joblib import Parallel, delayed
 
-plt.style.use('dark_background')
+# plt.style.use('dark_background')
 
 
 def read_muse_ifu(fits_file,z=0):
@@ -805,8 +805,12 @@ def reconstruct_ifu(fits_file,mcmc_label=None):
     all_mcmc = [sorted(glob.glob(i + os.sep + "MCMC_output_*"))[-1] for i in subdirs]
 
     for m in all_mcmc:
-        ptbl = sorted(glob.glob(os.path.join(m, 'log', '*par_table.fits')))[0]
-        bmc = sorted(glob.glob(os.path.join(m, 'log', '*best_model_components.fits')))[0]
+        ptbl = sorted(glob.glob(os.path.join(m, 'log', '*par_table.fits')))
+        bmc = sorted(glob.glob(os.path.join(m, 'log', '*best_model_components.fits')))
+        if len(ptbl) == 0 or len(bmc) == 0:
+            continue
+        ptbl = ptbl[0]
+        bmc = bmc[0]
         with fits.open(ptbl) as parhdu, fits.open(bmc) as bmchdu:
             unique_pars+=([i for i in parhdu[1].data["parameter"]])
             unique_bmc+=(bmchdu[1].data.columns.names)

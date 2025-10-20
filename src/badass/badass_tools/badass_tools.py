@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 # Plotting Libraries
 import matplotlib.pyplot as plt
-plt.style.use('dark_background') # For cool tron-style dark plots
+# plt.style.use('dark_background') # For cool tron-style dark plots
 plt.rcParams['text.usetex'] = True
 # Basic Libraries
 import sys

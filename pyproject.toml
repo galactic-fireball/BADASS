@@ -1,0 +1,17 @@
+[project]
+name = "badass"
+version = "11.0.0"
+description = "open-source spectral analysis tool"
+authors = [
+    {name = "Remington O. Sexton"},{name = "Sara Doan", email="sdoan2@gmu.edu"},{name = "Michael A. Reefe"},{name = "William Matzko"},{name = "Nicholas Darden"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

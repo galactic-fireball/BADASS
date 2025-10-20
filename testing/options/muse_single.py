@@ -1,18 +1,20 @@
 ################################# IO Options ################################
 io_options={
-    "infmt" : "sdss",
-    "output_dir" : 'sdss_test', # same directory as input file
+    "infmt" : "muse",
+    "output_dir" : 'muse_test', # same directory as input file
     "dust_cache" : None,
     "overwrite" : False,
     "log_level" : "info",
     "err_level": "warning",
     "multiprocess": False,
+    "redshift": 0.002336,
+    "spaxel": (25,25),
 }
 
 ################################## Fit Options #################################
 # Fitting Parameters
 fit_options={
-"fit_reg"    : (4400,5500),# Fitting region; Note: Indo-US Library=(3460,9464)
+"fit_reg"    : (4800,5200),# Fitting region; Note: Indo-US Library=(3460,9464)
 "good_thresh": 0.0, # percentage of "good" pixels required in fig_reg for fit.
 "mask_bad_pix": False, # mask pixels SDSS flagged as 'bad' (careful!)
 "mask_emline" : False, # automatically mask lines for continuum fitting.
@@ -50,7 +52,7 @@ mcmc_options={
 
 ############################ Fit component op dtions #############################
 comp_options={
-"fit_opt_feii"     : True, # optical FeII
+"fit_opt_feii"     : False, # optical FeII
 "fit_uv_iron"      : False, # UV Iron 
 "fit_balmer"       : False, # Balmer continuum (<4000 A)
 "fit_losvd"        : False, # stellar LOSVD
@@ -97,6 +99,7 @@ absorp_options = {
 # If not specified, defaults to SDSS-QSO Emission Lines (http://classic.sdss.org/dr6/algorithms/linestable.html)
 ################################################################################
 # User lines overrides the default line list with a user-input line list!
+
 user_lines = {
     "NA_H_BETA"      :{"center":4862.691,"amp":"free","disp":"NA_OIII_5007_DISP","voff":"free","line_type":"na","label":r"H$\beta$","ncomp":1,},
     # "NA_H_BETA_2"    :{"center":4862.691,"amp":"NA_H_BETA_AMP*NA_OIII_5007_2_AMP/NA_OIII_5007_AMP","disp":"NA_OIII_5007_2_DISP","voff":"NA_OIII_5007_2_VOFF","line_type":"na","ncomp":2,"parent":"NA_H_BETA"},
@@ -110,13 +113,14 @@ user_lines = {
     "BR_H_BETA"      :{"center":4862.691,"amp":"free","disp":"free","voff":"free","line_type":"br","ncomp":1,},
     "BR_OIII_5007"   :{"center":5008.240,"amp":"free","disp":"free","voff":"free","line_type":"br","ncomp":1,},
 }
+
 user_constraints = [
     # ("NA_OIII_5007_AMP","NA_OIII_5007_2_AMP"),
     # ("NA_OIII_5007_2_DISP","NA_OIII_5007_DISP"),
 ]
+
 # User defined masked regions (list of tuples)
 user_mask = [
-    # (4647,4800)
 #     (4840,5015),
 ]
 
