@@ -1,0 +1,68 @@
+site_name: BADASS Documentation
+repo_name: BADASS
+repo_url: https://github.com/galactic-fireball/BADASS
+site_url: https://galactic-fireball.github.io/BADASS
+theme:
+  name: material
+  language: en
+  font:
+    text: Merriweather Sans
+    code: Red Hat Mono
+  icon:
+    logo: material/alpha-b-box-outline
+  features:
+    - navigation.footer
+  palette:
+    # dark mode
+    - scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Dark Mode
+      primary: blue
+      accent: purple
+
+    # light mode
+    - scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Light Mode
+      primary: blue
+      accent: purple
+
+nav:
+  - Home: index.md
+  # - Config: test/config_creator.md
+  - Installation: documentation/installation.md
+  - Usage:
+    - Fitting Options: documentation/usage/fitting.md
+    - MCMC Options: documentation/usage/mcmc.md
+    - Configuration Testing: documentation/usage/config_testing.md
+    - Model Component Options:
+      - Line Components: documentation/usage/components/lines.md
+      - Host Model: documentation/usage/components/host.md
+      - Power Law: documentation/usage/components/power.md
+      - Polynomial: documentation/usage/components/polynomial.md
+      - LOSVD Fitting (pPXF): documentation/usage/components/losvd.md
+      - Optical Fe II: documentation/usage/components/optical_feii.md
+      - UV Iron: documentation/usage/components/uv_iron.md
+      - Balmer Continuum: documentation/usage/components/balmer.md
+    - Output Options:
+      - Plotting: documentation/usage/output/plotting.md
+  - Examples: documentation/examples.md
+  - Changelog: changes.md
+
+
+markdown_extensions:
+  - attr_list
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.arithmatex:
+      generic: true
+  - toc:
+      permalink: true
+
+extra_javascript:
+  # - javascript/config_creator.js
+  - javascript/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
