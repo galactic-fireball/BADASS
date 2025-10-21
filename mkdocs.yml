@@ -34,20 +34,23 @@ nav:
   # - Config: test/config_creator.md
   - Installation: documentation/installation.md
   - Usage:
+    - I/O Options: documentation/usage/io.md
     - Fitting Options: documentation/usage/fitting.md
     - MCMC Options: documentation/usage/mcmc.md
-    - Configuration Testing: documentation/usage/config_testing.md
     - Model Component Options:
+      - Template Components: documentation/usage/components/components.md
       - Line Components: documentation/usage/components/lines.md
+      - LOSVD Fitting (pPXF): documentation/usage/components/losvd.md
       - Host Model: documentation/usage/components/host.md
       - Power Law: documentation/usage/components/power.md
       - Polynomial: documentation/usage/components/polynomial.md
-      - LOSVD Fitting (pPXF): documentation/usage/components/losvd.md
       - Optical Fe II: documentation/usage/components/optical_feii.md
       - UV Iron: documentation/usage/components/uv_iron.md
       - Balmer Continuum: documentation/usage/components/balmer.md
+    - Configuration Testing: documentation/usage/config_testing.md
     - Output Options:
       - Plotting: documentation/usage/output/plotting.md
+    - Other Options: documentation/usage/other.md
   - Examples: documentation/examples.md
   - Changelog: changes.md
 

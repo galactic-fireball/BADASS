@@ -101,7 +101,6 @@ DEFAULT_IO_OPTIONS = {
     'infmt': {
         'type': 'string',
         'allowed': ['sdss', 'muse', 'nirspec', 'miri'],
-        'default': 'sdss_spec',
     },
     'output_dir': {
         'type': 'string',
@@ -117,6 +116,7 @@ DEFAULT_IO_OPTIONS = {
     'log_level': {
         'type': 'string',
         'default': 'info',
+        'allowed': ['debug', 'info', 'warning', 'error', 'critical'],
     },
     'err_level': {
         'type': 'string',

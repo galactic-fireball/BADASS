@@ -12,6 +12,9 @@ class BadassOptions(prodict.Prodict):
 
     @classmethod
     def from_dict(cls, input_dict):
+        if input_dict == {}:
+            return super().from_dict(input_dict)
+
         # Override Prodict.from_dict to normalize and validate input
         v = DefaultValidator(DEFAULT_OPTIONS_SCHEMA)
         v.allow_unknown = True

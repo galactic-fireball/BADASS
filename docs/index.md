@@ -23,7 +23,7 @@ All spectral components can be turned off and on via the [Jupyter Notebook](http
 
 ## Credits
 - [Dr. Remington Oliver Sexton (USNO/GMU)](https://r-magnitude.com/) 
-- [Sara M. Doan (GMU)](https://github.com/galactic-fireball)
+- [Sara Doan (GMU)](https://github.com/galactic-fireball)
 - [Michael Reefe (GMU)](https://github.com/Michael-Reefe)
 - William Matzko (GMU)
 
