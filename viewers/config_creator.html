@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8"/>
+	<link rel="stylesheet" href="static/config_creator.css"/>
+</head>
+<body>
+	<div>
+		<nav id="nav-bar">BADASS Configuration</nav>
+		<div id="content">
+			<div id="tab-bar">
+				<a class="tab active" data-content="target">Target Options</a>
+				<a class="tab" data-content="template">Template Options</a>
+				<a class="tab" data-content="lines">Spectral Lines</a>
+				<a class="tab" data-content="output">Output Options</a>
+			</div>
+
+			<form id="opts-form">
+				<div class="tab-content active" id="target">
+					<div id="target-opts">
+						<div class="opt-sect" id="io-options">
+							<div class="sect-header">Target Options</div>
+							<div class="sect-content">
+								<div class="opt-group" id="instrument-group">
+									<label class="opt-label" for="infmt">Instrument:</label>
+									<select id="infmt">
+										<option value="sdss">SDSS</option>
+										<option value="muse">MUSE</option>
+										<option value="nirpsec">NIRSpec</option>
+										<option value="miri">MIRI</option>
+									</select>
+								</div>
+								<div class="opt-group" id="outdir-group">
+									<label class="opt-label" for="outdir-text">Ouput Directory:</label>
+									<input type="text" name="output_dir" id="outdir-text">
+								</div>
+							</div>
+						</div>
+						<div class="opt-sect" id="fit-options">
+							<div class="sect-header">Fit Options</div>
+						</div>
+						<div class="opt-sect" id="mcmc-options">
+							<div class="sect-header">MCMC Options</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="tab-content" id="template">
+					<div id="comp-options"></div>
+					<div id="user-mask"></div>
+				</div>
+
+				<div class="tab-content" id="lines">
+					<div id="line-fit-options"></div>
+					<div id="narrow-options"></div>
+					<div id="broad-options"></div>
+					<div id="absorp-options"></div>
+					<div id="user-lines"></div>
+					<div id="user-constraints"></div>
+				</div>
+
+				<div class="tab-content" id="output">
+					OUTPUT CONTENT
+				</div>
+			</form>
+		</div>
+	</div>
+	<script src="static/config_creator.js"></script>
+</body>
+</html>

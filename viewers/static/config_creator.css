@@ -1,0 +1,144 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Condensed:ital,wght@0,100..900;1,100..900&display=swap');
+
+:root {
+	/*--dark-blue: #073a4b;*/
+	--dark-blue: #3d405b;
+	--cream: #f4f1de;
+	--green: #81b29a;
+	--teal: #2f6f6a;
+}
+
+html, body {
+	margin: 0;
+	padding: 0;
+	font-family: "Roboto Condensed", sans-serif;
+	background: var(--dark-blue);
+}
+
+/*select {
+	appearance: none;
+	border-radius: 15px;
+	border: 3px solid black;
+	padding: 10px;
+
+	option {
+		appearance: none;
+		background: black;
+		padding: 10px;
+		border-top: 1px solid black;
+
+		&.hover {
+			background: var(--teal);
+		}
+	}
+}*/
+
+#nav-bar {
+	display: flex;
+	color: white;
+	place-content: center;
+	font-size: 36px;
+	padding: 20px 0px;
+}
+
+#content {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	justify-self: center;
+	background: var(--cream);
+	width: 90vw;
+
+	#tab-bar {
+		display: flex;
+		flex-direction: row;
+		justify-content: space-around;
+		flex-grow: 1;
+
+		.tab {
+			font-size: 24px;
+			padding: 10px;
+			flex-grow: 1;
+			text-align: center;
+			border: 1px solid var(--green);
+
+			&.active {
+				background: var(--green);
+			}
+		}
+	}
+
+	#opts-form {
+
+		.tab-content {
+			display: none;
+			background: var(--green);
+
+			&.active {
+				display: block;
+			}
+
+			#target-opts {
+				display: grid;
+				grid-template-columns: 2;
+				grid-template-rows: 2;
+				gap: 10px;
+
+				#io-options {
+					grid-column: 1 / 3;
+					grid-row: 1;
+				}
+
+				#fit-options {
+					grid-column: 1;
+					grid-row: 2;
+				}
+
+				#mcmc-options {
+					grid-column: 2;
+					grid-row: 2;
+				}
+
+				#outdir-text {
+					width: 30%;
+				}
+			}
+		}
+	}
+}
+
+.opt-sect {
+	border: 1px dashed var(--dark-blue);
+	padding: 20px;
+	margin: 20px;
+
+	.sect-header {
+		font-size: 18px;
+		padding: 10px;
+		border-bottom: 1px solid black;
+	}
+
+	.sect-content {
+		display: flex;
+		flex-direction: column;
+		margin: 10px;
+		padding: 10px;
+
+		.opt-group {
+			padding: 10px 5px;
+
+			.opt-label {
+				font-size: 16px;
+				padding: 10px 5px;
+			}
+		}
+	}
+}
+
+
+
+
+
+
+
+
