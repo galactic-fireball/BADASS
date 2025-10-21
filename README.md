@@ -26,7 +26,7 @@ We've done our best to find any bugs or issues. BADASS is under constant develop
 
 - [Dr. Remington Oliver Sexton (USNO/GMU)](https://r-magnitude.com/) 
 - [Sara M. Doan (GMU)](https://mason.gmu.edu/~sdoan2/)
-- [Michael Reefe (GMU](https://github.com/Michael-Reefe)
+- [Michael Reefe (GMU)](https://github.com/Michael-Reefe)
 - William Matzko (GMU)
 
 # License
