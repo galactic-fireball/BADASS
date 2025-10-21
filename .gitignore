@@ -27,3 +27,5 @@ example_spectra/MANGA/manga-9485-12705-LOGCUBE.fits
 example_spectra/MANGA/manga-9485-12705-LOGCUBE.fits.gz
 example_spectra/JWST_NIRSpec/
 example_spectra/JWST_MIRI/
+
+.hypothesis/

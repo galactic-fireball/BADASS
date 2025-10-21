@@ -152,12 +152,6 @@ class CubeReader(BadassInput):
 		input_dict['spec'] = ap_spec
 		input_dict['noise'] = ap_noise
 
-		# import matplotlib.pyplot as plt
-		# plt.figure()
-		# plt.plot(input_dict['wave'], input_dict['spec'])
-		# plt.show()
-		# breakpoint()
-
 		return cls.from_dict(input_dict)
 
 

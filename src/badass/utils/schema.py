@@ -100,6 +100,7 @@ class DefaultValidator(Validator):
 DEFAULT_IO_OPTIONS = {
     'infmt': {
         'type': 'string',
+        'allowed': ['sdss', 'muse', 'nirspec', 'miri'],
         'default': 'sdss_spec',
     },
     'output_dir': {
@@ -124,6 +125,7 @@ DEFAULT_IO_OPTIONS = {
     'multiprocess': 'bool_true',
     'filter': {
         'type': 'string',
+        'allowed': ['100', '170', '290'],
     },
     'disperser': {
         'type': 'string',
@@ -565,7 +567,7 @@ DEFAULT_POLY_OPTIONS = {
 
 
 # host_options
-DEFAULT_HOST_OPTIONS  = {
+DEFAULT_HOST_OPTIONS = {
     'age' : {
         'type': 'list',
         'default': [0.1,1.0,10.0],

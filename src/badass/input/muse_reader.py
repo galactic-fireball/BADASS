@@ -41,13 +41,6 @@ class MUSEReader(CubeReader):
             cube_data['noise'] = cube_noise / (10**div)
             cube_data['flux_norm'] = 10**div
 
-            # import matplotlib.pyplot as plt
-            # medcube = np.nanmedian(cube_spec, axis=2)
-            # medcube[np.isnan(medcube)] = 0.0
-            # plt.imshow(medcube.T, origin='lower', cmap='turbo')
-            # plt.show()
-            # breakpoint()
-
             # Default behavior for MUSE data cubes using https://www.aanda.org/articles/aa/pdf/2017/12/aa30833-17.pdf equation 7
             fwhm_res = 5.835e-8 * obs_wave**2 - 9.080e-4 * obs_wave + 5.983
             R = obs_wave / fwhm_res
