@@ -76,7 +76,7 @@ class FitStage:
 
 def run_BADASS(inputs, **kwargs):
     nprocesses = kwargs.get('nprocesses', 1)
-    multiprocess = kwargs.get('multiprocess', nprocesses != 1)
+    multiprocess = kwargs.get('multiprocess', nprocesses > 1)
 
     opts = BadassOptions.get_options_from_args(kwargs)
     targets = BadassInput.get_inputs(inputs, opts)
@@ -85,11 +85,10 @@ def run_BADASS(inputs, **kwargs):
     result_writer = ResultWriter(opts[0])
 
     if multiprocess:
-        pool = mp.Pool(processes=nprocesses, maxtasksperchild=1)
-        pool.imap_unordered(run_context, targets)
-        pool.close()
-        pool.join()
-
+        with mp.Pool(processes=nprocesses, maxtasksperchild=1) as pool:
+            pool.map(run_context, targets)
+            pool.close()
+            pool.join()
     else:
         for target in targets:
             run_context(target)
@@ -98,8 +97,16 @@ def run_BADASS(inputs, **kwargs):
 
 
 def run_context(target):
-    if not target.postinit():
+    if not target.valid:
         return
+
+    # create a new logger for this process
+    target.set_new_logger()
+    target.postinit()
+
+    if not target.valid:
+        return
+
     ctx = BadassRunContext(target)
     ctx.run()
     # result_writer.add_fit_ctx(ctx)

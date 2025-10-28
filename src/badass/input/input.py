@@ -1,28 +1,66 @@
 from importlib import import_module
 import numpy as np
+import os
 import pathlib
+import prodict
+import time
 
 import badass.utils.constants as constants
 from badass.utils.logger import BadassLogger
 from badass.utils.pca import pca_reconstruction
 from badass.utils.utils import ccm_unred, emline_masker, get_ebv, metal_masker
 
-# TODO: account for user_mask
-# TODO: make sure all input classes have consistent attrs
+# TODO: use a dataclass to explicitly define expected attrs and make sure all input classes have consistent attrs
 
 class BadassInput():
 
-    # TODO: make sure this is called from each instance creation method
-    def postinit(self):
-        self.validate_input()
+    def __init__(self, input_data, options):
+        # TODO: make dataclass
+        if not hasattr(self, 'valid'):
+            self.valid = True
+        if not hasattr(self, 'err_log'):
+            self.err_log = ''
 
-        # TODO: check for already existing output and overwrite option
-        self.outdir = pathlib.Path(self.options.io_options.output_dir or get_default_outdir(self.infile))
+        if (not hasattr(self, 'wave')) or (not hasattr(self, 'spec')):
+            self.valid = False
+            self.err_log = 'Can\'t fit spec without \'wave\' or \'spec\' values'
+            print(self.err_log)
+            return
+
+        if not hasattr(self, 'options'):
+            self.options = options
+
+        if not hasattr(self, 'name'):
+            if hasattr(self.options.io_options, 'product_name'):
+                self.name = self.options.io_options.product_name
+            elif hasattr(self, 'infile'):
+                self.name = self.infile.stem
+            else:
+                self.name = 'spec-%d'%int(time.time() * 1000)
+
+        if not hasattr(self, 'outdir'):
+            if hasattr(self.options.io_options, 'output_dir'):
+                self.outdir = self.options.io_options.output_dir
+                if self.options.io_options.get('multi', False):
+                    self.outdir = self.outdir.joinpath(self.name)
+            elif hasattr(self, 'infile'):
+                self.outdir = self.infile.parent.resolve().joinpath(self.name)
+            else:
+                self.outdir = pathlib.Path(os.getcwd()).resolve().joinpath(self.name)
         if not self.outdir.is_absolute():
-            self.outdir = self.infile.parent.joinpath(self.outdir)
-        self.outdir.joinpath('log').mkdir(parents=True, exist_ok=True) # TODO: 'log' mkdir eventually happens in separate output class
+            self.outdir = pathlib.Path(os.getcwd()).resolve().joinpath(self.outdir)
 
-        self.log = BadassLogger(self)
+        if (self.outdir.exists()) and (not self.options.io_options.get('overwrite', False)):
+            self.valid = False
+            self.err_log = 'Output directory [%s] already exists, not overwriting'%str(self.outdir)
+            print(self.err_log)
+            return
+
+
+    def postinit(self):
+
+        self.outdir.mkdir(parents=True, exist_ok=True)
+        self.outdir.joinpath('log').mkdir(parents=True, exist_ok=True) # TODO: 'log' mkdir eventually happens in separate output class
 
         self.set_fit_region()
 
@@ -69,9 +107,17 @@ class BadassInput():
         pca_reconstruction(self) # TODO: test
 
         if np.isnan(self.spec).all():
-            return False
+            self.valid = False
+            self.err_log = '\'spec\' array is all nans, not running fit'
+            return
 
-        return True
+        self.wave = self.wave[~np.isnan(self.spec)]
+        self.noise = self.noise[~np.isnan(self.spec)]
+        self.spec = self.spec[~np.isnan(self.spec)]
+
+        self.wave = self.wave[~np.isnan(self.noise)]
+        self.spec = self.spec[~np.isnan(self.noise)]
+        self.noise = self.noise[~np.isnan(self.noise)]
 
 
     def set_fit_region(self):
@@ -110,7 +156,8 @@ class BadassInput():
             self.fit_reg = (np.max([min_losvd, self.fit_reg[0]]), np.min([max_losvd, self.fit_reg[1]]))
 
         # allow for more explicit variable name: fit_reg.min and fit_reg.max
-        self.fit_reg = type('FitReg', (object,), dict(min=self.fit_reg[0], max=self.fit_reg[1]))
+        # self.fit_reg = type('FitReg', (object,), dict(min=self.fit_reg[0], max=self.fit_reg[1]))
+        self.fit_reg = prodict.Prodict({'min':self.fit_reg[0],'max':self.fit_reg[1]})
         self.log.info("- New fitting region is ({mi}, {ma})".format(mi=self.fit_reg.min, ma=self.fit_reg.max))
 
         if (self.fit_reg.max - self.fit_reg.min) < constants.MIN_FIT_REGION:
@@ -127,12 +174,9 @@ class BadassInput():
             return
 
 
-    # TODO: default reader?
     @classmethod
     def from_dict(cls, input_data, options={}):
-        reader = cls()
-        reader.__dict__.update(input_data)
-        return reader
+        return CustomReader(input_data, options)
 
 
     @classmethod
@@ -155,11 +199,14 @@ class BadassInput():
 
         readers = module.Reader.parse(input_data, options)
         readers = readers if isinstance(readers, list) else [readers]
-        print('inputs: %d'%len(readers))
         # valid_readers = []
         # for reader in readers:
-        #     if reader.postinit(input_data, options):
+        #     if not reader.valid:
+        #         continue
+        #     reader.postinit()
+        #     if reader.valid:
         #         valid_readers.append(reader)
+        #     # TODO: log invalid readers
         # return valid_readers
 
         return readers
@@ -205,6 +252,7 @@ class BadassInput():
 
             inputs = []
             for ind, opt in zip(input_data, opts):
+                opt.io_options.multi = True
                 inputs.extend(cls.get_inputs(ind, opt))
             return inputs
 
@@ -226,6 +274,10 @@ class BadassInput():
         return ret if isinstance(ret, list) else [ret]
 
 
+    def set_new_logger(self):
+        self.log = BadassLogger(self)
+
+
     def validate_input(self):
         # Custom input parsers or input dict should provide these values
         # TODO: further validation for each value?
@@ -236,3 +288,13 @@ class BadassInput():
                 raise Exception('BADASS input missing expected value: {attr}'.format(attr=attr))
 
         return True
+
+
+# TODO: use default_reader.py?
+class CustomReader(BadassInput):
+    def __init__(self, input_data, options):
+        self.__dict__.update(input_data)
+        if not hasattr(self, 'options'):
+            self.options = options
+        super().__init__(input_data, options)
+

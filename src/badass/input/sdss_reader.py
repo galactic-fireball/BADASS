@@ -47,4 +47,6 @@ class SDSSReader(BadassInput):
             self.wave = dered(obs_wave, self.z)
             self.disp_res = dered(self.disp_res, self.z)
 
+        super().__init__(input_data, options)
+
 Reader = SDSSReader

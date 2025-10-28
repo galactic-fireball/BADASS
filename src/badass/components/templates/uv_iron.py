@@ -22,7 +22,7 @@ class UVIronTemplate(BadassTemplate):
 
         if (ctx.fit_wave[0] > UV_IRON_TEMP_WAVE_MAX) or (ctx.fit_wave[-1] < UV_IRON_TEMP_WAVE_MIN):
             ctx.options.comp_options.fit_uv_iron = False
-            ctx.log.warning('UV Iron template disabled because template is outside of fitting region')
+            ctx.log.warn('UV Iron template disabled because template is outside of fitting region')
             ctx.log.update_uv_iron()
             return None
 

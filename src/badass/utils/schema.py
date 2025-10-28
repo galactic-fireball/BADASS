@@ -1,5 +1,5 @@
-from cerberus import Validator
-from cerberus import rules_set_registry
+from cerberus import rules_set_registry, TypeDefinition, Validator
+import pathlib
 
 import badass.utils.constants as consts
 
@@ -32,6 +32,9 @@ rules_set_registry.add('poly_dict', {
 
 
 class DefaultValidator(Validator):
+    types_mapping = Validator.types_mapping.copy()
+    types_mapping['pathlib'] = TypeDefinition('pathlib', (pathlib.PosixPath,), ())
+
     def _validate_min_ex(self, test_val, field, value):
         "{'type': ['integer', 'float']}"
         if value <= test_val:
@@ -103,13 +106,13 @@ DEFAULT_IO_OPTIONS = {
         'allowed': ['sdss', 'muse', 'nirspec', 'miri'],
     },
     'output_dir': {
-        'type': 'string',
+        'type': ['string', 'pathlib'],
         'nullable': True,
         'default': None,
     },
     'overwrite': 'bool_false',
     'dust_cache': {
-        'type': 'string',
+        'type': ['string', 'pathlib'],
         'nullable': True,
         'default': None,
     },

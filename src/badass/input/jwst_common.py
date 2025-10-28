@@ -18,7 +18,7 @@ class JWSTReader(CubeReader):
             raise Exception('Reading JWST spectra from data currently unsupported') # TODO
 
         if not input_data.exists():
-            raise Exception('Not found: %s'%str(self.infile))
+            raise Exception('Not found: %s'%str(input_data))
 
         if not 'redshift' in options.io_options:
             raise Exception('Redshift for NIRSpec cube must be provided')
