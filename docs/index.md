@@ -4,6 +4,7 @@ title: Home
 
 ![BADASS logo](assets/BADASS_full_logo.gif)
 
+This is a fork from the original BADASS repo [here](https://github.com/remingtonsexton/BADASS3).
 
 Ridiculous acronyms are a [long-running joke in astronomy](https://lweb.cfa.harvard.edu/~gpetitpas/Links/Astroacro.html), but here, spectral fitting ain't no joke!
 

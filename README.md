@@ -1,6 +1,9 @@
 
 ![BADASS logo](https://github.com/remingtonsexton/BADASS3/blob/master/figures/BADASS2_logo.gif)
 
+This is a fork from the original BADASS repo [here](https://github.com/remingtonsexton/BADASS3).
+
+
 Ridiculous acronyms are a [long-running joke in astronomy](https://lweb.cfa.harvard.edu/~gpetitpas/Links/Astroacro.html), but here, spectral fitting ain't no joke!
 
 [BADASS](https://ui.adsabs.harvard.edu/abs/2021MNRAS.500.2871S/abstract) is an open-source spectral analysis tool designed for detailed decomposition of Sloan Digital Sky Survey (SDSS) spectra, and specifically designed for the fitting of Type 1 ("broad line") Active Galactic Nuclei (AGN) in the optical.  The fitting process utilizes the Bayesian affine-invariant Markov-Chain Monte Carlo sampler [emcee](https://ui.adsabs.harvard.edu/abs/2013PASP..125..306F/abstract) for robust parameter and uncertainty estimation, as well as autocorrelation analysis to access parameter chain convergence.  BADASS can fit the following spectral features:
@@ -15,7 +18,7 @@ A more-detailed summary of BADASS, as well as a case-study of ionized gas outflo
 
 All spectral components can be turned off and on via the [Jupyter Notebook](https://jupyter.org/) interface, from which all fitting options can be easily changed to fit non-AGN-host galaxies (or even stars!).  BADASS uses multiprocessing to fit multiple spectra simultaneously depending on your hardware configuration.  The code was originally written in Python 2.7 to fit Keck Low-Resolution Imaging Spectrometer (LRIS) data ([Sexton et al. (2019)](https://ui.adsabs.harvard.edu/abs/2019ApJ...878..101S/abstract)), but because BADASS is open-source and *not* written in an expensive proprietary language, one can easily contribute to or modify the code to fit data from other instruments. Out of the box, BADASS fits SDSS spectra, MANGA IFU cube data, and examples are provided for fitting user-input spectra of any instrument.
 
-Before getting started, check out the [Documentation](https://galactic-fireball.github.io/BADASS)
+Before getting started, check out the [Documentation](https://galactic-fireball.github.io/BADASS)!
 
 
 # Known Issues
@@ -25,7 +28,7 @@ We've done our best to find any bugs or issues. BADASS is under constant develop
 # Credits
 
 - [Dr. Remington Oliver Sexton (USNO/GMU)](https://r-magnitude.com/) 
-- [Sara M. Doan (GMU)](https://mason.gmu.edu/~sdoan2/)
+- [Sara Doan (GMU)](https://github.com/galactic-fireball)
 - [Michael Reefe (GMU)](https://github.com/Michael-Reefe)
 - William Matzko (GMU)
 
