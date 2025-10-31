@@ -16,6 +16,7 @@ def calc_new_center(center, voff):
 
 
 def create_input_plot(ctx):
+    plt.style.use('dark_background')
     fig = plt.figure(figsize=(14,8))
     ax1 = fig.add_subplot(2,1,1)
     ax2 = fig.add_subplot(2,1,2)
@@ -62,6 +63,7 @@ def create_input_plot(ctx):
 
 
 def create_test_plot(target, fit_results, label_A, label_B, test_title=None):
+    plt.style.use('dark_background')
 
     test_A_fit = fit_results[label_A]
     test_A_comps = {key:val[0] for key,val in test_A_fit['mccomps'].items()}
@@ -174,8 +176,8 @@ def create_test_plot(target, fit_results, label_A, label_B, test_title=None):
 
             ax[0].annotate(line_dict['label'], xy=(xloc,yloc), xycoords='data', xytext=(xloc,yloc), textcoords='data', horizontalalignment='center', verticalalignment='center', color='xkcd:white', fontsize=6)
 
-    test_A_axes[0].set_title(r'$\textrm{TEST%s: %s}$'%(' '+test_title.replace('_', '\\_') if test_title else '', label_A), fontsize=16)
-    test_B_axes[0].set_title(r'$\textrm{TEST%s: %s}$'%(' '+test_title.replace('_', '\\_') if test_title else '', label_B), fontsize=16)
+    test_A_axes[0].set_title('TEST%s: %s'%(' '+test_title.replace('_', '\\_') if test_title else '', label_A), fontsize=16)
+    test_B_axes[0].set_title('TEST%s: %s'%(' '+test_title.replace('_', '\\_') if test_title else '', label_B), fontsize=16)
 
     fig.tight_layout()
     plot_dir = target.outdir.joinpath('test_plots')
@@ -191,6 +193,8 @@ def plot_ml_results(ctx):
 
 
 def plot_best_model(ctx, plot_name):
+    plt.style.use('dark_background')
+
     # TODO: need to copy? just let them be rescaled
     comp_dict = copy.deepcopy(ctx.comp_dict)
     for key in comp_dict:
@@ -215,7 +219,7 @@ def plot_best_model(ctx, plot_name):
 
     # (label, key, color, linewidth, linestyle)
     plot_vals = [
-       ('Data', 'DATA', 'black', linewidth_default, linestyle_default),
+       ('Data', 'DATA', 'white', linewidth_default, linestyle_default),
        ('Model', 'MODEL', 'xkcd:bright red', 1.0, linestyle_default),
        ('Host/Stellar', 'HOST_GALAXY', 'xkcd:bright green', linewidth_default, linestyle_default),
        ('AGN Cont.', 'POWER', 'xkcd:red', linewidth_default, '--'),
@@ -302,6 +306,8 @@ def plot_best_model(ctx, plot_name):
         center = line_dict['center']
         if line_dict['voff'] == 'free':
             voff = ctx.cur_params[line_name+'_VOFF']
+        elif isinstance(line_dict['voff'], (float,int,)):
+            voff = line_dict['voff']
         else:
             voff = ne.evaluate(line_dict['voff'], local_dict=ctx.cur_params).item()
         xloc = calc_new_center(center, voff)
@@ -412,7 +418,8 @@ def plotly_best_fit(ctx):
 
 
 def posterior_plot(key, mcmc_results, chain, burn_in, outdir):
-    # Plot posterior distributions and chains from MCMC.
+    # Plot posterior distributions and chains from MCMC
+    plt.style.use('dark_background')
 
     hist, bin_edges = np.histogram(mcmc_results['flat_chain'], bins='doane', density=False)
     # Generate pseudo-data on the ends of the histogram; this prevents the KDE from weird edge behavior
@@ -438,9 +445,9 @@ def posterior_plot(key, mcmc_results, chain, burn_in, outdir):
     # 'Doane' binning produces the best results from tests
     n, bins, patches = ax1.hist(mcmc_results['flat_chain'], bins='doane', histtype='bar', density=True, facecolor='#4200a6', zorder=10)
     ax1.axvline(mcmc_results['best_fit'], linewidth=0.5, color='xkcd:bright aqua', zorder=20, label=r'$p(\theta|x)_{\rm{med}}$')
-    ax1.axvline(mcmc_results['best_fit']-mcmc_results['ci_68_low'], linewidth=0.5, linestyle='--', color='xkcd:bright aqua', zorder=20, label=r'$\textrm{68\% conf.}$')
+    ax1.axvline(mcmc_results['best_fit']-mcmc_results['ci_68_low'], linewidth=0.5, linestyle='--', color='xkcd:bright aqua', zorder=20, label=r'68\% conf.')
     ax1.axvline(mcmc_results['best_fit']+mcmc_results['ci_68_upp'], linewidth=0.5, linestyle='--', color='xkcd:bright aqua', zorder=20)
-    ax1.axvline(mcmc_results['best_fit']-mcmc_results['ci_95_low'], linewidth=0.5, linestyle=':', color='xkcd:bright aqua', zorder=20, label=r'$\textrm{95\% conf.}$')
+    ax1.axvline(mcmc_results['best_fit']-mcmc_results['ci_95_low'], linewidth=0.5, linestyle=':', color='xkcd:bright aqua', zorder=20, label=r'95\% conf.')
     ax1.axvline(mcmc_results['best_fit']+mcmc_results['ci_95_low'], linewidth=0.5, linestyle=':', color='xkcd:bright aqua', zorder=20)
 
     ax1.plot(xs, kde, linewidth=0.5, color='xkcd:bright pink', zorder=15, label='KDE')
@@ -498,6 +505,7 @@ def posterior_plot(key, mcmc_results, chain, burn_in, outdir):
 
 def corner_plot(ctx):
     # create a corner plot of all or selected parameters
+    plt.style.use('dark_background')
 
     flat_chains = ctx.mcmc_result_chains['flat_chains']
     plot_pars = [par for par in ctx.options.plot_options.corner_options.pars if par in flat_chains]

@@ -4,6 +4,7 @@ import os
 import pathlib
 import prodict
 import time
+import shutil
 
 import badass.utils.constants as constants
 from badass.utils.logger import BadassLogger
@@ -40,7 +41,7 @@ class BadassInput():
 
         if not hasattr(self, 'outdir'):
             if hasattr(self.options.io_options, 'output_dir'):
-                self.outdir = self.options.io_options.output_dir
+                self.outdir = pathlib.Path(self.options.io_options.output_dir)
                 if self.options.io_options.get('multi', False):
                     self.outdir = self.outdir.joinpath(self.name)
             elif hasattr(self, 'infile'):
@@ -50,11 +51,15 @@ class BadassInput():
         if not self.outdir.is_absolute():
             self.outdir = pathlib.Path(os.getcwd()).resolve().joinpath(self.outdir)
 
-        if (self.outdir.exists()) and (not self.options.io_options.get('overwrite', False)):
-            self.valid = False
-            self.err_log = 'Output directory [%s] already exists, not overwriting'%str(self.outdir)
-            print(self.err_log)
-            return
+        if self.outdir.exists():
+            if self.options.io_options.get('overwrite', False):
+                print('Removing old output directory: [%s]'%str(self.outdir))
+                shutil.rmtree(str(self.outdir))
+            else:
+                self.valid = False
+                self.err_log = 'Output directory [%s] already exists, not overwriting'%str(self.outdir)
+                print(self.err_log)
+                return
 
 
     def postinit(self):

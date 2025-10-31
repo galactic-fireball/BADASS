@@ -222,6 +222,20 @@ class BadassRunContext:
 
         # Emission Lines
         self.line_list = user_lines if user_lines else self.options.user_lines if self.options.user_lines else {}
+        for line_dict in self.line_list.values():
+            for amp_attr in ['amp', 'amp_init', 'amp_plim']:
+                if (amp_attr in line_dict) and (isinstance(line_dict[amp_attr], (float,int,))):
+                    line_dict[amp_attr] = line_dict[amp_attr]/self.target.fit_norm
+
+        for line_type in ['narrow', 'broad', 'absorp']:
+            type_options = self.options.get('%s_options'%line_type, None)
+            if type_options is None:
+                continue
+
+            for amp_attr in ['amp', 'amp_init', 'amp_plim']:
+                if (amp_attr in type_options) and (isinstance(type_options[amp_attr], (float,int,))):
+                    type_options[amp_attr] = type_options[amp_attr]/self.target.fit_norm
+
         self.add_line_comps()
 
         # Add the FWHM resolution and central pixel locations for each line so we don't have to find them during the fit
@@ -1422,10 +1436,14 @@ class BadassRunContext:
                 if (expr == 'free') or (not par_name in self.tied_target_pars):
                     continue
 
-                med = ne.evaluate(expr, local_dict=med_dict).item()
-                expr_stds = np.array([key_dict['std'] for key,key_dict in self.fit_results.items() if key in expr], dtype=float)
-                std = np.sqrt(np.sum(expr_stds**2))
-                self.fit_results[line_name+'_'+par_name.upper()] = {'med': med, 'std': std, 'flag': 0}
+                # TODO: get value helper function
+                if isinstance(expr, (float,int,)):
+                    self.fit_results[line_name+'_'+par_name.upper()] = {'med': expr, 'std': np.nan, 'flag': 0}
+                else:
+                    med = ne.evaluate(expr, local_dict=med_dict).item()
+                    expr_stds = np.array([key_dict['std'] for key,key_dict in self.fit_results.items() if key in expr], dtype=float)
+                    std = np.sqrt(np.sum(expr_stds**2))
+                    self.fit_results[line_name+'_'+par_name.upper()] = {'med': med, 'std': std, 'flag': 0}
 
         # Add dispersion resolution (in km/s) for each line
         for line_name, line_dict in {**self.line_list,**self.combined_line_list}.items():
