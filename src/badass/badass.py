@@ -68,6 +68,13 @@ __status__ = 'Release'
 # TODO: line type classes? or just a general line class?
 # TODO: use rng seed to be able to reproduce fits
 
+
+def target_check(inputs, **kwargs):
+    opts = BadassOptions.get_options_from_args(kwargs)
+    targets = BadassInput.get_inputs(inputs, opts)
+    print('Fitting %d targets'%len(targets))
+
+
 class FitStage:
     INIT = 1
     BOOTSTRAP = 2

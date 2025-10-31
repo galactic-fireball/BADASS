@@ -296,6 +296,7 @@ class BadassInput():
 
 
 # TODO: use default_reader.py?
+# TODO: make Mixin instead so targets can still have their associated class
 class CustomReader(BadassInput):
     def __init__(self, input_data, options):
         self.__dict__.update(input_data)
