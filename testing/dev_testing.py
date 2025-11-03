@@ -10,16 +10,13 @@ OPTIONS_DIR = TESTING_DIR.joinpath('options')
 
 if test_old:
     BADASS_DIR = pathlib.Path('/Users/sara/Dropbox/research/bgc/badass_repo')
-    sys.path.insert(0, str(BADASS_DIR))
 else:
     BADASS_DIR = TESTING_DIR.parent
 
 NOTEBOOKS_DIR = BADASS_DIR.joinpath('example_notebooks')
-EX_SPEC_DIR = BADASS_DIR.joinpath('examples', 'example_spectra')
+EX_SPEC_DIR = BADASS_DIR.joinpath('example_spectra')
 
-sys.path.insert(0, str(TESTING_DIR))
-from test_utils import generate_options
-
+sys.path.insert(0, str(BADASS_DIR))
 import badass
 
 
@@ -123,11 +120,6 @@ def test_miri_single():
         shutil.rmtree(str(output_dir))
 
     badass.run_BADASS(test_file, options_file=options_file)
-
-
-def test_random():
-    rand_opts = generate_options()
-
 
 
 def create_line_json():

@@ -1,25 +1,20 @@
 ################################# IO Options ################################
 io_options={
-    "infmt" : "nirspec",
-    "output_dir" : 'ns_ap_test', # same directory as input file
+    "infmt" : "muse",
+    "output_dir" : 'muse_test', # same directory as input file
     "dust_cache" : None,
     "overwrite" : False,
-    "log_level" : "debug",
+    "log_level" : "info",
     "err_level": "warning",
     "multiprocess": False,
-    "filter": "290",
-    "disperser": "h",
     "redshift": 0.002336,
-    "fit_area": {
-        "aperture": {"type":"circular", "center":(30,27), "radius":5},
-        "plot_input": True,
-    },
+    "spaxel": (25,25),
 }
 
 ################################## Fit Options #################################
 # Fitting Parameters
 fit_options={
-"fit_reg"    : (36400,40000),# Fitting region; Note: Indo-US Library=(3460,9464)
+"fit_reg"    : (4800,5200),# Fitting region; Note: Indo-US Library=(3460,9464)
 "good_thresh": 0.0, # percentage of "good" pixels required in fig_reg for fit.
 "mask_bad_pix": False, # mask pixels SDSS flagged as 'bad' (careful!)
 "mask_emline" : False, # automatically mask lines for continuum fitting.
@@ -61,7 +56,7 @@ comp_options={
 "fit_uv_iron"      : False, # UV Iron 
 "fit_balmer"       : False, # Balmer continuum (<4000 A)
 "fit_losvd"        : False, # stellar LOSVD
-"fit_host"         : False, # host template
+"fit_host"         : True, # host template
 "fit_power"        : True, # AGN power-law
 "fit_poly"         : True, # Add polynomial continuum component
 "fit_narrow"       : True, # narrow lines
@@ -75,14 +70,14 @@ comp_options={
 narrow_options = {
 #     "amp_plim": (0,1), # line amplitude parameter limits; default (0,)
     "disp_plim": (0,500), # line dispersion parameter limits; default (0,)
-    "voff_plim": (-200,200), # line velocity offset parameter limits; default (0,)
+    "voff_plim": (-500,500), # line velocity offset parameter limits; default (0,)
     "line_profile": "gaussian", # line profile shape*
     "n_moments": 4, # number of higher order Gauss-Hermite moments (if line profile is gauss-hermite, laplace, or uniform)
 }
 
 broad_options ={
 #     "amp_plim": (0,40), # line amplitude parameter limits; default (0,)
-    "disp_plim": (0,1000), # line dispersion parameter limits; default (0,)
+    "disp_plim": (500,3000), # line dispersion parameter limits; default (0,)
     "voff_plim": (-1000,1000), # line velocity offset parameter limits; default (0,)
     "line_profile": "gaussian", # line profile shape*
     "n_moments": 4, # number of higher order Gauss-Hermite moments (if line profile is gauss-hermite, laplace, or uniform)
@@ -106,15 +101,24 @@ absorp_options = {
 # User lines overrides the default line list with a user-input line list!
 
 user_lines = {
-    "FEAT1": {"center":36584.56,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
-    "FEAT2": {"center":37400.61,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
-    "FEAT3": {"center":38077.33,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
-    "FEAT4": {"center":38462.13,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
-    "FEAT5": {"center":39337.88,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
+    "NA_H_BETA"      :{"center":4862.691,"amp":"free","disp":"NA_OIII_5007_DISP","voff":"free","line_type":"na","label":r"H$\beta$","ncomp":1,},
+    # "NA_H_BETA_2"    :{"center":4862.691,"amp":"NA_H_BETA_AMP*NA_OIII_5007_2_AMP/NA_OIII_5007_AMP","disp":"NA_OIII_5007_2_DISP","voff":"NA_OIII_5007_2_VOFF","line_type":"na","ncomp":2,"parent":"NA_H_BETA"},
+
+    "NA_OIII_4960"   :{"center":4960.295,"amp":"(NA_OIII_5007_AMP/2.98)","disp":"NA_OIII_5007_DISP","voff":"NA_OIII_5007_VOFF","line_type":"na","label":r"[O III]","ncomp":1,},
+    # "NA_OIII_4960_2" :{"center":4960.295,"amp":"(NA_OIII_5007_2_AMP/2.98)","disp":"NA_OIII_5007_2_DISP","voff":"NA_OIII_5007_2_VOFF","line_type":"na","ncomp":2,"parent":"NA_OIII_4960"},
+
+    "NA_OIII_5007"   :{"center":5008.240,"amp":"free","disp":"free","voff":"free","line_type":"na","label":r"[O III]","ncomp":1,},
+    # "NA_OIII_5007_2" :{"center":5008.240,"amp":"free","disp":"free","voff":"free","line_type":"na","ncomp":2,"parent":"NA_OIII_5007"},
+
+    "BR_H_BETA"      :{"center":4862.691,"amp":"free","disp":"free","voff":"free","line_type":"br","ncomp":1,},
+    "BR_OIII_5007"   :{"center":5008.240,"amp":"free","disp":"free","voff":"free","line_type":"br","ncomp":1,},
 }
 
+user_constraints = [
+    # ("NA_OIII_5007_AMP","NA_OIII_5007_2_AMP"),
+    # ("NA_OIII_5007_2_DISP","NA_OIII_5007_DISP"),
+]
 
-user_constraints = []
 # User defined masked regions (list of tuples)
 user_mask = [
 #     (4840,5015),

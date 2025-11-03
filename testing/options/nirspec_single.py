@@ -1,7 +1,7 @@
 ################################# IO Options ################################
 io_options={
     "infmt" : "nirspec",
-    "output_dir" : 'ns_ap_test', # same directory as input file
+    "output_dir" : 'nirspec_test', # same directory as input file
     "dust_cache" : None,
     "overwrite" : False,
     "log_level" : "debug",
@@ -10,10 +10,7 @@ io_options={
     "filter": "290",
     "disperser": "h",
     "redshift": 0.002336,
-    "fit_area": {
-        "aperture": {"type":"circular", "center":(30,27), "radius":5},
-        "plot_input": True,
-    },
+    "spaxel": (25,25),
 }
 
 ################################## Fit Options #################################

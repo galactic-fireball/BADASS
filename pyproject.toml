@@ -1,0 +1,42 @@
+[project]
+name = "badass"
+version = "11.0.0"
+description = "open-source spectral analysis tool"
+authors = [
+    {name = "Remington O. Sexton"},{name = "Sara Doan", email="sdoan2@gmu.edu"},{name = "Michael A. Reefe"},{name = "William Matzko"},{name = "Nicholas Darden"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "astropy (>=7.1.1,<8.0.0)",
+    "astroquery (>=0.4.11,<0.5.0)",
+    "emcee (>=3.1.6,<4.0.0)",
+    "numexpr (>=2.14.1,<3.0.0)",
+    "pandas (>=2.3.3,<3.0.0)",
+    "prettytable (>=3.16.0,<4.0.0)",
+    "scipy (>=1.16.2,<2.0.0)",
+    "matplotlib (>=3.10.7,<4.0.0)",
+    "natsort (>=8.4.0,<9.0.0)",
+    "prodict (>=0.8.22,<0.9.0)",
+    "cerberus (>=1.3.7,<2.0.0)",
+    "toml (>=0.10.2,<0.11.0)",
+    "scikit-learn (>=1.7.2,<2.0.0)",
+    "astroml (>=1.0.2.post1,<2.0.0)",
+    "corner (>=2.2.3,<3.0.0)",
+    "photutils (>=2.3.0,<3.0.0)",
+    "plotly (>=6.3.1,<7.0.0)"
+]
+
+[tool.poetry]
+packages = [{include = "badass", from = "src"}]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+dev = [
+    "hypothesis (>=6.142.2,<7.0.0)",
+    "hypothesis-jsonschema (>=0.23.1,<0.24.0)"
+]

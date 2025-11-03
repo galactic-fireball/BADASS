@@ -1,25 +1,20 @@
 ################################# IO Options ################################
 io_options={
-    "infmt" : "nirspec",
-    "output_dir" : 'ns_ap_test', # same directory as input file
+    "infmt" : "miri",
+    "output_dir" : 'miri_test', # same directory as input file
     "dust_cache" : None,
     "overwrite" : False,
     "log_level" : "debug",
     "err_level": "warning",
     "multiprocess": False,
-    "filter": "290",
-    "disperser": "h",
     "redshift": 0.002336,
-    "fit_area": {
-        "aperture": {"type":"circular", "center":(30,27), "radius":5},
-        "plot_input": True,
-    },
+    "spaxel": (25,25),
 }
 
 ################################## Fit Options #################################
 # Fitting Parameters
 fit_options={
-"fit_reg"    : (36400,40000),# Fitting region; Note: Indo-US Library=(3460,9464)
+"fit_reg"    : (50000,57000),# Fitting region; Note: Indo-US Library=(3460,9464)
 "good_thresh": 0.0, # percentage of "good" pixels required in fig_reg for fit.
 "mask_bad_pix": False, # mask pixels SDSS flagged as 'bad' (careful!)
 "mask_emline" : False, # automatically mask lines for continuum fitting.
@@ -39,7 +34,7 @@ mcmc_options={
 "mcmc_fit"    : False, # Perform robust fitting using emcee
 "nwalkers"    : 100,  # Number of emcee walkers; min = 2 x N_parameters
 "auto_stop"   : True, # Automatic stop using autocorrelation analysis
-"conv_type"   : ("NA_OIII_5007_AMP","NA_OIII_5007_DISP"), # "median", "mean", "all", or (tuple) of parameters
+"conv_type"   : "all", # "median", "mean", "all", or (tuple) of parameters
 "min_samp"    : 1000,  # min number of iterations for sampling post-convergence
 "ncor_times"  : 10,  # number of autocorrelation times for convergence
 "autocorr_tol": 10.0,  # percent tolerance between checking autocorr. times
@@ -106,11 +101,9 @@ absorp_options = {
 # User lines overrides the default line list with a user-input line list!
 
 user_lines = {
-    "FEAT1": {"center":36584.56,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
-    "FEAT2": {"center":37400.61,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
-    "FEAT3": {"center":38077.33,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
-    "FEAT4": {"center":38462.13,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
-    "FEAT5": {"center":39337.88,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
+    "FEAT1": {"center":54466.91,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
+    "FEAT2": {"center":55029.82,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
+    "FEAT3": {"center":56090.69,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
 }
 
 
