@@ -47,8 +47,10 @@ from badass.utils.output import ResultWriter
 import badass.utils.utils as ba_utils
 from badass.components.templates.common import initialize_templates
 import badass.utils.plotting as plotting
-from badass.components.spectral_lines.line_lists.optical_qso import optical_qso_default
-from badass.components.spectral_lines.line_profiles import line_constructor
+# from badass.components.spectral_lines.line_lists.optical_qso import optical_qso_default
+# from badass.components.spectral_lines.line_profiles import line_constructor
+
+from badass.components.spectral_lines.spectral_line import SpectralLine
 
 
 __author__ = 'Remington O. Sexton (USNO), Sara M. Doan (GMU), Michael A. Reefe (GMU), William Matzko (GMU), Nicholas Darden (UCR)'
@@ -191,8 +193,7 @@ class BadassRunContext:
         self.templates = initialize_templates(self)
         line_list = self.options.user_lines or []
         SpectralLine.initialize_spectral_lines(self, line_list)
-        print([str(l) for l in SpectralLine.line_list])
-        breakpoint()
+        SpectralLine.dump_lines()
 
         # TODO: input from past line test or user config
         # Set force_thresh to np.inf. This will get overridden if the user does the line test
@@ -232,22 +233,26 @@ class BadassRunContext:
             template.initialize_parameters(par_input, template_args)
 
         # Emission Lines
-        for line in self.spectral_lines:
-            line.initialize_parameters(par_input, template_args)
-        self.line_list = user_lines if user_lines else self.options.user_lines if self.options.user_lines else {}
-        for line_dict in self.line_list.values():
-            for amp_attr in ['amp', 'amp_init', 'amp_plim']:
-                if (amp_attr in line_dict) and (isinstance(line_dict[amp_attr], (float,int,))):
-                    line_dict[amp_attr] = line_dict[amp_attr]/self.target.fit_norm
+        # TODO: do similar for templates
+        SpectralLine.initialize_line_parameters(par_input, template_args)
+        SpectralLine.dump_lines()
+        breakpoint()
 
-        for line_type in ['narrow', 'broad', 'absorp']:
-            type_options = self.options.get('%s_options'%line_type, None)
-            if type_options is None:
-                continue
+        # TODO:
+        # self.line_list = user_lines if user_lines else self.options.user_lines if self.options.user_lines else {}
+        # for line_dict in self.line_list.values():
+        #     for amp_attr in ['amp', 'amp_init', 'amp_plim']:
+        #         if (amp_attr in line_dict) and (isinstance(line_dict[amp_attr], (float,int,))):
+        #             line_dict[amp_attr] = line_dict[amp_attr]/self.target.fit_norm
 
-            for amp_attr in ['amp', 'amp_init', 'amp_plim']:
-                if (amp_attr in type_options) and (isinstance(type_options[amp_attr], (float,int,))):
-                    type_options[amp_attr] = type_options[amp_attr]/self.target.fit_norm
+        # for line_type in ['narrow', 'broad', 'absorp']:
+        #     type_options = self.options.get('%s_options'%line_type, None)
+        #     if type_options is None:
+        #         continue
+
+        #     for amp_attr in ['amp', 'amp_init', 'amp_plim']:
+        #         if (amp_attr in type_options) and (isinstance(type_options[amp_attr], (float,int,))):
+        #             type_options[amp_attr] = type_options[amp_attr]/self.target.fit_norm
 
         self.add_line_comps()
 
@@ -1241,7 +1246,7 @@ class BadassRunContext:
                 self.cur_params = dict(zip(self.cur_params.keys(), best_fit))
                 fun_result = resultmc['fun']
                 self.fit_model()
-                self.update_mc_store(n, fun_result)
+                self.update_mc_store(n, fun_result) # TODO: each component handles it's own stuff
 
         self.compile_mc_results()
 

@@ -4,7 +4,7 @@ import numpy as np
 from numpy.polynomial import hermite
 from scipy import special
 
-from components.spectral_lines.spectral_line import FitParameter
+from badass.components.spectral_lines.spectral_line import FitParameter, SpectralLine, hyperpars
 
 # Valid line profiles: will be populated as each profile class is defined
 line_profiles = {}
@@ -17,7 +17,7 @@ class LineProfile:
 
 
     @staticmethod
-    def add_parameters(line_dict):
+    def initialize_parameters(line, args):
         pass
 
 
@@ -37,12 +37,15 @@ class VoigtProfile(LineProfile):
     name = 'VOIGT'
 
     @staticmethod
-    def add_parameters(line):
-        par_name = line.name + '_SHAPE'
+    def initialize_parameters(line, args):
+        par = 'SHAPE'
         if line.ctx.options.comp_options.tie_line_disp:
-            line.parameters[par_name] = FitParameter(name=par_name, value=line.prefix + '_SHAPE')
-        else:
-            line.parameters[par_name] = FitParameter(name=par_name, value=line.line_dict.get('SHAPE', 'FREE'))
+            par_name = line.name + '_' + par
+            line.parameters[par_name] = FitParameter(name=par_name, expr=line.prefix + '_' + par)
+            SpectralLine.add_tied_param(line.line_type, par)
+            return
+
+        line.set_hyperpars(par, args)
 
 line_profiles[VoigtProfile.name] = VoigtProfile
 
@@ -51,17 +54,20 @@ class GaussHermiteProfile(LineProfile):
     name = 'GAUSS-HERMITE'
 
     @staticmethod
-    def add_parameters(line):
+    def initialize_parameters(line, args):
         n_moments = line.type_options.n_moments
         if n_moments < 3:
             return
 
         for par in ['H%d'%m for m in range(3, 3+n_moments-2)]:
-            par_name = line.name + '_' + par
             if line.ctx.options.comp_options.tie_line_disp:
+                par_name = line.name + '_' + par
                 line.parameters[par_name] = FitParameter(name=par_name, value=line.prefix + '_' + par)
-            else:
-                line.parameters[par_name] = FitParameter(name=par_name, value=line.line_dict.get(par, 'FREE'))
+                SpectralLine.add_tied_param(line.line_type, par)
+                continue
+
+            line.set_hyperpars(par, args)
+
 
 line_profiles[GaussHermiteProfile.name] = GaussHermiteProfile
 
@@ -70,13 +76,16 @@ class LaplaceProfile(LineProfile):
     name = 'LAPLACE'
 
     @staticmethod
-    def add_parameters(line):
+    def initialize_parameters(line, args):
         for par in ['H3','H4']:
-            par_name = line.name + '_' + par
             if line.ctx.options.comp_options.tie_line_disp:
+                par_name = line.name + '_' + par
                 line.parameters[par_name] = FitParameter(name=par_name, value=line.prefix + '_' + par)
-            else:
-                line.parameters[par_name] = FitParameter(name=par_name, value=line.line_dict.get(par, 'FREE'))
+                SpectralLine.add_tied_param(line.line_type, par)
+                continue
+
+            line.set_hyperpars(par, args)
+
 
 line_profiles[LaplaceProfile.name] = LaplaceProfile
 
@@ -85,14 +94,14 @@ class UniformProfile(LineProfile):
     name = 'UNIFORM'
 
     @staticmethod
-    def add_parameters(line):
-        LaplaceProfile.add_parameters(line)
+    def initialize_parameters(line, args):
+        LaplaceProfile.initialize_parameters(line, args)
 
 line_profiles[UniformProfile.name] = UniformProfile
 
 
 
-
+# TODO: into LineProfile subclasses
 def line_constructor(ctx, line_name, line_dict):
 
     line_profile = line_dict['line_profile']
