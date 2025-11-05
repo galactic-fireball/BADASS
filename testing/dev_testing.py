@@ -14,7 +14,7 @@ else:
     BADASS_DIR = TESTING_DIR.parent
 
 NOTEBOOKS_DIR = BADASS_DIR.joinpath('example_notebooks')
-EX_SPEC_DIR = BADASS_DIR.joinpath('example_spectra')
+EX_SPEC_DIR = BADASS_DIR.joinpath('examples', 'example_spectra')
 
 sys.path.insert(0, str(BADASS_DIR))
 import badass
@@ -27,23 +27,18 @@ def test_single():
     # test_file = EX_SPEC_DIR.joinpath('1-test', 'spec-7748-58396-0782.fits')
     # test_file = EX_SPEC_DIR.joinpath('2-test', 'spec-2756-54508-0579.fits')
 
-    run_dir = test_file.parent.joinpath('result')
-    if run_dir.exists():
-        shutil.rmtree(str(run_dir))
-    # TODO: handle run_dir
-    # run_dir.mkdir(parents=True, exist_ok=True)
-
     if test_old:
         output_dir = test_file.parent.joinpath('sdss_test_oldrepo_ml')
     else:
         output_dir = test_file.parent.joinpath('sdss_test')
+
     if output_dir.exists():
         shutil.rmtree(str(output_dir))
 
     if test_old:
         badass.run_BADASS(test_file, run_dir=output_dir, options_file=options_file, sdss_spec=True)
     else:
-        badass.run_BADASS(test_file, run_dir=run_dir, options_file=options_file)
+        badass.run_BADASS(test_file, options_file=options_file)
 
 
 def test_line():
@@ -137,12 +132,12 @@ def create_line_json():
 
 
 def main():
-    # test_single()
+    test_single()
     # test_line()
     # test_config()
 
     # test_muse_single()
-    test_muse_multi()
+    # test_muse_multi()
 
     # test_nirspec_single()
     # test_nirspec_aperture()

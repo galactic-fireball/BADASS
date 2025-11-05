@@ -1,7 +1,7 @@
 ################################# IO Options ################################
 io_options={
     "infmt" : "sdss",
-    "output_dir" : 'sdss_test', # same directory as input file
+    "output_dir" : 'examples/example_spectra/0-test/sdss_test', # same directory as input file
     "dust_cache" : None,
     "overwrite" : False,
     "log_level" : "info",
@@ -89,43 +89,13 @@ absorp_options = {
     "n_moments": 4, # number of higher order Gauss-Hermite moments (if line profile is gauss-hermite, laplace, or uniform)        
 }
 
-# Choices for line profile shape include 'gaussian', 'lorentzian', 'voigt',
-# 'gauss-hermite', 'laplace', and 'uniform'
-################################################################################
+user_mask = []
 
-########################### Emission Lines & Options ###########################
-# If not specified, defaults to SDSS-QSO Emission Lines (http://classic.sdss.org/dr6/algorithms/linestable.html)
-################################################################################
-# User lines overrides the default line list with a user-input line list!
-user_lines = {
-    "NA_H_BETA"      :{"center":4862.691,"amp":"free","disp":"NA_OIII_5007_DISP","voff":"free","line_type":"na","label":r"H$\beta$","ncomp":1,},
-    # "NA_H_BETA_2"    :{"center":4862.691,"amp":"NA_H_BETA_AMP*NA_OIII_5007_2_AMP/NA_OIII_5007_AMP","disp":"NA_OIII_5007_2_DISP","voff":"NA_OIII_5007_2_VOFF","line_type":"na","ncomp":2,"parent":"NA_H_BETA"},
+from badass.components.spectral_lines.line_lists import type1agn_default1
 
-    "NA_OIII_4960"   :{"center":4960.295,"amp":"(NA_OIII_5007_AMP/2.98)","disp":"NA_OIII_5007_DISP","voff":"NA_OIII_5007_VOFF","line_type":"na","label":r"[O III]","ncomp":1,},
-    # "NA_OIII_4960_2" :{"center":4960.295,"amp":"(NA_OIII_5007_2_AMP/2.98)","disp":"NA_OIII_5007_2_DISP","voff":"NA_OIII_5007_2_VOFF","line_type":"na","ncomp":2,"parent":"NA_OIII_4960"},
+user_lines = type1agn_default1.user_lines
 
-    "NA_OIII_5007"   :{"center":5008.240,"amp":"free","disp":"free","voff":"free","line_type":"na","label":r"[O III]","ncomp":1,},
-    # "NA_OIII_5007_2" :{"center":5008.240,"amp":"free","disp":"free","voff":"free","line_type":"na","ncomp":2,"parent":"NA_OIII_5007"},
 
-    "BR_H_BETA"      :{"center":4862.691,"amp":"free","disp":"free","voff":"free","line_type":"br","ncomp":1,},
-    "BR_OIII_5007"   :{"center":5008.240,"amp":"free","disp":"free","voff":"free","line_type":"br","ncomp":1,},
-}
-user_constraints = [
-    # ("NA_OIII_5007_AMP","NA_OIII_5007_2_AMP"),
-    # ("NA_OIII_5007_2_DISP","NA_OIII_5007_DISP"),
-]
-# User defined masked regions (list of tuples)
-user_mask = [
-    # (4647,4800)
-#     (4840,5015),
-]
-
-# Combined lines; define a composite line and calculate
-# its combined parameters.  These are automatically
-# generated for lines with multiple components (parent+child lines)
-combined_lines = {
-    "H_BETA_COMP"   :["NA_H_BETA","BR_H_BETA"],
-}
 ########################## LOSVD Fitting & Options #############################
 # For direct fitting of the stellar kinematics (stellar LOSVD), one can 
 # specify a stellar template library (Indo-US or Vazdekis 2010).
