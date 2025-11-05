@@ -1,12 +1,14 @@
+import astropy.constants as const
+import astropy.units as u
 import pathlib
 import prodict
 
 DEFAULT_OUTDIR = 'MCMC_output'
 
 # TODO: assign actual unit values via astropy?
-c = 299792.458 # speed of light (km/s)
-k = 1.38064852e-23 # Boltzmann constant (m2 kg s-2 K-1)
-h = 6.62607015e-34 # Planck's constant (m2 kg / s)
+c = const.c.to(u.km/u.s).value # speed of light (km/s)
+k = const.k_B.to(u.m**2 * u.kg / u.s**2 / u.K).value # Boltzmann constant (m2 kg s-2 K-1)
+h = const.h.to(u.m**2 * u.kg / u.s).value # Planck's constant (m2 kg / s)
 
 # TODO: should be a fit_option?
 MIN_FIT_REGION = 25 # (Angstroms), the minimum fitting region size
