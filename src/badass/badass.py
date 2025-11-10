@@ -1091,7 +1091,7 @@ class BadassRunContext:
             else:
                 aon = badass_test_suite.calculate_aon(test_lines, full_line_list, mccomps, self.target.noise)
 
-            fit_results = {'mcpars':mcpars,'mccomps':mccomps,'mcLL':mcLL,'line_list':full_line_list,'dof':dof,'npar':len(self.param_dict),'rmse':lowest_rmse, 'aon':aon}
+            fit_results = {'mcpars':copy.deepcopy(mcpars),'mccomps':copy.deepcopy(mccomps),'mcLL':copy.deepcopy(mcLL),'line_list':full_line_list,'dof':dof,'npar':len(self.param_dict),'rmse':lowest_rmse, 'aon':aon}
             test_fit_results[test_label] = fit_results
 
             if len(test_fit_results.keys()) == 1: # first run
