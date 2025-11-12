@@ -34,7 +34,9 @@ class KCWIReader(BadassInput):
             self.bad_pix = hdu[1].data # np.where(t['and_mask'] != 0)[0] # TODO: need?
             self.flux_norm = KCWI_FLUX_NORM
 
-            # KCWI gratings: https://www2.keck.hawaii.edu/inst/kcwi/configurations.html
+            ### KCWI gratings: https://www2.keck.hawaii.edu/inst/kcwi/configurations.html
+            # 'STATENAM' may not be the correct parameter to use for all data. 
+            # Maybe change to 'BGRATNAM'/'RGRATNAM' + 'IFUNAM'
             try:
                 print('You are using grating ', hdu[0].header['STATENAM'])
                 if 'BH3-L' or 'BH2-L' or 'BH1-L' in hdu[0].header['STATENAM']:
