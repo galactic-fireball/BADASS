@@ -114,7 +114,7 @@ class UVIronTemplate(BadassTemplate):
         template = uv_iron_amp * conv_temp
 
         # Set fitting region outside of template to zero to prevent convolution loops
-        template[(lam_gal < UV_IRON_TEMP_WAVE_MIN) & (lam_gal > UV_IRON_TEMP_WAVE_MAX)] = 0
+        template[(self.ctx.fit_wave < UV_IRON_TEMP_WAVE_MIN) & (self.ctx.fit_wave > UV_IRON_TEMP_WAVE_MAX)] = 0
 
         # If the summation results in 0.0, it means that features were too close 
         # to the edges of the fitting region (usually because the region is too 

@@ -139,7 +139,7 @@ class BadassRunContext:
         self.param_dict = {}
         self.prior_params = []
         self.cur_params = {} # contains the parameter values of the current fit
-        self.line_list = []
+        self.line_list = {}
         self.combined_line_list = []
         self.soft_cons = []
         self.blob_pars = {}
@@ -227,12 +227,30 @@ class BadassRunContext:
         for template in self.templates.values():
             template.initialize_parameters(par_input, template_args)
 
+        line_types = {
+            'na': 'narrow',
+            'br': 'broad',
+            'abs': 'absorp',
+        }
+
         # Emission Lines
-        self.line_list = user_lines if user_lines else self.options.user_lines if self.options.user_lines else {}
+        in_line_list = user_lines if (not user_lines is None) else self.options.user_lines if (not self.options.user_lines is None) else {}
+        self.line_list = {} # TODO: create a fit_line_list for the current fit iteration (for line tests)
+
+        for line_name, line_dict in in_line_list.items():
+            center = line_dict['center']
+            if (center < self.fit_wave[0]) or (center > self.fit_wave[-1]):
+                continue # do not add to final line list
+            self.line_list[line_name] = line_dict
+
         for line_dict in self.line_list.values():
             for amp_attr in ['amp', 'amp_init', 'amp_plim']:
                 if (amp_attr in line_dict) and (isinstance(line_dict[amp_attr], (float,int,))):
                     line_dict[amp_attr] = line_dict[amp_attr]/self.target.fit_norm
+
+            for attr in ['line_profile']:
+                if attr not in line_dict:
+                    line_dict[attr] = self.options.get('%s_options'%line_types[line_dict['line_type']], {}).get(attr, None)
 
         for line_type in ['narrow', 'broad', 'absorp']:
             type_options = self.options.get('%s_options'%line_type, None)
@@ -504,10 +522,10 @@ class BadassRunContext:
             self.target.log.warn('Warning! Peak finding algorithm used for initial guesses of amplitude and velocity failed! Defaulting to user-defined locations...')
             peak_wave = np.array([line_dict['center'] for line_dict in self.line_list.values() if line_dict['line_type'] in ['na','br']])
             trough_wave = np.array([line_dict['center'] for line_dict in self.line_list.values() if line_dict['line_type'] in ['abs']])
-            if len(peak_wave) == 0:
-                peak_wave = np.array([0])
-            if len(trough_wave) == 0:
-                trough_wave = np.array([0])
+        if len(peak_wave) == 0:
+            peak_wave = np.array([0])
+        if len(trough_wave) == 0:
+            trough_wave = np.array([0])
 
 
         def amp_hyperpars(line_type, line_center, voff_init, voff_plim, amp_factor):
@@ -852,7 +870,7 @@ class BadassRunContext:
         combined_line_list = {}
 
         for line_name, line_dict in self.line_list.items():
-            if (line_dict['ncomp'] <= 1) or ('parent' not in line_dict) or (line_dict['parent'] not in self.line_list):
+            if (line_dict.get('ncomp', 1) <= 1) or ('parent' not in line_dict) or (line_dict['parent'] not in self.line_list):
                 continue
 
             parent = line_dict['parent']

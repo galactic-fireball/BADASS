@@ -410,8 +410,6 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
 
 
     def add_components(self, params, comp_dict, host_model):
-        # f_template, s_template, g_template, z_template = K10_opt_feii_template(p, lam_gal, opt_feii_templates, opt_feii_options, velscale)
-
         opt_feii_options = self.ctx.options.opt_feii_options
         # TODO: would this option ever change? ie. if amp is const, just set in init
         amp_const = opt_feii_options.opt_amp_const.bool
