@@ -103,7 +103,7 @@ class DefaultValidator(Validator):
 DEFAULT_IO_OPTIONS = {
     'infmt': {
         'type': 'string',
-        'allowed': ['sdss', 'muse', 'nirspec', 'miri'],
+        'allowed': ['sdss', 'muse', 'nirspec', 'miri', 'kcwi'],
     },
     'output_dir': {
         'type': ['string', 'pathlib'],
@@ -135,8 +135,8 @@ DEFAULT_IO_OPTIONS = {
         'allowed': ['M', 'H', 'm', 'h'],
         'default': 'M',
     },
-    'redshift': {
-        'type': 'float',
+    'R': {
+        'type': 'integer',
     },
 }
 
@@ -150,6 +150,12 @@ DEFAULT_FIT_OPTIONS = {
         'maxlength': 2,
         'schema': {'type': ['integer', 'float']},
         'default': (4400.0, 5500.0),
+    },
+    'redshift': {
+        'type': 'float',
+    },
+    'fit_area': {
+        'type': 'dict',
     },
     # percentage of "good" pixels required in fig_reg for fit.
     'good_thresh': {

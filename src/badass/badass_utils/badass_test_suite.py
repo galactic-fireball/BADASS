@@ -317,8 +317,8 @@ def bayesian_AB_test(resid_B, resid_A, wave, noise, data, eval_ind, ddof, run_di
 	resid_B_lnlike	= np.empty(nsamp)
 	resid_A_lnlike = np.empty(nsamp)
 	for i in range(nsamp):
-		lnlike_B	= np.sum(-0.5*(np.random.normal(loc=resid_B,scale=noise[eval_ind],size=len(eval_ind)))**2/noise[eval_ind]**2)
-		lnlike_A = np.sum(-0.5*(np.random.normal(loc=resid_A,scale=noise[eval_ind],size=len(eval_ind)))**2/noise[eval_ind]**2)
+		lnlike_B	= np.sum(-0.5*(np.random.normal(loc=resid_B,scale=np.abs(noise[eval_ind]),size=len(eval_ind)))**2/noise[eval_ind]**2)
+		lnlike_A = np.sum(-0.5*(np.random.normal(loc=resid_A,scale=np.abs(noise[eval_ind]),size=len(eval_ind)))**2/noise[eval_ind]**2)
 		resid_B_lnlike[i] = lnlike_B
 		resid_A_lnlike[i] = lnlike_A
 

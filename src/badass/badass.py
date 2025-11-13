@@ -1259,7 +1259,7 @@ class BadassRunContext:
 
             for n in range(1, max_like_niter+1):
                 # Generate a simulated galaxy spectrum with noise added at each pixel
-                mcgal = np.random.normal(self.target.spec, self.fit_noise)
+                mcgal = np.random.normal(self.fit_spec, np.abs(self.fit_noise))
                 # Get rid of any infs or nan if there are none; this will cause scipy.optimize to fail
                 mcgal[~np.isfinite(mcgal)] = np.nanmedian(mcgal)
                 self.fit_spec = mcgal

@@ -77,8 +77,10 @@ class BadassLogger:
     def log_target_info(self):
         self.logger.info('-----------------------------------------------------------------------------------------------------------------')
         self.logger.info('{0:<30}{1:<30}'.format('file:', self.ctx.infile.name))
-        if (self.ctx.ra is not None) and (self.ctx.dec is not None):
+        if (isinstance(self.ctx.ra, (float,int))) and (isinstance(self.ctx.dec, (float,int))):
             self.logger.info('{0:<30}{1:<30}'.format('(RA, DEC):', '(%0.6f,%0.6f)' % (self.ctx.ra,self.ctx.dec)))
+        else:
+            self.logger.info('{0:<30}{1:<30}'.format('(RA, DEC):', '(%s,%s)' % (self.ctx.ra,self.ctx.dec)))
         self.logger.info('{0:<30}{1:<30}'.format('SDSS redshift:', '%0.5f' % self.ctx.z))
         self.logger.info('{0:<30}{1:<30}'.format('fitting region:', '(%d,%d) [A]' % (self.ctx.fit_reg.min,self.ctx.fit_reg.max)))
         self.logger.info('{0:<30}{1:<30}'.format('velocity scale:', '%0.2f [km/s/pixel]' % self.ctx.velscale))

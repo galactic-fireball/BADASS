@@ -69,6 +69,9 @@ class BadassInput():
 
         self.set_fit_region()
 
+        if isinstance(self.disp_res, (float,int)):
+            self.disp_res = np.full(len(self.wave), self.disp_res)
+
         self.bad_pix = getattr(self, 'bad_pix', np.array([]))
         reg_mask = ((self.wave >= self.fit_reg.min) & (self.wave <= self.fit_reg.max))
         self.spec = self.spec[reg_mask]
