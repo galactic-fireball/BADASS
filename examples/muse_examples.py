@@ -80,12 +80,22 @@ def run_aperture():
 	badass.run_BADASS(EXAMPLE_FILE, options=options)
 
 
+def run_line_test():
+	options = MUSE_OPTIONS
+	options['fit_options']['fit_area'] = {'aperture': {'type':'circular', 'center':(25,22), 'radius':5},}
+	out_dir = options['io_options']['output_dir'].joinpath('line_test')
+	options['io_options']['output_dir'] = out_dir
+	options['fit_options']['test_lines'] = True
+	badass.run_BADASS(EXAMPLE_FILE, options=options)
+
+
 # Uncomment target function
 def main():
-	run_single_spaxel()
+	# run_single_spaxel()
 	# run_spaxel_range()
 	# run_bins()
 	# run_aperture()
+	run_line_test()
 	pass
 
 
@@ -126,6 +136,7 @@ MUSE_OPTIONS = {
 		'fit_reg': (4800,5200),
 		'fit_area': {}, # to be set by each example
 		'n_basinhop': 15,
+		'test_lines': False,
 	},
 	'comp_options': {
 		'fit_opt_feii': True,
@@ -152,6 +163,16 @@ MUSE_OPTIONS = {
 		'disp_plim': (500,3000),
 		'voff_plim': (-1000,1000),
 		'line_profile': 'gaussian',
+	},
+	'test_options': {
+		'test_mode': 'line',
+		'lines': [['NA_H_BETA']],
+		'metrics': {'BADASS':0.95, 'ANOVA':0.95, 'CHI2_RATIO':0.10, 'AON':3.0}, # Fitting metrics to use when determining the best model
+		'conv_mode': 'all', # or 'any'
+		'auto_stop': False,
+		'plot_tests': True,
+		'force_best': True,
+		'continue_fit': True,
 	},
 	'host_options': {
 		'age': [1.0,5.0,10.0],
