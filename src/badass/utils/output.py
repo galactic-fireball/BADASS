@@ -21,20 +21,20 @@ class ResultWriter:
 		cls._writer.options = options
 
 		# TODO: better way to specify
-		if not 'fit_area' in options.io_options:
+		if not 'fit_area' in options.fit_options:
 			cls._writer.fit_type = FitType.SINGLE
 			return cls._writer
 
-		if 'aperture' in options.io_options.fit_area:
+		if 'aperture' in options.fit_options.fit_area:
 			cls._writer.fit_type = FitType.APERTURE
 			return cls._writer
 
-		if 'spaxels' in options.io_options.fit_area:
+		if 'spaxels' in options.fit_options.fit_area:
 			cls._writer.fit_type = FitType.SPAXELS
-			cls._writer.spaxels = options.io_options.fit_area.spaxels
+			cls._writer.spaxels = options.fit_options.fit_area.spaxels
 			return cls._writer
 
-		if 'bins' in options.io_options.fit_area:
+		if 'bins' in options.fit_options.fit_area:
 			cls._writer.fit_type = FitType.BINS
 			return cls._writer
 

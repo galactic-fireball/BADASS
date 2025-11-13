@@ -14,12 +14,13 @@ class CubeReader(BadassInput):
 
         # TODO: separate subclasses
         area_parsers = {
+            'spaxel': cls.spaxel_parse,
             'spaxels': cls.spaxel_parse,
             'bins': cls.bin_parse,
             'aperture': cls.aperture_parse,
         }
 
-        fit_area = options.io_options.fit_area
+        fit_area = options.fit_options.fit_area
         fit_area_type = list(fit_area.keys())[0]
         fit_area_func = area_parsers.get(fit_area_type, None)
 
@@ -31,35 +32,38 @@ class CubeReader(BadassInput):
 
     @classmethod
     def spaxel_parse(cls, cube_dict, input_data, options):
-        spaxels = options.io_options.fit_area.spaxels
+        spaxels = options.fit_options.fit_area.get('spaxels', options.fit_options.fit_area.get('spaxel', None))
+        nx = cube_dict.get('nx', cube_dict['spec'].shape[0])
+        ny = cube_dict.get('ny', cube_dict['spec'].shape[1])
 
-        if isinstance(spaxels, dict) and 'range' in spaxels:
-            xs = spaxels['range']['x']
-            ys = spaxels['range']['y']
-            spaxels = [(x,y) for x in range(*xs) for y in range(*ys)]
+        if isinstance(spaxels, str):
+            if spaxels.lower() != 'all':
+                raise Exception('spaxel list invalid: %s'%spaxels)
+            fit_spaxels = [(x,y) for x in range(nx) for y in range(ny)]
+        elif isinstance(spaxels, dict):
+            xs = spaxels.get('x', (0,nx))
+            ys = spaxels.get('y', (0,ny))
+            fit_spaxels = [(x,y) for x in range(*xs) for y in range(*ys)]
+        elif isinstance(spaxels, (tuple,list)):
+            # single spaxel case
+            if (len(spaxels) == 2) and (isinstance(spaxels[0], int)):
+                fit_spaxels = [spaxels]
+            # should be list of (x,y) pairs
+            elif any([not isinstance(spax, (tuple,list)) for spax in spaxels]):
+                raise Exception('spaxel list invalid')
+            else:
+                fit_spaxels = spaxels
+        else:
+            raise Exception('spaxel list invalid')
 
-        if not isinstance(spaxels, (tuple,list)) or (len(spaxels) < 1):
-            raise Exception('fit spaxel must be tuple or list!')
-
-        # single spaxel case
-        if (len(spaxels) == 2) and (isinstance(spaxels[0], int)):
-            x, y = spaxels
-            # TODO: use splitable key
-            cube_dict['spec'] = cube_dict['spec'][x,y,:]
-            cube_dict['noise'] = cube_dict['noise'][x,y,:]
-            return cls.from_dict(cube_dict, options)
-
-        if not isinstance(spaxels[0], (tuple,list)):
-            raise Exception('fit spaxel invalid')
-
-        if options.io_options.fit_area.get('plot_input', False):
+        if options.fit_options.fit_area.get('plot_input', False):
             medcube = np.nanmedian(cube_dict['spec'], axis=2)
             medcube[np.isnan(medcube)] = 0.0
 
             plt.figure()
             plt.imshow(medcube.T, origin='lower')
-            for x,y in spaxels:
-                plt.scatter(x, y, color='k', marker='+', s=22)
+            for x,y in fit_spaxels:
+                plt.scatter(x, y, color='orange', marker='+', s=22)
             plt.show()
 
         # These are the values the subclass Reader told us are spaxel-splitable
@@ -67,9 +71,9 @@ class CubeReader(BadassInput):
         split_dict = {split_key:cube_dict.pop(split_key,None) for split_key in cube_dict.pop('splitable', ['spec','noise'])}
 
         inputs = []
-        for x,y in spaxels:
+        for x,y in fit_spaxels:
             spax_dict = copy.deepcopy(cube_dict)
-            spax_dict['options'].io_options.fit_area.spaxels = (x,y)
+            spax_dict['options'].fit_options.fit_area.spaxels = (x,y)
             spax_dict['options'].io_options.output_dir = '%s/spaxel_%d_%d' % (spax_dict['options'].io_options.output_dir,x,y)
 
             for key, val in split_dict.items():
@@ -82,13 +86,25 @@ class CubeReader(BadassInput):
 
     @classmethod
     def bin_parse(cls, cube_dict, input_data, options):
-        slength = options.io_options.fit_area.bins.side_length
-        method = options.io_options.fit_area.bins.get('method','sum')
+        slength = options.fit_options.fit_area.bins.side_length
+        method = options.fit_options.fit_area.bins.get('method','sum')
+        plot = options.fit_options.fit_area.get('plot_input', False)
+
+        if plot:
+            from matplotlib.patches import Rectangle
+            medcube = np.nanmedian(cube_dict['spec'], axis=2)
+            medcube[np.isnan(medcube)] = 0.0
+
+            plt.figure()
+            plt.imshow(medcube.T, origin='lower')
+
         nx = cube_dict.get('nx', cube_dict['spec'].shape[0])
         ny = cube_dict.get('ny', cube_dict['spec'].shape[1])
+        sx,nx = options.fit_options.fit_area.bins.get('x',(0,nx))
+        sy,ny = options.fit_options.fit_area.bins.get('y',(0,ny))
 
-        bxs_r = range(0, nx, slength)
-        bys_r = range(0, ny, slength)
+        bxs_r = range(sx, nx, slength)
+        bys_r = range(sy, ny, slength)
 
         cube_spec = cube_dict.pop('spec')
         cube_noise = cube_dict.pop('noise')
@@ -102,6 +118,10 @@ class CubeReader(BadassInput):
             for bys in bys_r:
                 bxe = min(bxs+slength, nx)
                 bye = min(bys+slength, ny)
+
+                if plot:
+                    plt.gca().add_patch(Rectangle((bxs,bys), width=bxe-bxs, height=bye-bys, facecolor='none', edgecolor='orange'))
+
                 # print('bin(%d,%d): (%d,%d) ; (%d,%d)'%(bnx,bny,bxs,bxe,bys,bye))
                 bin_dict = copy.deepcopy(cube_dict)
                 bin_dict['options'].io_options.product_name = product_name + 'BIN(%d,%d)'%(bnx,bny)
@@ -127,19 +147,24 @@ class CubeReader(BadassInput):
             bny = 0
             bnx += 1
 
+        if plot:
+            plt.show()
+
         return inputs
 
 
     @classmethod
     def aperture_parse(cls, cube_dict, input_data, options):
-        aperture_options = options.io_options.fit_area.aperture
+        aperture_options = options.fit_options.fit_area.aperture
+        # TODO: RectangularAperture
+        # TODO: other methods (mean, etc.)
 
         def get_circular_aperture():
             ap_center = aperture_options.center
             radius = aperture_options.radius
             aperture = CircularAperture(ap_center, r=radius)
 
-            if options.io_options.fit_area.get('plot_input', False):
+            if options.fit_options.fit_area.get('plot_input', False):
                 medcube = np.nanmedian(cube_dict['spec'], axis=2)
                 medcube[np.isnan(medcube)] = 0.0
 
@@ -179,13 +204,3 @@ class CubeReader(BadassInput):
     def get_cube_data(cls, input_data, options):
         return {}
 
-
-# TODO: fit_area options:
-# fit_area:
-#   - spaxels: single spaxel tuple or list of spaxels
-#   - range: x1 to x2, y1 to y2
-#   - bins:
-#       - side_length: int
-#   - aperture:
-#       - center, type (Rectangular vs Circular)
-#       - width/radius

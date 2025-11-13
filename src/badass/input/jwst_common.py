@@ -20,11 +20,11 @@ class JWSTReader(CubeReader):
         if not input_data.exists():
             raise Exception('Not found: %s'%str(input_data))
 
-        if not 'redshift' in options.io_options:
-            raise Exception('Redshift for NIRSpec cube must be provided')
+        if not 'redshift' in options.fit_options:
+            raise Exception('Redshift for JWST cube must be provided')
 
         cube_data = {}
-        cube_data['z'] = options.io_options.redshift
+        cube_data['z'] = options.fit_options.redshift
         cube_data['infile'] = input_data
 
         hdu = fits.open(input_data)

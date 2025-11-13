@@ -4,21 +4,25 @@ io_options={
     "output_dir" : '/Users/sara/Dropbox/research/bgc/projects/spectra_fitting/badass_mini_class/BADASS/example_spectra/MUSE/muse_test', # same directory as input file
     "product_name": "NGC1068",
     "dust_cache" : None,
-    "overwrite" : False,
+    "overwrite" : True,
     "log_level" : "debug",
     "err_level": "warning",
     "multiprocess": False,
-    "redshift": 0.00348372,
-    "fit_area": {
-        "bins": {"side_length":10},
-        # "spaxels": [(25,25),(30,30)],
-    },
 }
 
 ################################## Fit Options #################################
 # Fitting Parameters
 fit_options={
-"fit_reg"    : (4800,5200),# Fitting region; Note: Indo-US Library=(3460,9464)
+"fit_reg": (4800,5200),# Fitting region; Note: Indo-US Library=(3460,9464)
+"redshift": 0.00348372,
+"fit_area": {
+    # "bins": {"side_length":3},
+    "bins": {"side_length":3, "x": (10,40), "y":(10,35), "method": "mean"},
+    # "spaxels": {"x": (20,30), "y": (15,30)},
+    # "spaxels": [(20,30),(24,33),(30,39)],
+    # "spaxels": "all",
+    "plot_input": True,
+},
 "good_thresh": 0.0, # percentage of "good" pixels required in fig_reg for fit.
 "mask_bad_pix": False, # mask pixels SDSS flagged as 'bad' (careful!)
 "mask_emline" : False, # automatically mask lines for continuum fitting.
