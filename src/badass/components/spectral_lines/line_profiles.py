@@ -1,4 +1,5 @@
 from badass.badass_utils import gh_alternative as gh_alt
+from numbers import Number
 import numexpr as ne
 import numpy as np
 from numpy.polynomial import hermite
@@ -10,7 +11,7 @@ def line_constructor(ctx, line_name, line_dict):
 
     def get_attr(attr):
         attr_val = line_dict.get(attr, 'free')
-        if isinstance(attr_val, (float,int)):
+        if isinstance(attr_val, Number):
             return attr_val
         if (isinstance(attr_val, str)) and (attr_val != 'free'):
             return ne.evaluate(attr_val, local_dict=ctx.cur_params).item()

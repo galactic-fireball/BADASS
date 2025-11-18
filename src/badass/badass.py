@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 import emcee
 import importlib
 import multiprocessing as mp
+from numbers import Number
 import numexpr as ne
 import numpy as np
 import pandas as pd
@@ -245,7 +246,7 @@ class BadassRunContext:
 
         for line_dict in self.line_list.values():
             for amp_attr in ['amp', 'amp_init', 'amp_plim']:
-                if (amp_attr in line_dict) and (isinstance(line_dict[amp_attr], (float,int,))):
+                if (amp_attr in line_dict) and (isinstance(line_dict[amp_attr], Number)):
                     line_dict[amp_attr] = line_dict[amp_attr]/self.target.fit_norm
 
             for attr in ['line_profile']:
@@ -258,7 +259,7 @@ class BadassRunContext:
                 continue
 
             for amp_attr in ['amp', 'amp_init', 'amp_plim']:
-                if (amp_attr in type_options) and (isinstance(type_options[amp_attr], (float,int,))):
+                if (amp_attr in type_options) and (isinstance(type_options[amp_attr], Number)):
                     type_options[amp_attr] = type_options[amp_attr]/self.target.fit_norm
 
         self.add_line_comps()
@@ -346,7 +347,7 @@ class BadassRunContext:
             type_options = self.options[line_type+'_options']
 
             # TODO: center is unit-configurable
-            if ('center' not in line_dict) or (not isinstance(line_dict['center'],(int,float))):
+            if ('center' not in line_dict) or (not isinstance(line_dict['center'], Number)):
                 # TODO: just log and continue?
                 raise ValueError('Line list entry requires at least \'center\' wavelength (in Angstroms) to be defined as an int or float type')
 
@@ -819,7 +820,7 @@ class BadassRunContext:
                 if (hpar not in valid_keys) or (value == 'free'):
                     continue
 
-                if isinstance(value, (int,float)):
+                if isinstance(value, Number):
                     line_dict[hpar] = float(value)
                     continue
 
@@ -1462,7 +1463,7 @@ class BadassRunContext:
                     continue
 
                 # TODO: get value helper function
-                if isinstance(expr, (float,int,)):
+                if isinstance(expr, Number):
                     self.fit_results[line_name+'_'+par_name.upper()] = {'med': expr, 'std': np.nan, 'flag': 0}
                 else:
                     med = ne.evaluate(expr, local_dict=med_dict).item()
@@ -2142,7 +2143,7 @@ class BadassRunContext:
 
         for line_name, line_dict in self.line_list.items():
             for par_name, par_val in line_dict.items():
-                if (par_val == 'free') or (not par_name in self.tied_target_pars) or (isinstance(par_val, (int,float))):
+                if (par_val == 'free') or (not par_name in self.tied_target_pars) or (isinstance(par_val, Number)):
                     continue
 
                 par_results = {}
