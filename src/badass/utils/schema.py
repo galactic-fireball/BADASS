@@ -164,6 +164,11 @@ DEFAULT_FIT_OPTIONS = {
         'max': 1,
         'default': 0.0,
     },
+    'feature_edge_pad': {
+        'type': 'integer',
+        'min': 0,
+        'default': 10, # angstroms
+    },
     # mask pixels SDSS flagged as 'bad' (careful!)
     'mask_bad_pix': 'bool_false',
     # mask emission lines for continuum fitting.

@@ -219,9 +219,6 @@ class BadassRunContext:
         max_flux = np.nanmax(self.fit_spec)*1.5
         median_flux = np.nanmedian(self.fit_spec)
 
-        # Padding on the edges; any line(s) within this many angstroms is omitted
-        # from the fit so problems do not occur with the fit
-        edge_pad = 10.0
         par_input = {} # initialize an empty dictionary to store free parameter dicts
         template_args = {'median_flux':median_flux, 'max_flux':max_flux}
 
@@ -238,9 +235,10 @@ class BadassRunContext:
         in_line_list = user_lines if (not user_lines is None) else self.options.user_lines if (not self.options.user_lines is None) else {}
         self.line_list = {} # TODO: create a fit_line_list for the current fit iteration (for line tests)
 
+        edge_pad = self.options.fit_options.feature_edge_pad
         for line_name, line_dict in in_line_list.items():
             center = line_dict['center']
-            if (center < self.fit_wave[0]) or (center > self.fit_wave[-1]):
+            if (center <= self.fit_wave[0]+edge_pad) or (center >= self.fit_wave[-1]-edge_pad):
                 continue # do not add to final line list
             self.line_list[line_name] = line_dict
 
@@ -321,7 +319,6 @@ class BadassRunContext:
         """
 
         comp_options = self.options.comp_options
-        edge_pad = 10 # TODO: config
 
         # TODO: better handle types + 'user'
         line_types = {
@@ -353,6 +350,7 @@ class BadassRunContext:
 
             # TODO: should use fitting region?
             # Check line in wavelength region
+            edge_pad = self.options.fit_options.feature_edge_pad
             if (line_dict['center'] <= self.target.wave[0]+edge_pad) or (line_dict['center'] >= self.target.wave[-1]-edge_pad):
                 continue
 
