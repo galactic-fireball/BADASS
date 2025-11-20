@@ -1784,16 +1784,16 @@ class BadassRunContext:
                     self.tolerances.append(tol)
 
                     if (not self.converged) and (self.conv_func(sampler, tau, tol)):
-                        self.target.log.info('Converged at %d iterations\nPerforming %d iterations of sampling'%(it, self.min_samp))
+                        self.ctx.log.info('Converged at %d iterations\nPerforming %d iterations of sampling'%(it, self.min_samp))
                         self.burn_in = it
                         self.stop_iter = it+self.min_samp
                         self.conv_tau = tau
                         self.converged = True
 
                     elif (self.converged) and (not self.conv_func(sampler, tau, tol)):
-                        self.target.log.info('Iteration: %d - Jumped out of convergence, resetting burn_in and max_iter'%it)
+                        self.ctx.log.info('Iteration: %d - Jumped out of convergence, resetting burn_in and max_iter'%it)
                         self.burn_in = self.ctx.options.mcmc_options.burn_in
-                        self.stop_iter = self.options.mcmc_options.max_iter
+                        self.stop_iter = self.ctx.options.mcmc_options.max_iter
                         self.converged = False
 
                     self.prev_tau = tau
