@@ -1174,6 +1174,9 @@ class BadassRunContext:
     def max_likelihood(self, line_test=False):
 
         self.target.log.debug('Performing max likelihood fitting')
+        if len(self.param_dict) == 0:
+            self.target.log.warn('No parameters to fit!')
+            return
 
         self.prior_params = [key for key,val in self.param_dict.items() if ('prior' in val)]
         self.cur_params = {k:v['init'] for k,v in self.param_dict.items()}
@@ -2082,8 +2085,13 @@ class BadassRunContext:
             par_results['ci_95_low'] = post_med - lo
             par_results['ci_95_upp'] = hi - post_med
 
-            hist, bin_edges = np.histogram(chain, bins='doane', density=False)
-            par_results['post_max'] = bin_edges[hist.argmax()]
+            # TODO: this sometimes fails if the values in the chain are too close
+            #   to create adequate bins. Another way to handle this case?
+            try:
+                hist, bin_edges = np.histogram(chain, bins='doane', density=False)
+                par_results['post_max'] = bin_edges[hist.argmax()]
+            except:
+                par_results['post_max'] = np.nan
 
             par_results['mean'] = np.nanmean(chain)
             par_results['std_dev'] = np.nanstd(chain)

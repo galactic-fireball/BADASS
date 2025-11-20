@@ -145,11 +145,16 @@ DEFAULT_IO_OPTIONS = {
 DEFAULT_FIT_OPTIONS = {
     # Fitting region; Note: Indo-US Library=(3460,9464)
     'fit_reg': {
-        'type': 'list',
-        'minlength': 2,
-        'maxlength': 2,
-        'schema': {'type': ['integer', 'float']},
-        'default': (4400.0, 5500.0),
+        'oneof': [
+            {
+                'type': 'list',
+                'minlength': 2,
+                'maxlength': 2,
+                'schema': {'type': ['integer', 'float']},
+            },
+            { 'type': 'string', },
+        ],
+        'default': 'auto',
     },
     'redshift': {
         'type': 'float',
