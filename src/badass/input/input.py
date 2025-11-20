@@ -51,6 +51,7 @@ class BadassInput():
         if not self.outdir.is_absolute():
             self.outdir = pathlib.Path(os.getcwd()).resolve().joinpath(self.outdir)
 
+        # TODO: check for fit completed
         if self.outdir.exists():
             if self.options.io_options.get('overwrite', False):
                 print('Removing old output directory: [%s]'%str(self.outdir))
@@ -68,6 +69,9 @@ class BadassInput():
         self.outdir.joinpath('log').mkdir(parents=True, exist_ok=True) # TODO: 'log' mkdir eventually happens in separate output class
 
         self.set_fit_region()
+        if self.fit_reg is None:
+            self.valid = False
+            return
 
         if isinstance(self.disp_res, (float,int)):
             self.disp_res = np.full(len(self.wave), self.disp_res)
@@ -144,7 +148,9 @@ class BadassInput():
                 return
 
             if (user_fit_reg[0] > self.fit_reg[1]) or (user_fit_reg[1] < self.fit_reg[0]):
-                raise Exception('Fitting region not available!')
+                self.log.error('Fitting region not available!')
+                self.fit_reg = None
+                return
 
             if (user_fit_reg[0] < self.fit_reg[0]) or (user_fit_reg[1] > self.fit_reg[1]):
                 self.log.warn('Input fitting region exceeds available wavelength range. BADASS will adjust your fitting range automatically...')
