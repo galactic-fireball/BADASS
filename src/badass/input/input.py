@@ -158,6 +158,13 @@ class BadassInput():
                 self.log.warn('\t- Available wavelength range: (%d, %d)' % (self.fit_reg[0], self.fit_reg[1]))
 
             self.fit_reg = (np.max([user_fit_reg[0], self.fit_reg[0]]), np.min([user_fit_reg[1], self.fit_reg[1]]))
+        elif (isinstance(user_fit_reg, str)) and (user_fit_reg == 'auto'):
+            self.log.info('Auto setting fitting region')
+        else:
+            self.log.error('Invalid fitting region')
+            self.fit_reg = None
+            return
+
 
         # The lower limit of the spectrum must be the lower limit of our stellar templates
         # TODO: template function to let each template affect the fitting region?
