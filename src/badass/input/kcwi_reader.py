@@ -63,8 +63,11 @@ class KCWIReader(CubeReader):
                 cube_data['dec'] = None
 
             cube_data['spec'] = hdu[0].data.T
-            cube_data['bad_pix'] = hdu[1].data.T
-            cube_data['noise'] = hdu[2].data.T
+            try:
+                cube_data['bad_pix'] = hdu[1].data.T
+            except:
+                cube_data['bad_pix'] = np.zeros_like(cube_data['spec'], dtype=bool)
+            cube_data['noise'] = np.sqrt(hdu[2].data.T)
 
             lam_pix_prop = 'CDELT3' if 'CDELT3' in header else 'CD3_3'
             obs_wave = np.array(header['CRVAL3'] + header[lam_pix_prop]*np.arange(header['NAXIS3']))
