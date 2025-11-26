@@ -258,14 +258,14 @@ def plot_best_model(ctx, plot_name):
         ax1.plot(wave, comp_dict[line_name], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
 
 
-    # ibad = [i for i in range(len(ctx.target.wave)) if i not in fit_mask]
-    # for m in ibad:
-        # ax1.axvspan(ctx.target.wave[m], ctx.target.wave[m], alpha=0.25, color='xkcd:lime green')
-    # ax1.axvspan(0, 0, alpha=0.25, color='xkcd:lime green', label='bad pixels')
+    ibad = [i for i in range(len(ctx.target.wave)) if i not in fit_mask]
+    for m in ibad:
+        ax1.axvspan(ctx.target.wave[m], ctx.target.wave[m], alpha=0.25, color='xkcd:lime green')
+    ax1.axvspan(0, 0, alpha=0.25, color='xkcd:lime green', label='bad pixels')
 
     # Residuals
-    sigma_resid = np.nanstd(comp_dict['DATA']-comp_dict['MODEL'])
-    sigma_noise = np.nanmedian(comp_dict['NOISE'])
+    sigma_resid = np.nanstd(comp_dict['DATA'][fit_mask]-comp_dict['MODEL'][fit_mask])
+    sigma_noise = np.nanmedian(comp_dict['NOISE'][fit_mask])
     ax2.plot(ctx.target.wave, comp_dict['NOISE']*3.0, linewidth=0.5,color='xkcd:bright orange', label=r'$\sigma_{\mathrm{noise}}=%0.4f$' % sigma_noise)
     ax2.plot(ctx.target.wave, comp_dict['RESID']*3.0, linewidth=0.5,color='white', label=r'$\sigma_{\mathrm{resid}}=%0.4f$' % sigma_resid)
     ax1.axhline(0.0, linewidth=1.0, color='white', linestyle='--')
@@ -273,7 +273,7 @@ def plot_best_model(ctx, plot_name):
 
     # Axes limits
     ax_low = np.nanmin([ax1.get_ylim()[0], ax2.get_ylim()[0]])
-    ax_upp = np.nanmax(comp_dict['DATA'])+(3.0 * np.nanmedian(comp_dict['NOISE']))
+    ax_upp = np.nanmax(comp_dict['DATA'][fit_mask])+(3.0 * np.nanmedian(comp_dict['NOISE'][fit_mask]))
 
     minimum = [np.nanmin(val[np.where(np.isfinite(val))[0]]) for comp, val in comp_dict.items() if val[np.isfinite(val)[0]].size > 0]
     minimum = np.nanmin(minimum) if len(minimum) > 0 else 0.0

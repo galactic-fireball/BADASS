@@ -1,4 +1,5 @@
 from importlib import import_module
+import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pathlib
@@ -100,9 +101,6 @@ class BadassInput():
         if self.options.fit_options.mask_metal:
             fit_mask_bad.extend(metal_masker(self.wave,self.spec,self.noise))
 
-        fit_mask_bad = np.sort(np.unique(fit_mask_bad))
-        self.fit_mask = np.setdiff1d(np.arange(0,len(self.wave),1,dtype=int),fit_mask_bad)
-
         ebv = get_ebv(self.ra, self.dec)
         self.spec = ccm_unred(self.wave, self.spec, ebv)
 
@@ -110,26 +108,18 @@ class BadassInput():
         self.spec = self.spec / self.fit_norm
         self.noise = self.noise / self.fit_norm
 
-        # TODO: should do in BadassContext fit_wave,fit_spec,fit_noise?
-        self.wave = self.wave[self.fit_mask]
-        self.spec = self.spec[self.fit_mask]
-        self.noise = self.noise[self.fit_mask]
-        self.disp_res = self.disp_res[self.fit_mask]
-
-        pca_reconstruction(self) # TODO: test
+        if self.options.pca_options.do_pca:
+            pca_reconstruction(self) # TODO: test
 
         if np.isnan(self.spec).all():
             self.valid = False
             self.err_log = '\'spec\' array is all nans, not running fit'
             return
 
-        self.wave = self.wave[~np.isnan(self.spec)]
-        self.noise = self.noise[~np.isnan(self.spec)]
-        self.spec = self.spec[~np.isnan(self.spec)]
-
-        self.wave = self.wave[~np.isnan(self.noise)]
-        self.spec = self.spec[~np.isnan(self.noise)]
-        self.noise = self.noise[~np.isnan(self.noise)]
+        fit_mask_bad.extend(np.where(np.isnan(self.spec))[0])
+        fit_mask_bad.extend(np.where(np.isnan(self.noise))[0])
+        fit_mask_bad = np.sort(np.unique(fit_mask_bad))
+        self.fit_mask = np.setdiff1d(np.arange(0,len(self.wave),1,dtype=int),fit_mask_bad)
 
 
     def set_fit_region(self):
