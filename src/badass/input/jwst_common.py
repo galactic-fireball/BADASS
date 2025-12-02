@@ -61,9 +61,10 @@ class JWSTReader(CubeReader):
         cube_err = cube_err.to(TARGET_FLUX_UNIT_AA).value
 
         div = int(np.floor(np.log10(np.abs(np.nanmedian(cube_spec)))))
-        cube_spec = cube_spec / (10**div)
-        cube_err = cube_err / (10**div)
-        cube_data['flux_norm'] = 10**div
+        flux_norm = 10**div
+        cube_spec = cube_spec / flux_norm
+        cube_err = cube_err / flux_norm
+        cube_data['flux_norm'] = flux_norm
 
         cube_data['wave'] = wave
         cube_data['velscale'] = np.nan # will be set when the class is initialized

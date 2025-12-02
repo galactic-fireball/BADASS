@@ -29,6 +29,9 @@ class BadassInput():
             print(self.err_log)
             return
 
+        if not hasattr(self, 'flux_norm'):
+            self.flux_norm = 1.0
+
         if not hasattr(self, 'options'):
             self.options = options
 
@@ -107,6 +110,7 @@ class BadassInput():
         self.fit_norm = np.round(np.nanmax(self.spec), 5)
         self.spec = self.spec / self.fit_norm
         self.noise = self.noise / self.fit_norm
+        self.noise[self.noise == 0] = np.nanmedian(self.noise)
 
         if self.options.pca_options.do_pca:
             pca_reconstruction(self) # TODO: test
