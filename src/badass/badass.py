@@ -205,8 +205,7 @@ class BadassRunContext:
         self.initialize_pars()
 
         # Output all free parameters of fit prior to fitting (useful for diagnostics)
-        if self.options.fit_options.output_pars:
-            self.target.log.output_free_pars(self.line_list, self.param_dict, self.soft_cons)
+        self.target.log.output_free_pars(self.line_list, self.param_dict, self.soft_cons)
         self.target.log.output_line_list(self.line_list, self.soft_cons)
 
         self.set_blob_pars()
@@ -1115,28 +1114,7 @@ class BadassRunContext:
                 prev_label, prev_results = test_label, fit_results
                 continue
 
-            # get metrics
-            resid_A = prev_results['mccomps']['RESID'][0,:][self.target.fit_mask]
-            resid_B = fit_results['mccomps']['RESID'][0,:][self.target.fit_mask]
-
-            # TODO: test suite util to get all metrics
-            metrics = {}
-
-            ddof = np.abs(prev_results['dof']-fit_results['dof'])
-            _,_,_,conf,_,_,_,_,_,_ = badass_test_suite.bayesian_AB_test(resid_B, resid_A, self.fit_wave[self.targets.fit_mask], self.fit_noise[self.target.fit_mask], self.fit_spec[self.target.fit_mask], np.arange(len(resid_A)), ddof, self.target.options.io_options.output_dir, plot=False)
-            metrics['BADASS'] = conf
-
-            ssr_ratio, ssr_A, ssr_B = badass_test_suite.ssr_test(resid_B, resid_A, self.target.options.io_options.output_dir)
-            metrics['SSR_RATIO'] = ssr_ratio
-
-            k_A, k_B = prev_results['npar'], fit_results['npar']
-            f_stat, f_pval, f_conf = badass_test_suite.anova_test(resid_B, resid_A, k_A, k_B, self.target.options.io_options.output_dir)
-            metrics['ANOVA'] = f_conf
-
-            metrics['F_RATIO'] = badass_test_suite.f_ratio(resid_B, resid_A)
-
-            chi2_B, chi2_A, chi2_ratio = badass_test_suite.chi2_metric(np.arange(len(resid_A)), fit_results['mccomps'], prev_results['mccomps'])
-            metrics['CHI2_RATIO'] = chi2_ratio
+            metrics = badass_test_suite.collect_test_metrics(self, prev_results, fit_results, test_lines[0])
 
             if self.target.options.test_options.plot_tests:
                 plotting.create_test_plot(self.target, test_fit_results, prev_label, test_label, test_title=test_title)
@@ -1161,8 +1139,7 @@ class BadassRunContext:
         ptbl.field_names = ['TEST A', 'TEST B'] + list(test_metrics[0][2].keys()) + ['AON', 'PASS']
         for label_A, label_B, metrics in test_metrics:
             ptbl.add_row([label_A, label_B] + ['%f'%v for v in metrics.values()] + ['%f'%test_fit_results[label_B]['aon'], test_fit_results[label_B]['pass']])
-        self.target.log.info('Test Results:')
-        self.target.log.info(ptbl)
+        self.target.log.info('Test Results:\n'+str(ptbl))
 
         return test_fit_results, test_metrics
 
