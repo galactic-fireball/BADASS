@@ -76,6 +76,10 @@ class HostTemplate(BadassTemplate):
         sigma = disp_dif/2.355/h['CDELT1'] # Sigma difference in pixels
 
         sspNew = log_rebin(lamRange_temp, ssp, velscale=self.ctx.target.velscale)[0]
+        if sspNew.shape[0] < self.ctx.fit_wave.shape[0]:
+            oversample = int(np.ceil(self.ctx.fit_wave.shape[0]/ssp.shape[0])) # make sure template size >= fit_wave size
+            sspNew = log_rebin(lamRange_temp, ssp, oversample=oversample)[0]
+
         templates = np.empty((sspNew.size, len(host_options.age)))
         for j, age in enumerate(host_options.age):
             atemp = HostTemplate.get_host_template_file(age)
@@ -97,6 +101,10 @@ class HostTemplate(BadassTemplate):
             ssp = ssp[mask]
             ssp = gaussian_filter1d(ssp, sigma)  # perform convolution with variable sigma
             sspNew,loglam_temp,velscale_temp = log_rebin(lamRange_temp, ssp, velscale=self.ctx.target.velscale)
+            if sspNew.shape[0] < self.ctx.fit_wave.shape[0]:
+                oversample = int(np.ceil(self.ctx.fit_wave.shape[0]/ssp.shape[0])) # make sure template size >= fit_wave size
+                sspNew = log_rebin(lamRange_temp, ssp, oversample=oversample)[0]
+
             templates[:, j] = sspNew/np.median(sspNew) # Normalizes templates
             hdu.close()
 
