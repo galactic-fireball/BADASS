@@ -1153,6 +1153,14 @@ class BadassRunContext:
         self.target.log.debug('Performing max likelihood fitting')
         if len(self.param_dict) == 0:
             self.target.log.warn('No parameters to fit!')
+
+            # TODO: handle differently
+            if line_test:
+                log_like = -(self.lnprob()[0]) # runs the model with any const lines/templates
+                comps = {k:np.array([v,]) for k,v in self.comp_dict.items()}
+                lowest_rmse = badass_test_suite.root_mean_squared_error(self.fit_spec, np.zeros(len(self.fit_spec)))
+                return {}, comps, np.array([log_like,]), lowest_rmse
+
             return
 
         self.prior_params = [key for key,val in self.param_dict.items() if ('prior' in val)]
