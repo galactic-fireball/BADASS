@@ -90,7 +90,8 @@ def run_BADASS(inputs, **kwargs):
     targets = BadassInput.get_inputs(inputs, opts)
 
     # TODO: handle multiple option dicts
-    result_writer = ResultWriter(opts[0])
+    if isinstance(opts, list): opts = opts[0]
+    result_writer = ResultWriter(opts)
 
     if multiprocess:
         with mp.Pool(processes=nprocesses, maxtasksperchild=1) as pool:
@@ -181,7 +182,7 @@ class BadassRunContext:
         if (self.options.plot_options.plot_HTML) and (not importlib.util.find_spec('plotly')):
             self.options.plot_options.plot_HTML = False
 
-        self.target.log.info('> Starting fit for %s' % self.target.infile.parent.name)
+        self.target.log.info('> Starting fit for %s' % self.target.name)
         self.target.log.log_target_info()
 
         sys.stdout.flush()

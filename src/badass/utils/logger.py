@@ -76,7 +76,7 @@ class BadassLogger:
     # TODO: move to input classes
     def log_target_info(self):
         self.logger.info('-----------------------------------------------------------------------------------------------------------------')
-        self.logger.info('{0:<30}{1:<30}'.format('file:', self.ctx.infile.name))
+        self.logger.info('{0:<30}{1:<30}'.format('name:', self.ctx.name))
         if (isinstance(self.ctx.ra, (float,int))) and (isinstance(self.ctx.dec, (float,int))):
             self.logger.info('{0:<30}{1:<30}'.format('(RA, DEC):', '(%0.6f,%0.6f)' % (self.ctx.ra,self.ctx.dec)))
         else:

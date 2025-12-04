@@ -103,7 +103,7 @@ class DefaultValidator(Validator):
 DEFAULT_IO_OPTIONS = {
     'infmt': {
         'type': 'string',
-        'allowed': ['sdss', 'muse', 'nirspec', 'miri', 'kcwi'],
+        'allowed': ['default', 'sdss', 'muse', 'nirspec', 'miri', 'kcwi'],
     },
     'output_dir': {
         'type': ['string', 'pathlib'],

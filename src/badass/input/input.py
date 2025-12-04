@@ -191,7 +191,11 @@ class BadassInput():
 
     @classmethod
     def from_dict(cls, input_data, options={}):
-        return CustomReader(input_data, options)
+        if options.get('io_options', None) is None:
+            options.io_options = {}
+        if options.io_options.get('infmt', None) is None:
+            options.io_options.infmt = 'default'
+        return cls.from_format(input_data, options)
 
 
     @classmethod
@@ -272,7 +276,8 @@ class BadassInput():
             return inputs
 
         if isinstance(input_data, dict):
-            return [cls.from_dict(input_data, options)]
+            ret = cls.from_dict(input_data, options)
+            return ret if isinstance(ret, list) else [ret]
 
         if isinstance(input_data, pathlib.Path):
             ret = cls.from_path(input_data, options)

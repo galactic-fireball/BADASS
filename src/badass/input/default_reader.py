@@ -69,5 +69,6 @@ class DefaultReader(BadassInput):
         #         for b in m:
         #             fit_mask_bad.append(b)
 
+        super().__init__(input_data, options)
 
 Reader = DefaultReader
