@@ -31,6 +31,7 @@ class NIRSpecReader(JWSTReader):
 
         interp_func = interpolate.interp1d(hdu[1].data['WAVELENGTH'], hdu[1].data['R'], bounds_error=False, fill_value='extrapolate')
         cube_data['disp_res'] = obs_wave / interp_func(obs_wave)
+        hdu.close()
 
 
 Reader = NIRSpecReader

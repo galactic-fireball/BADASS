@@ -1,14 +1,27 @@
+from astropy.coordinates import Angle
 import copy
 import matplotlib.pyplot as plt
 import numpy as np
-from photutils.aperture import CircularAperture, ApertureStats
+from photutils.aperture import ApertureStats, CircularAperture, RectangularAperture
 
 from badass.input.input import BadassInput
 
 class CubeReader(BadassInput):
 
+    def __init__(self, input_data, options):
+        if not isinstance(input_data, dict):
+            raise Exception('Default user data input should be dict')
+
+        self.__dict__.update(input_data)
+        super().__init__(input_data, options)
+
     @classmethod
     def parse(cls, input_data, options):
+
+        # input_data is already a 1D spectrum
+        if (isinstance(input_data, dict)) and ('spec' in input_data) and (len(input_data['spec'].shape) == 1):
+            return cls(input_data, options)
+
         cube_dict = cls.get_cube_data(input_data, options)
         cube_dict['options'] = options
 
@@ -21,8 +34,11 @@ class CubeReader(BadassInput):
         }
 
         fit_area = options.fit_options.fit_area
-        fit_area_type = list(fit_area.keys())[0]
-        fit_area_func = area_parsers.get(fit_area_type, None)
+        fit_area_func = None
+        for key in fit_area.keys():
+            if key in area_parsers:
+                fit_area_func = area_parsers[key]
+                break
 
         if fit_area_func is None:
             raise Exception('Fit area type unsupported: %s'%fit_area_type)
@@ -79,7 +95,7 @@ class CubeReader(BadassInput):
             for key, val in split_dict.items():
                 spax_dict[key] = val[x,y,:]
 
-            inputs.append(cls.from_dict(spax_dict))
+            inputs.extend(cls.from_dict(spax_dict))
 
         return inputs
 
@@ -159,11 +175,7 @@ class CubeReader(BadassInput):
         # TODO: RectangularAperture
         # TODO: other methods (mean, etc.)
 
-        def get_circular_aperture():
-            ap_center = aperture_options.center
-            radius = aperture_options.radius
-            aperture = CircularAperture(ap_center, r=radius)
-
+        def get_aperture_spec(aperture):
             if options.fit_options.fit_area.get('plot_input', False):
                 medcube = np.nanmedian(cube_dict['spec'], axis=2)
                 medcube[np.isnan(medcube)] = 0.0
@@ -177,14 +189,50 @@ class CubeReader(BadassInput):
             ap_spec = np.zeros(len(wave))
             ap_err = np.zeros(len(wave))
 
+            sum_method = aperture_options.get('sum_method', 'exact')
+            if not sum_method in ['exact', 'center', 'subpixel']:
+                print('Invalid sum method: %s'%sum_method)
+                return None, None
+
+            subpixels = aperture_options.get('subpixels', 1)
+
             for i in range(0, len(wave)):
-                apstat = ApertureStats(cube_dict['spec'][:,:,i], aperture, error=cube_dict['noise'][:,:,i])
+                apstat = ApertureStats(cube_dict['spec'][:,:,i], aperture, error=cube_dict['noise'][:,:,i], sum_method=sum_method, subpixels=subpixels)
                 ap_spec[i] = apstat.sum
                 ap_err[i] = apstat.sum_err
             return ap_spec, ap_err
 
+
+        def get_circular_aperture():
+            for attr in ['center', 'radius']:
+                if not attr in aperture_options:
+                    print('\'%s\' required for CircularAperture'%attr)
+                    return None, None
+
+            ap_center = aperture_options.center
+            radius = aperture_options.radius
+            aperture = CircularAperture(ap_center, r=radius)
+            return get_aperture_spec(aperture)
+
+
+        def get_rectangular_aperture():
+            for attr in ['center', 'width', 'height']:
+                if not attr in aperture_options:
+                    print('\'%s\' required for RectangularAperture'%attr)
+                    return None, None
+
+            center = aperture_options.center
+            width = aperture_options.width
+            height = aperture_options.height
+            theta = aperture_options.get('theta', 0.0)
+            theta = Angle(theta, 'deg')
+            aperture = RectangularAperture(center, width, height, theta=theta)
+            return get_aperture_spec(aperture)
+
+
         ap_types = {
             'circular': get_circular_aperture,
+            'rectangular': get_rectangular_aperture,
         }
 
         ap_type = aperture_options.type
@@ -193,6 +241,9 @@ class CubeReader(BadassInput):
             raise Exception('Unsupported aperture type: %s'%ap_type)
 
         ap_spec, ap_noise = ap_func()
+        if (ap_spec is None) or (ap_noise is None):
+            return None
+
         input_dict = cube_dict
         input_dict['spec'] = ap_spec
         input_dict['noise'] = ap_noise

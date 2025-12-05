@@ -170,7 +170,7 @@ class StellarTemplate(BadassTemplate):
         host_model[~np.isfinite(host_model)] = 0
         self.conv_temp[~np.isfinite(self.conv_temp)] = 0
         # scipy.optimize Non-negative Least Squares
-        weights  = nnls(self.conv_temp, host_model)
+        weights = nnls(self.conv_temp, host_model)
         host_galaxy = (np.sum(weights*self.conv_temp, axis=1))
 
         if np.any(host_galaxy < 0):

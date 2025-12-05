@@ -13,6 +13,7 @@ from badass.utils.pca import pca_reconstruction
 from badass.utils.utils import ccm_unred, emline_masker, get_ebv, metal_masker
 
 # TODO: use a dataclass to explicitly define expected attrs and make sure all input classes have consistent attrs
+# TODO: set up pre-input creation logger
 
 class BadassInput():
 
@@ -28,6 +29,10 @@ class BadassInput():
             self.err_log = 'Can\'t fit spec without \'wave\' or \'spec\' values'
             print(self.err_log)
             return
+
+        if (not hasattr(self, 'ra')) or (not hasattr(self, 'dec')):
+            print('WARNING: ra and/or dec not set, the galactic average E(B-V) will used')
+            self.ra, self.dec = None, None
 
         if not hasattr(self, 'flux_norm'):
             self.flux_norm = 1.0
@@ -190,7 +195,10 @@ class BadassInput():
 
 
     @classmethod
-    def from_dict(cls, input_data, options={}):
+    def from_dict(cls, input_data, options=prodict.Prodict({})):
+        if (len(options) == 0) and (not input_data.get('options', None) is None):
+            options = prodict.Prodict(input_data['options'])
+
         if options.get('io_options', None) is None:
             options.io_options = {}
         if options.io_options.get('infmt', None) is None:
