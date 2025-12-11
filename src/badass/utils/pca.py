@@ -25,9 +25,6 @@ def pca_reconstruction(target):
         coeff - Coefficients used in reconstruction of spectrum
     '''
 
-    if not target.options.pca_options.do_pca:
-        return
-
     pca_masks = target.options.pca_options.pca_masks
     target.log.info(f"Performing PCA on a spectrum with nans over region(s) {pca_masks}. Be careful to ensure PCA covers all nan regions, else PCA will fail.")
     target.log.info(" Performing PCA analysis...\n")
@@ -49,10 +46,10 @@ def pca_reconstruction(target):
     spectra_corr = sdss_corrected_spectra.reconstruct_spectra(data) # "eigenspectra"
     wavelengths = sdss_corrected_spectra.compute_wavelengths(data)
     spectra_corr_interp = []
-    
+
     flux_nan_check = np.isnan(flux_input).any()
     err_nan_check = np.isnan(err_input).any()
-    
+
     if flux_nan_check:
         target.log.debug('\tnans detected in spectrum flux. Setting to spectrum mean and performing PCA.')
         flux_nan, flux_nan_func = nan_helper(flux_input)

@@ -29,9 +29,9 @@ class ResultWriter:
 			cls._writer.fit_type = FitType.APERTURE
 			return cls._writer
 
-		if 'spaxels' in options.fit_options.fit_area:
+		if ('spaxel' in options.fit_options.fit_area) or ('spaxels' in options.fit_options.fit_area):
 			cls._writer.fit_type = FitType.SPAXELS
-			cls._writer.spaxels = options.fit_options.fit_area.spaxels
+			cls._writer.spaxels = options.fit_options.fit_area.get('spaxels', options.fit_options.fit_area.get('spaxel', None))
 			return cls._writer
 
 		if 'bins' in options.fit_options.fit_area:

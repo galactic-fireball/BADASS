@@ -90,7 +90,8 @@ def run_BADASS(inputs, **kwargs):
     targets = BadassInput.get_inputs(inputs, opts)
 
     # TODO: handle multiple option dicts
-    result_writer = ResultWriter(opts[0])
+    if isinstance(opts, list): opts = opts[0]
+    result_writer = ResultWriter(opts)
 
     if multiprocess:
         with mp.Pool(processes=nprocesses, maxtasksperchild=1) as pool:
@@ -181,7 +182,7 @@ class BadassRunContext:
         if (self.options.plot_options.plot_HTML) and (not importlib.util.find_spec('plotly')):
             self.options.plot_options.plot_HTML = False
 
-        self.target.log.info('> Starting fit for %s' % self.target.infile.parent.name)
+        self.target.log.info('> Starting fit for %s' % self.target.name)
         self.target.log.log_target_info()
 
         sys.stdout.flush()
@@ -205,8 +206,7 @@ class BadassRunContext:
         self.initialize_pars()
 
         # Output all free parameters of fit prior to fitting (useful for diagnostics)
-        if self.options.fit_options.output_pars:
-            self.target.log.output_free_pars(self.line_list, self.param_dict, self.soft_cons)
+        self.target.log.output_free_pars(self.line_list, self.param_dict, self.soft_cons)
         self.target.log.output_line_list(self.line_list, self.soft_cons)
 
         self.set_blob_pars()
@@ -238,7 +238,7 @@ class BadassRunContext:
         edge_pad = self.options.fit_options.feature_edge_pad
         for line_name, line_dict in in_line_list.items():
             center = line_dict['center']
-            if (center <= self.fit_wave[0]+edge_pad) or (center >= self.fit_wave[-1]-edge_pad):
+            if (center <= self.fit_wave[self.target.fit_mask][0]+edge_pad) or (center >= self.fit_wave[self.target.fit_mask][-1]-edge_pad):
                 continue # do not add to final line list
             self.line_list[line_name] = line_dict
 
@@ -351,7 +351,7 @@ class BadassRunContext:
             # TODO: should use fitting region?
             # Check line in wavelength region
             edge_pad = self.options.fit_options.feature_edge_pad
-            if (line_dict['center'] <= self.target.wave[0]+edge_pad) or (line_dict['center'] >= self.target.wave[-1]-edge_pad):
+            if (line_dict['center'] <= self.fit_wave[self.target.fit_mask][0]+edge_pad) or (line_dict['center'] >= self.fit_wave[self.target.fit_mask][-1]-edge_pad):
                 continue
 
             # Check if we are fitting lines of this type
@@ -505,18 +505,18 @@ class BadassRunContext:
         }
 
         # First we remove the continuum
-        galaxy_csub = badass_tools.continuum_subtract(self.target.wave,self.target.spec,self.target.noise,sigma_clip=2.0,clip_iter=25,filter_size=[25,50,100,150,200,250,500],
+        galaxy_csub = badass_tools.continuum_subtract(self.fit_wave,self.fit_spec,self.fit_noise,sigma_clip=2.0,clip_iter=25,filter_size=[25,50,100,150,200,250,500],
                        noise_scale=1.0,opt_rchi2=True,plot=False,
                        fig_scale=8,fontsize=16,verbose=False)
 
         try:
             # normalize by noise
-            norm_csub = galaxy_csub/self.target.noise
+            norm_csub = galaxy_csub/self.fit_noise
 
             peaks,_ = signal.find_peaks(norm_csub, height=2.0, width=3.0, prominence=1)
             troughs,_ = signal.find_peaks(-norm_csub, height=2.0, width=3.0, prominence=1)
-            peak_wave = self.target.wave[peaks]
-            trough_wave = self.target.wave[troughs]
+            peak_wave = self.fit_wave[peaks]
+            trough_wave = self.fit_wave[troughs]
         except:
             self.target.log.warn('Warning! Peak finding algorithm used for initial guesses of amplitude and velocity failed! Defaulting to user-defined locations...')
             peak_wave = np.array([line_dict['center'] for line_dict in self.line_list.values() if line_dict['line_type'] in ['na','br']])
@@ -543,7 +543,7 @@ class BadassRunContext:
             if (line_type in line_types) and type_options['amp_plim']:
                 min_amp, max_amp = np.abs(np.min(type_options['amp_plim'])), np.abs(np.max(type_options['amp_plim']))
             else:
-                min_amp, max_amp = 0.0, 2*np.nanmax(self.target.spec)
+                min_amp, max_amp = 0.0, 2*np.nanmax(self.fit_spec)
 
             mf = line_types[line_type][2] # multiplicative factor (1 or -1) to handle troughs
             feature_wave = line_types[line_type][1]
@@ -557,7 +557,7 @@ class BadassRunContext:
             if (feature_vel >= voff_plim[0]) and (feature_vel <= voff_plim[1]):
                 center = feature_center
 
-            init_amp = self.target.spec[ba_utils.find_nearest(self.target.wave,center)[1]]
+            init_amp = self.fit_spec[ba_utils.find_nearest(self.fit_wave,center)[1]]
             if (init_amp >= min_amp) and (init_amp <= max_amp):
                 return mf*init_amp/amp_factor, (min(mf*min_amp,mf*max_amp), max(mf*min_amp,mf*max_amp))
             return mf*max_amp-mf*(max_amp-min_amp)/2.0/amp_factor, (min(mf*min_amp,mf*max_amp), max(mf*min_amp,mf*max_amp))
@@ -1097,16 +1097,16 @@ class BadassRunContext:
             mcpars, mccomps, mcLL, lowest_rmse = self.max_likelihood(line_test=True)
 
             # Calculate degrees of freedom of fit; nu = n - m (n number of observations minus m degrees of freedom (free fitted parameters))
-            dof = len(self.target.wave)-len(self.param_dict)
+            dof = len(self.fit_wave)-len(self.param_dict)
             if dof <= 0:
                 self.target.log.warn('WARNING: Degrees-of-Freedom in fit is <= 0.  One should increase the test range and/or decrease the number of free parameters of the model appropriately')
                 dof = 1
 
             if self.options.fit_options.reweighting:
                 rchi2 = badass_test_suite.r_chi_squared(mccomps['DATA'][0], mccomps['MODEL'][0], mccomps['NOISE'][0], len(self.param_dict))
-                aon = badass_test_suite.calculate_aon(test_lines, full_line_list, mccomps, self.target.noise*np.sqrt(rchi2))
+                aon = badass_test_suite.calculate_aon(test_lines, full_line_list, mccomps, self.fit_noise[self.target.fit_mask]*np.sqrt(rchi2))
             else:
-                aon = badass_test_suite.calculate_aon(test_lines, full_line_list, mccomps, self.target.noise)
+                aon = badass_test_suite.calculate_aon(test_lines, full_line_list, mccomps, self.fit_noise[self.target.fit_mask])
 
             fit_results = {'mcpars':copy.deepcopy(mcpars),'mccomps':copy.deepcopy(mccomps),'mcLL':copy.deepcopy(mcLL),'line_list':full_line_list,'dof':dof,'npar':len(self.param_dict),'rmse':lowest_rmse, 'aon':aon}
             test_fit_results[test_label] = fit_results
@@ -1115,28 +1115,7 @@ class BadassRunContext:
                 prev_label, prev_results = test_label, fit_results
                 continue
 
-            # get metrics
-            resid_A = prev_results['mccomps']['RESID'][0,:]
-            resid_B = fit_results['mccomps']['RESID'][0,:]
-
-            # TODO: test suite util to get all metrics
-            metrics = {}
-
-            ddof = np.abs(prev_results['dof']-fit_results['dof'])
-            _,_,_,conf,_,_,_,_,_,_ = badass_test_suite.bayesian_AB_test(resid_B, resid_A, self.target.wave, self.target.noise, self.target.spec, np.arange(len(resid_A)), ddof, self.target.options.io_options.output_dir, plot=False)
-            metrics['BADASS'] = conf
-
-            ssr_ratio, ssr_A, ssr_B = badass_test_suite.ssr_test(resid_B, resid_A, self.target.options.io_options.output_dir)
-            metrics['SSR_RATIO'] = ssr_ratio
-
-            k_A, k_B = prev_results['npar'], fit_results['npar']
-            f_stat, f_pval, f_conf = badass_test_suite.anova_test(resid_B, resid_A, k_A, k_B, self.target.options.io_options.output_dir)
-            metrics['ANOVA'] = f_conf
-
-            metrics['F_RATIO'] = badass_test_suite.f_ratio(resid_B, resid_A)
-
-            chi2_B, chi2_A, chi2_ratio = badass_test_suite.chi2_metric(np.arange(len(resid_A)), fit_results['mccomps'], prev_results['mccomps'])
-            metrics['CHI2_RATIO'] = chi2_ratio
+            metrics = badass_test_suite.collect_test_metrics(self, prev_results, fit_results, test_lines[0])
 
             if self.target.options.test_options.plot_tests:
                 plotting.create_test_plot(self.target, test_fit_results, prev_label, test_label, test_title=test_title)
@@ -1161,8 +1140,7 @@ class BadassRunContext:
         ptbl.field_names = ['TEST A', 'TEST B'] + list(test_metrics[0][2].keys()) + ['AON', 'PASS']
         for label_A, label_B, metrics in test_metrics:
             ptbl.add_row([label_A, label_B] + ['%f'%v for v in metrics.values()] + ['%f'%test_fit_results[label_B]['aon'], test_fit_results[label_B]['pass']])
-        self.target.log.info('Test Results:')
-        self.target.log.info(ptbl)
+        self.target.log.info('Test Results:\n'+str(ptbl))
 
         return test_fit_results, test_metrics
 
@@ -1176,6 +1154,14 @@ class BadassRunContext:
         self.target.log.debug('Performing max likelihood fitting')
         if len(self.param_dict) == 0:
             self.target.log.warn('No parameters to fit!')
+
+            # TODO: handle differently
+            if line_test:
+                log_like = -(self.lnprob()[0]) # runs the model with any const lines/templates
+                comps = {k:np.array([v,]) for k,v in self.comp_dict.items()}
+                lowest_rmse = badass_test_suite.root_mean_squared_error(self.fit_spec, np.zeros(len(self.fit_spec)))
+                return {}, comps, np.array([log_like,]), lowest_rmse
+
             return
 
         self.prior_params = [key for key,val in self.param_dict.items() if ('prior' in val)]
@@ -1327,7 +1313,7 @@ class BadassRunContext:
             7000.0: ['HOST_FRAC_7000', 'AGN_FRAC_7000'],
         }
         for wave, attrs in cont_lum_attrs.items():
-            if (self.fit_wave[0] < wave) and (self.fit_wave[-1] > wave):
+            if (self.fit_wave[self.target.fit_mask][0] < wave) and (self.fit_wave[self.target.fit_mask][-1] > wave):
                 for key in attrs:
                     self.mc_attr_store[key] = np.zeros(iters)
 
@@ -1512,8 +1498,8 @@ class BadassRunContext:
 
         result_dict = dict(sorted(result_dict.items()))
 
-        sigma_noise = np.nanmedian(comp_dict['NOISE'])
-        sigma_resid = np.nanstd(comp_dict['DATA']-comp_dict['MODEL'])
+        sigma_noise = np.nanmedian(comp_dict['NOISE'][self.target.fit_mask])
+        sigma_resid = np.nanstd(comp_dict['DATA'][self.target.fit_mask]-comp_dict['MODEL'][self.target.fit_mask])
         self.target.log.log_max_like_fit(result_dict, sigma_noise, sigma_resid)
 
         # Write best-fit parameters
@@ -1539,9 +1525,9 @@ class BadassRunContext:
         for key, val in comp_dict.items():
             cols.append(fits.Column(name=key, format='E', array=val))
 
-        # mask = np.zeros(len(comp_dict['WAVE']), dtype=bool)
-        # mask[self.target.fit_mask] = True
-        # cols.append(fits.Column(name='MASK', format='E', array=mask))
+        mask = np.zeros(len(comp_dict['WAVE']), dtype=bool)
+        mask[self.target.fit_mask] = True
+        cols.append(fits.Column(name='MASK', format='E', array=mask))
 
         cols = fits.ColDefs(cols)
         hdu = fits.BinTableHDU.from_columns(cols)
@@ -1583,11 +1569,12 @@ class BadassRunContext:
         # Log-likelihood function
 
         self.fit_model()
+        fit_mask = self.target.fit_mask
         fit_stat = self.options.fit_options.fit_stat
 
-        data = self.fit_spec
-        model = self.model
-        noise = self.fit_noise
+        data = self.fit_spec[fit_mask]
+        model = self.model[fit_mask]
+        noise = self.fit_noise[fit_mask]
 
         if fit_stat == 'ML':
             return -0.5*np.sum(((data-model)**2/noise**2) + np.log(2*np.pi*noise**2), axis=0)
@@ -1959,14 +1946,14 @@ class BadassRunContext:
         }
 
         for wave in [1350, 3000, 5100]:
-            if (wave < self.fit_wave[0]) or (wave > self.fit_wave[-1]):
+            if (wave < self.fit_wave[self.target.fit_mask][0]) or (wave > self.fit_wave[self.target.fit_mask][-1]):
                 continue
 
             for cont_key, cont_val in cont_types.items():
                 blob_dict['F_CONT_%s_%d'%(cont_key,wave)] = cont_val[self.blob_pars['INDEX_%d'%wave]]
 
         for wave in [4000, 7000]:
-            if (wave < self.fit_wave[0]) or (wave > self.fit_wave[-1]):
+            if (wave < self.fit_wave[self.target.fit_mask][0]) or (wave > self.fit_wave[self.target.fit_mask][-1]):
                 continue
 
             for cont_key in ['AGN', 'HOST']:

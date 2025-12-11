@@ -93,13 +93,20 @@ class StellarTemplate(BadassTemplate):
         sigma = disp_dif/h2['CDELT1'] # Sigma difference in pixels
 
         sspNew = log_rebin(lamRange_temp, ssp, velscale=ctx.target.velscale)[0]
+        if sspNew.shape[0] < self.ctx.fit_wave.shape[0]:
+            oversample = int(np.ceil(self.ctx.fit_wave.shape[0]/ssp.shape[0])) # make sure template size >= fit_wave size
+            sspNew = log_rebin(lamRange_temp, ssp, oversample=oversample)[0]
+
         templates = np.empty((sspNew.size, len(temp_list)))
         for j, fname in enumerate(temp_list):
             hdu = fits.open(fname)
             ssp = hdu[0].data
             ssp = ssp[mask_temp]
             ssp = gaussian_filter1d(ssp, sigma)  # perform convolution with variable sigma
-            sspNew,loglam_temp,velscale_temp = log_rebin(lamRange_temp, ssp, velscale=ctx.target.velscale)
+            sspNew = log_rebin(lamRange_temp, ssp, velscale=ctx.target.velscale)[0]
+            if sspNew.shape[0] < self.ctx.fit_wave.shape[0]:
+                oversample = int(np.ceil(self.ctx.fit_wave.shape[0]/ssp.shape[0])) # make sure template size >= fit_wave size
+                sspNew = log_rebin(lamRange_temp, ssp, oversample=oversample)[0]
             templates[:, j] = sspNew/np.median(sspNew) # Normalizes templates
             hdu.close()
 
@@ -163,7 +170,7 @@ class StellarTemplate(BadassTemplate):
         host_model[~np.isfinite(host_model)] = 0
         self.conv_temp[~np.isfinite(self.conv_temp)] = 0
         # scipy.optimize Non-negative Least Squares
-        weights  = nnls(self.conv_temp, host_model)
+        weights = nnls(self.conv_temp, host_model)
         host_galaxy = (np.sum(weights*self.conv_temp, axis=1))
 
         if np.any(host_galaxy < 0):

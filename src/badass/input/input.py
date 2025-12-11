@@ -1,4 +1,5 @@
 from importlib import import_module
+import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pathlib
@@ -12,6 +13,7 @@ from badass.utils.pca import pca_reconstruction
 from badass.utils.utils import ccm_unred, emline_masker, get_ebv, metal_masker
 
 # TODO: use a dataclass to explicitly define expected attrs and make sure all input classes have consistent attrs
+# TODO: set up pre-input creation logger
 
 class BadassInput():
 
@@ -27,6 +29,13 @@ class BadassInput():
             self.err_log = 'Can\'t fit spec without \'wave\' or \'spec\' values'
             print(self.err_log)
             return
+
+        if (not hasattr(self, 'ra')) or (not hasattr(self, 'dec')):
+            print('WARNING: ra and/or dec not set, the galactic average E(B-V) will used')
+            self.ra, self.dec = None, None
+
+        if not hasattr(self, 'flux_norm'):
+            self.flux_norm = 1.0
 
         if not hasattr(self, 'options'):
             self.options = options
@@ -100,36 +109,26 @@ class BadassInput():
         if self.options.fit_options.mask_metal:
             fit_mask_bad.extend(metal_masker(self.wave,self.spec,self.noise))
 
-        fit_mask_bad = np.sort(np.unique(fit_mask_bad))
-        self.fit_mask = np.setdiff1d(np.arange(0,len(self.wave),1,dtype=int),fit_mask_bad)
-
         ebv = get_ebv(self.ra, self.dec)
         self.spec = ccm_unred(self.wave, self.spec, ebv)
 
         self.fit_norm = np.round(np.nanmax(self.spec), 5)
         self.spec = self.spec / self.fit_norm
         self.noise = self.noise / self.fit_norm
+        self.noise[self.noise == 0] = np.nanmedian(self.noise)
 
-        # TODO: should do in BadassContext fit_wave,fit_spec,fit_noise?
-        self.wave = self.wave[self.fit_mask]
-        self.spec = self.spec[self.fit_mask]
-        self.noise = self.noise[self.fit_mask]
-        self.disp_res = self.disp_res[self.fit_mask]
-
-        pca_reconstruction(self) # TODO: test
+        if self.options.pca_options.do_pca:
+            pca_reconstruction(self) # TODO: test
 
         if np.isnan(self.spec).all():
             self.valid = False
             self.err_log = '\'spec\' array is all nans, not running fit'
             return
 
-        self.wave = self.wave[~np.isnan(self.spec)]
-        self.noise = self.noise[~np.isnan(self.spec)]
-        self.spec = self.spec[~np.isnan(self.spec)]
-
-        self.wave = self.wave[~np.isnan(self.noise)]
-        self.spec = self.spec[~np.isnan(self.noise)]
-        self.noise = self.noise[~np.isnan(self.noise)]
+        fit_mask_bad.extend(np.where(np.isnan(self.spec))[0])
+        fit_mask_bad.extend(np.where(np.isnan(self.noise))[0])
+        fit_mask_bad = np.sort(np.unique(fit_mask_bad))
+        self.fit_mask = np.setdiff1d(np.arange(0,len(self.wave),1,dtype=int),fit_mask_bad)
 
 
     def set_fit_region(self):
@@ -196,8 +195,15 @@ class BadassInput():
 
 
     @classmethod
-    def from_dict(cls, input_data, options={}):
-        return CustomReader(input_data, options)
+    def from_dict(cls, input_data, options=prodict.Prodict({})):
+        if (len(options) == 0) and (not input_data.get('options', None) is None):
+            options = prodict.Prodict(input_data['options'])
+
+        if options.get('io_options', None) is None:
+            options.io_options = {}
+        if options.io_options.get('infmt', None) is None:
+            options.io_options.infmt = 'default'
+        return cls.from_format(input_data, options)
 
 
     @classmethod
@@ -278,7 +284,8 @@ class BadassInput():
             return inputs
 
         if isinstance(input_data, dict):
-            return [cls.from_dict(input_data, options)]
+            ret = cls.from_dict(input_data, options)
+            return ret if isinstance(ret, list) else [ret]
 
         if isinstance(input_data, pathlib.Path):
             ret = cls.from_path(input_data, options)

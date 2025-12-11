@@ -8,6 +8,8 @@ c = 299792.458 # speed of light (km/s)
 k = 1.38064852e-23 # Boltzmann constant (m2 kg s-2 K-1)
 h = 6.62607015e-34 # Planck's constant (m2 kg / s)
 
+GALACTIC_EBV = 0.04
+
 # TODO: should be a fit_option?
 MIN_FIT_REGION = 25 # (Angstroms), the minimum fitting region size
 

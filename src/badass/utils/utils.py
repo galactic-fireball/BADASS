@@ -66,19 +66,22 @@ def nan_helper(y):
 
 
 def get_ebv(ra, dec):
+    if (ra is None) or (dec is None):
+        return GALACTIC_EBV
+
     co = coordinates.SkyCoord(ra=ra, dec=dec, unit=(u.deg, u.deg), frame='fk5')
     try:
         table = IrsaDust.get_query_table(co, section='ebv')
         ebv = table['ext SandF mean'][0]
     except:
-        return 0.04  # average Galactic E(B-V)
+        return GALACTIC_EBV
 
     # If E(B-V) is large, it can significantly affect normalization of the
     # spectrum, in addition to changing its shape.  Re-normalizing the spectrum
     # throws off the maximum likelihood fitting, so instead of re-normalizing,
     # we set an upper limit on the allowed ebv value for Galactic de-reddening.
-    if (ebv >= 1.0):
-        return 0.04  # average Galactic E(B-V)
+    if ebv >= 1.0:
+        return GALACTIC_EBV
     return ebv
 
 

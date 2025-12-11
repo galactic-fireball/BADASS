@@ -62,10 +62,10 @@ class BadassOptions(prodict.Prodict):
             return [cls.get_options(o) for o in options_data]
 
         if isinstance(options_data, dict):
-            return [cls.from_dict(options_data)]
+            return cls.from_dict(options_data)
 
         if isinstance(options_data, pathlib.Path) or isinstance(options_data, str):
-            return [cls.from_file(options_data)]
+            return cls.from_file(options_data)
 
         return []
 
