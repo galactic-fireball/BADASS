@@ -1006,9 +1006,9 @@ class BadassRunContext:
         for test_fit, test_metrics in zip(all_test_fits,all_test_metrics):
             # look in reverse to find test with most ncomps that passed
             for label_A, label_B, metrics in test_metrics[::-1]:
-                if test_fit_results[label_B]['pass']:
-                    force_thresh = np.min([force_thresh, test_fit_results[label_B]['rmse']])
-                    new_line_list.update(test_fit_results[label_B]['line_list'])
+                if label_B in test_fit and test_fit[label_B]['pass']:
+                    force_thresh = min(force_thresh, test_fit[label_B]['rmse'])
+                    new_line_list.update(test_fit[label_B]['line_list'])
                     break
 
         self.line_list = new_line_list
