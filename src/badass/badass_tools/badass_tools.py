@@ -154,7 +154,6 @@ def continuum_subtract(wave,flux,noise,sigma_clip=3.0,clip_iter=25,filter_size=[
         threshold = max(threshold, 0.01 * np.nanmedian(noise))
         new_mask[np.where((resid <= -threshold) | (resid >= threshold))[0]] = np.nan
         mask *= new_mask   # accumulate
-        print(np.sum(np.isnan(mask)))
         
         # Check to see if any new 
         if np.sum(np.isnan(mask))==clip_sum:
