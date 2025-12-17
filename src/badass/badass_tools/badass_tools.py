@@ -144,13 +144,20 @@ def continuum_subtract(wave,flux,noise,sigma_clip=3.0,clip_iter=25,filter_size=[
             noise_scale =1
     
         # mask to be iteratively updated
-        mask = np.ones(len(flux))
+        #mask = np.ones(len(flux))
     #     print(noise_scale,np.nanmedian(noise),np.nanmedian(noise)*noise_scale)
-        mask[np.where((resid <= -sigma_clip*np.nanmedian(noise)*noise_scale) | (resid >= sigma_clip*np.nanmedian(noise)*noise_scale))[0]] = np.nan
+        #mask[np.where((resid <= -sigma_clip*np.nanmedian(noise)*noise_scale) | (resid >= sigma_clip*np.nanmedian(noise)*noise_scale))[0]] = np.nan
     #     mask[np.where((resid <= -sigma_clip*noise) | (resid >= sigma_clip*noise))[0]] = np.nan
+
+        new_mask = np.ones(len(flux))
+        threshold = sigma_clip * np.nanmedian(noise) * noise_scale
+        threshold = max(threshold, 0.01 * np.nanmedian(noise))
+        new_mask[np.where((resid <= -threshold) | (resid >= threshold))[0]] = np.nan
+        mask *= new_mask   # accumulate
+        print(np.sum(np.isnan(mask)))
         
         # Check to see if any new 
-        if len(np.where(mask/mask!=1)[0])==clip_sum:
+        if np.sum(np.isnan(mask))==clip_sum:
             if verbose:
                 print("\t sigma clipping successfully stopped at %d iterations" % (i))
             if plot:
@@ -161,7 +168,7 @@ def continuum_subtract(wave,flux,noise,sigma_clip=3.0,clip_iter=25,filter_size=[
                 plot_cont_sub()
     
         # Update clip_sum
-        clip_sum = len(np.where(mask/mask!=1)[0])
+        clip_sum = np.sum(np.isnan(mask))
         if verbose:
             print(" sigma clip iteration %d out of %d (%s clipped pixels)" % (i+1, clip_iter, clip_sum))
         #
