@@ -110,6 +110,9 @@ def continuum_subtract(wave,flux,noise,sigma_clip=3.0,clip_iter=25,filter_size=[
             smoothed = generic_filter(masked_flux,function=np.nanmedian,size=filter_size,mode="mirror")
             # Interpolate over nans
             nans, x= nan_helper(smoothed)
+            if x(~nans).size==0 or smoothed[~nans].size==0:
+                print("WARNING: continuum subtraction failed — spectrum all NaNs")
+                return None
             smoothed[nans]= np.interp(x(nans), x(~nans), smoothed[~nans])
         if isinstance(filter_size,(list,tuple)):
             # Storage array for all 
@@ -119,6 +122,9 @@ def continuum_subtract(wave,flux,noise,sigma_clip=3.0,clip_iter=25,filter_size=[
                 smoothedf = generic_filter(masked_flux,function=np.nanmedian,size=f,mode="mirror")
                 # Interpolate over nans
                 nans, x= nan_helper(smoothedf)
+                if x(~nans).size==0 or smoothedf[~nans].size==0:
+                    print("WARNING: continuum subtraction failed — spectrum all NaNs")
+                    return None
                 smoothedf[nans]= np.interp(x(nans), x(~nans), smoothedf[~nans])
                 smoothed_arr[j,:] = smoothedf
     #         smoothed = np.nanmin(smoothed_arr,axis=0)
