@@ -10,7 +10,8 @@ import shutil
 import badass.utils.constants as constants
 from badass.utils.logger import BadassLogger
 from badass.utils.pca import pca_reconstruction
-from badass.utils.utils import ccm_unred, emline_masker, get_ebv, metal_masker
+from badass.utils.utils import ccm_unred, get_ebv
+from badass.badass_tools.badass_tools import emline_masker, metal_masker
 
 # TODO: use a dataclass to explicitly define expected attrs and make sure all input classes have consistent attrs
 # TODO: set up pre-input creation logger

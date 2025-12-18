@@ -172,3 +172,62 @@ def continuum_subtract(wave,flux,noise,sigma_clip=3.0,clip_iter=25,filter_size=[
             print(" sigma clip iteration %d out of %d (%s clipped pixels)" % (i+1, clip_iter, clip_sum))
         #
     return resid
+
+def emline_masker(wave,spec,noise):
+    """
+    Runs a multiple moving window median  
+    to determine location of emission lines
+    to generate an emission line mask for 
+    continuum fitting.
+    """
+    # First we remove the continuum 
+    galaxy_csub = continuum_subtract(wave,spec,noise,sigma_clip=2.0,clip_iter=25,filter_size=[25,50,100,150,200,250,500],
+                   noise_scale=1.0,opt_rchi2=True,plot=False,
+                   fig_scale=8,fontsize=16,verbose=False)
+    #
+    signif = 3.0
+    pad = 3 # pixels on each side 
+    mask_bad = np.unique(np.where(((galaxy_csub)>(signif*(noise))) | ((galaxy_csub)<(-signif*(noise)))))
+    # Pad masked bad by pad pixels on each side
+    padded_mask_bad = np.array([])
+    for b in mask_bad:
+        # backwards pix
+        # forwards pix
+        pix = np.unique(np.abs(np.arange(b-pad,b+pad+1,1)))
+        padded_mask_bad = np.concatenate([padded_mask_bad,pix],axis=0)
+
+
+    mask_bad = np.array(np.unique(np.ravel(padded_mask_bad)),dtype=int)
+    #
+    edge_ignore = 25 # ignore this many pixels on the edges of the spectrum
+    mask_bad  = [m for m in mask_bad if m not in np.concatenate([np.arange(0,edge_ignore),np.arange(len(wave)-edge_ignore,len(wave))])]
+    #
+    return mask_bad
+
+def metal_masker(wave,spec,noise):
+    """
+    Performs masking on metal absorption features.
+    """
+    # First we remove the continuum 
+    galaxy_csub = continuum_subtract(wave,spec,noise,sigma_clip=2.0,clip_iter=25,filter_size=[3,5,8],#[25,50,100,150,200,250,500],
+                   noise_scale=1.0,opt_rchi2=True,plot=False,
+                   fig_scale=8,fontsize=16,verbose=False)
+    #
+    signif = 3.0
+    pad = 3 # pixels on each side 
+    mask_bad = np.unique(np.where(((galaxy_csub)>(signif*np.nanmean(noise))) | ((galaxy_csub)<(-signif*np.nanmean(noise)))))
+    # Pad masked bad by pad pixels on each side
+    padded_mask_bad = np.array([])
+    for b in mask_bad:
+        # backwards pix
+        # forwards pix
+        pix = np.unique(np.abs(np.arange(b-pad,b+pad+1,1)))
+        padded_mask_bad = np.concatenate([padded_mask_bad,pix],axis=0)
+
+
+    mask_bad = np.array(np.unique(np.ravel(padded_mask_bad)),dtype=int)
+    #
+    edge_ignore = 25 # ignore this many pixels on the edges of the spectrum
+    mask_bad  = [m for m in mask_bad if m not in np.concatenate([np.arange(0,edge_ignore),np.arange(len(wave)-edge_ignore,len(wave))])]
+    #
+    return mask_bad
