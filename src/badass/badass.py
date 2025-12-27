@@ -40,7 +40,6 @@ warnings.filterwarnings('ignore', category=UserWarning)
 
 # TODO: reorganize
 from badass.badass_utils import badass_test_suite
-from badass.badass_tools import badass_tools
 
 from badass.utils.options import BadassOptions
 from badass.input.input import BadassInput
@@ -505,7 +504,7 @@ class BadassRunContext:
         }
 
         # First we remove the continuum
-        galaxy_csub = badass_tools.continuum_subtract(self.fit_wave,self.fit_spec,self.fit_noise,sigma_clip=2.0,clip_iter=25,filter_size=[25,50,100,150,200,250,500],
+        galaxy_csub = ba_utils.continuum_subtract(self.fit_wave,self.fit_spec,self.fit_noise,sigma_clip=2.0,clip_iter=25,filter_size=[25,50,100,150,200,250,500],
                        noise_scale=1.0,opt_rchi2=True,plot=False,
                        fig_scale=8,fontsize=16,verbose=False)
 
