@@ -362,7 +362,8 @@ class BadassRunContext:
                 if 'line_profile' not in line_dict:
                     line_dict['line_profile'] = 'gaussian' # TODO: default in config
             else:
-                line_dict['line_profile'] = type_options['line_profile']
+                if (not 'line_profile' in line_dict) or (line_dict['line_profile'] is None):
+                    line_dict['line_profile'] = type_options['line_profile']
 
             line_profile = line_dict['line_profile']
             if line_profile not in line_profiles:
