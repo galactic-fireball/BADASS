@@ -50,6 +50,7 @@ from badass.components.templates.common import initialize_templates
 import badass.utils.plotting as plotting
 from badass.components.spectral_lines.line_lists.optical_qso import optical_qso_default
 from badass.components.spectral_lines.line_profiles import line_constructor
+from badass.badass_tools.badass_tools import emline_masker, metal_masker
 
 
 __author__ = 'Remington O. Sexton (USNO), Sara M. Doan (GMU), Michael A. Reefe (GMU), William Matzko (GMU), Nicholas Darden (UCR)'
@@ -1159,7 +1160,7 @@ class BadassRunContext:
         ptbl.field_names = ['TEST A', 'TEST B'] + list(test_metrics[0][2].keys()) + ['AON', 'PASS']
         for label_A, label_B, metrics in test_metrics:
             ptbl.add_row([label_A, label_B] + ['%f'%v for v in metrics.values()] + ['%f'%test_fit_results[label_B]['aon'], test_fit_results[label_B]['pass']])
-        self.target.log.info('Test Results:\n'+str(ptbl))
+        self.target.log.info(f'Test Results for {test_lines}:\n'+str(ptbl))
 
         return test_fit_results, test_metrics
 
