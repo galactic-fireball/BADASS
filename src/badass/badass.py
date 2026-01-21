@@ -49,7 +49,6 @@ from badass.components.templates.common import initialize_templates
 import badass.utils.plotting as plotting
 from badass.components.spectral_lines.line_lists.optical_qso import optical_qso_default
 from badass.components.spectral_lines.line_profiles import line_constructor
-from badass.badass_tools.badass_tools import emline_masker, metal_masker
 
 
 __author__ = 'Remington O. Sexton (USNO), Sara M. Doan (GMU), Michael A. Reefe (GMU), William Matzko (GMU), Nicholas Darden (UCR)'
@@ -161,8 +160,7 @@ class BadassRunContext:
         #       - specify inputs and output of each (maybe separate classes?)
         plotting.create_input_plot(self)
 
-        init_fit = self.initialize_fit()
-        if init_fit is None:
+        if self.initialize_fit() is None:
             return
 
         # Line testing is performed first for a better line list determination and number of components
@@ -185,8 +183,13 @@ class BadassRunContext:
         if (self.options.plot_options.plot_HTML) and (not importlib.util.find_spec('plotly')):
             self.options.plot_options.plot_HTML = False
 
-        spx, spy = self.target.options['fit_options']['fit_area']['spaxels']
-        self.target.log.info(f'> Starting fit for spaxel {spx}_{spy}')
+        # TODO: make this more adaptable to input type
+        if 'spaxels' in self.target.options['fit_options']['fit_area']:
+            spx, spy = self.target.options['fit_options']['fit_area']['spaxels']
+            self.target.log.info(f'> Starting fit for spaxel {spx}_{spy}')
+        else:
+            self.target.log.info('> Starting fit for %s' % self.target.name)
+
         self.target.log.log_target_info()
 
         sys.stdout.flush()
@@ -209,8 +212,12 @@ class BadassRunContext:
         # TODO: don't need to do this before line/config testing
         init_pars = self.initialize_pars()
         if init_pars is None:
-            spx, spy = self.target.options['fit_options']['fit_area']['spaxels']
-            self.target.log.error(f'Parameter initialization failed for {spx}_{spy}')
+            # TODO: make this more adaptable to input type
+            if 'spaxels' in self.target.options['fit_options']['fit_area']:
+                spx, spy = self.target.options['fit_options']['fit_area']['spaxels']
+                self.target.log.error(f'Parameter initialization failed for {spx}_{spy}')
+            else:
+                self.target.log.error('Parameter initialization failed for %s' % self.target.name)
             return None
 
         # Output all free parameters of fit prior to fitting (useful for diagnostics)
@@ -520,16 +527,15 @@ class BadassRunContext:
             'out': ('outflow', 100.0, (0.0,800.0), 0.0, (-0.5,0.5), 0.0, (0.0,1.0),),
         }
 
-        # First we remove the continuum
-        galaxy_csub = ba_utils.continuum_subtract(self.fit_wave,self.fit_spec,self.fit_noise,sigma_clip=2.0,clip_iter=25,filter_size=[25,50,100,150,200,250,500],
-                       noise_scale=1.0,opt_rchi2=True,plot=False,
-                       fig_scale=8,fontsize=16,verbose=False)
-        if galaxy_csub is None:
-            spx, spy = self.target.options['fit_options']['fit_area']['spaxels']
-            self.log.error(f"Continuum subtraction failed for {spx}_{spy}")
-            return None
-
         try:
+
+            # First we remove the continuum
+            galaxy_csub = ba_utils.continuum_subtract(self.fit_wave,self.fit_spec,self.fit_noise,sigma_clip=2.0,clip_iter=25,filter_size=[25,50,100,150,200,250,500],
+                           noise_scale=1.0,opt_rchi2=True,plot=False,
+                           fig_scale=8,fontsize=16,verbose=False)
+            if galaxy_csub is None:
+                raise Exception('Continuum subtraction failed') # jump to except
+
             # normalize by noise
             norm_csub = galaxy_csub/self.fit_noise
 

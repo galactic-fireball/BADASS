@@ -156,10 +156,8 @@ def calculate_AIC(mccomps_A, mccomps_B, k_A, k_B):
 
 def calculate_rsquared_ratio(mccomps_A, mccomps_B, eval_ind):
 
-    data_A  = mccomps_A['DATA'][0][eval_ind].copy()
-    model_A = mccomps_A['MODEL'][0][eval_ind].copy()
-    data_B  = mccomps_B['DATA'][0][eval_ind].copy()
-    model_B = mccomps_B['MODEL'][0][eval_ind].copy()
+    data_A = mccomps_A['DATA'][0][eval_ind].copy(), model_A = mccomps_A['MODEL'][0][eval_ind].copy()
+    data_B = mccomps_B['DATA'][0][eval_ind].copy(), model_B = mccomps_B['MODEL'][0][eval_ind].copy()
 
     # Since R-squared takes into account lines+continuum, we only want 
     # to be sensitive to flux that comes from lines, so we subtract
@@ -169,17 +167,18 @@ def calculate_rsquared_ratio(mccomps_A, mccomps_B, eval_ind):
         'HOST_GALAXY','POWER','APOLY','PPOLY','MPOLY',
         'NA_OPT_FEII_TEMPLATE','BR_OPT_FEII_TEMPLATE','F_OPT_FEII_TEMPLATE',
         'S_OPT_FEII_TEMPLATE','G_OPT_FEII_TEMPLATE','Z_OPT_FEII_TEMPLATE',
-        'UV_IRON_TEMPLATE','BALMER_CONT']
+        'UV_IRON_TEMPLATE','BALMER_CONT',
+    ]
 
     for comp in cont_comps:
         if comp in mccomps_A:
             comp_A = mccomps_A[comp][0][eval_ind]
-            data_A  = data_A  - comp_A
-            model_A = model_A - comp_A
+            data_A -= comp_A
+            model_A -= comp_A
         if comp in mccomps_B:
             comp_B = mccomps_B[comp][0][eval_ind]
-            data_B  = data_B  - comp_B
-            model_B = model_B - comp_B
+            data_B -= comp_B
+            model_B -= comp_B
 
     # R-squared calculations
     rsquared_A = 1 - np.sum((data_A - model_A)**2) / np.sum(data_A**2)
@@ -363,17 +362,15 @@ def collect_test_metrics(ctx, fit_results_A, fit_results_B, line_name):
     chi2_B, chi2_A, chi2_ratio = chi2_metric(eval_ind, mccomps_A, mccomps_B)
     metrics['CHI2_RATIO'] = chi2_ratio
 
-    # R-squared ratio (FIXED: define eval_ind)
-    rsquared_A, rsquared_B, rsquared_ratio = calculate_rsquared_ratio(
-        mccomps_A, mccomps_B, eval_ind
-    )
+    # R-squared ratio
+    rsquared_A, rsquared_B, rsquared_ratio = calculate_rsquared_ratio(mccomps_A, mccomps_B, eval_ind)
     metrics['RCHI2_RATIO'] = rsquared_ratio
 
     return metrics
 
 
 
- 
+
 def thresholds_met(test_options, cur_metrics, fit_results):
     pass_list = [cur_metrics[metric] >= thresh for metric, thresh in test_options.metrics.items() if metric in cur_metrics]
     if 'AON' in test_options.metrics: pass_list.append(fit_results['aon'] >= test_options.metrics['AON']) # special case
