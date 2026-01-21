@@ -49,6 +49,7 @@ from badass.components.templates.common import initialize_templates
 import badass.utils.plotting as plotting
 from badass.components.spectral_lines.line_lists.optical_qso import optical_qso_default
 from badass.components.spectral_lines.line_profiles import line_constructor
+from badass.badass_tools.badass_tools import emline_masker, metal_masker
 
 
 __author__ = 'Remington O. Sexton (USNO), Sara M. Doan (GMU), Michael A. Reefe (GMU), William Matzko (GMU), Nicholas Darden (UCR)'
@@ -159,7 +160,10 @@ class BadassRunContext:
         # TODO: allow ability to run_emcee without ML first
         #       - specify inputs and output of each (maybe separate classes?)
         plotting.create_input_plot(self)
-        self.initialize_fit()
+
+        init_fit = self.initialize_fit()
+        if init_fit is None:
+            return
 
         # Line testing is performed first for a better line list determination and number of components
         if not self.run_tests():
@@ -181,7 +185,8 @@ class BadassRunContext:
         if (self.options.plot_options.plot_HTML) and (not importlib.util.find_spec('plotly')):
             self.options.plot_options.plot_HTML = False
 
-        self.target.log.info('> Starting fit for %s' % self.target.name)
+        spx, spy = self.target.options['fit_options']['fit_area']['spaxels']
+        self.target.log.info(f'> Starting fit for spaxel {spx}_{spy}')
         self.target.log.log_target_info()
 
         sys.stdout.flush()
@@ -202,7 +207,11 @@ class BadassRunContext:
         self.target.log.info('Initializing parameters...')
 
         # TODO: don't need to do this before line/config testing
-        self.initialize_pars()
+        init_pars = self.initialize_pars()
+        if init_pars is None:
+            spx, spy = self.target.options['fit_options']['fit_area']['spaxels']
+            self.target.log.error(f'Parameter initialization failed for {spx}_{spy}')
+            return None
 
         # Output all free parameters of fit prior to fitting (useful for diagnostics)
         self.target.log.output_free_pars(self.line_list, self.param_dict, self.soft_cons)
@@ -210,6 +219,7 @@ class BadassRunContext:
 
         self.set_blob_pars()
         self.target.log.output_options()
+        return init_pars
 
 
     def initialize_pars(self, user_lines=None):
@@ -266,6 +276,8 @@ class BadassRunContext:
 
         # Generate line free parameters based on input line_list
         line_par_input = self.initialize_line_pars()
+        if line_par_input is None:
+            return None
 
         param_keys = list(par_input.keys()) + list(line_par_input.keys())
         # Check hard line constraints
@@ -274,6 +286,8 @@ class BadassRunContext:
         # TODO: way to not have to run this twice?
         # Re-Generate line free parameters based on revised line_list
         line_par_input = self.initialize_line_pars()
+        if line_par_input is None:
+            return None
 
         # Append line_par_input to par_input
         self.param_dict = {**par_input, **line_par_input}
@@ -292,6 +306,8 @@ class BadassRunContext:
         # the scipy optimize SLSQP syntax:
         #   (parameter1 - parameter2) >= 0.0 OR (parameter1 >= parameter2)
         self.check_soft_cons()
+
+        return self.param_dict
 
 
     def add_line_comps(self):
@@ -508,6 +524,10 @@ class BadassRunContext:
         galaxy_csub = ba_utils.continuum_subtract(self.fit_wave,self.fit_spec,self.fit_noise,sigma_clip=2.0,clip_iter=25,filter_size=[25,50,100,150,200,250,500],
                        noise_scale=1.0,opt_rchi2=True,plot=False,
                        fig_scale=8,fontsize=16,verbose=False)
+        if galaxy_csub is None:
+            spx, spy = self.target.options['fit_options']['fit_area']['spaxels']
+            self.log.error(f"Continuum subtraction failed for {spx}_{spy}")
+            return None
 
         try:
             # normalize by noise
@@ -1006,9 +1026,9 @@ class BadassRunContext:
         for test_fit, test_metrics in zip(all_test_fits,all_test_metrics):
             # look in reverse to find test with most ncomps that passed
             for label_A, label_B, metrics in test_metrics[::-1]:
-                if test_fit_results[label_B]['pass']:
-                    force_thresh = np.min([force_thresh, test_fit_results[label_B]['rmse']])
-                    new_line_list.update(test_fit_results[label_B]['line_list'])
+                if label_B in test_fit and test_fit[label_B]['pass']:
+                    force_thresh = min(force_thresh, test_fit[label_B]['rmse'])
+                    new_line_list.update(test_fit[label_B]['line_list'])
                     break
 
         self.line_list = new_line_list
@@ -1140,7 +1160,7 @@ class BadassRunContext:
         ptbl.field_names = ['TEST A', 'TEST B'] + list(test_metrics[0][2].keys()) + ['AON', 'PASS']
         for label_A, label_B, metrics in test_metrics:
             ptbl.add_row([label_A, label_B] + ['%f'%v for v in metrics.values()] + ['%f'%test_fit_results[label_B]['aon'], test_fit_results[label_B]['pass']])
-        self.target.log.info('Test Results:\n'+str(ptbl))
+        self.target.log.info(f'Test Results for {test_lines}:\n'+str(ptbl))
 
         return test_fit_results, test_metrics
 
