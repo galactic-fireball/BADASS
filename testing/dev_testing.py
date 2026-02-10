@@ -1,3 +1,4 @@
+import numpy as np
 import pathlib
 import shutil
 import sys
@@ -16,7 +17,6 @@ else:
 NOTEBOOKS_DIR = BADASS_DIR.joinpath('example_notebooks')
 EX_SPEC_DIR = BADASS_DIR.joinpath('examples', 'example_spectra')
 
-sys.path.insert(0, str(BADASS_DIR))
 import badass
 
 
@@ -41,6 +41,39 @@ def test_single():
         badass.run_BADASS(test_file, options_file=options_file)
 
 
+def test_schema():
+    test_file = EX_SPEC_DIR.joinpath('0-test', 'spec-1087-52930-0084.fits')
+
+    options = {
+        'io': {
+            'infmt': 'sdss',
+            'output_dir': 'schema_test',
+            'overwrite': True,
+        },
+        'fit': {
+            'fit_reg': (4400,5500),
+        },
+        # 'comp': {
+        #     'fit_balmer': True,
+        #     'fit_host': True,
+        #     'fit_poly': True,
+        # },
+        'power': {
+            'type': 'broken',
+        },
+        'optfeii': {
+            'template': 'K10',
+        },
+        'host': {
+            'age': [1.0,5.0,10.0],
+            'amp': {'init':'0.1*median_flux','plim':(0,'0.5*median_flux'),},
+        },
+    }
+
+    badass.run_BADASS(test_file, options=options)
+
+
+
 def test_line():
     options_file = OPTIONS_DIR.joinpath('line_test.py')
     # test_file = EX_SPEC_DIR.joinpath('0-test', 'spec-1087-52930-0084.fits')
@@ -62,6 +95,34 @@ def test_config():
         shutil.rmtree(str(output_dir))
 
     badass.run_BADASS(test_file, options_file=options_file)
+
+
+def test_input_dict():
+    from astropy.io import fits
+    options_file = OPTIONS_DIR.joinpath('default_single.py')
+    test_file = EX_SPEC_DIR.joinpath('1-test', 'spec-7748-58396-0782.fits')
+
+    hdu = fits.open(test_file)
+
+    input_dict = {}
+
+    specobj = hdu[2].data
+    input_dict['z'] = specobj['z'][0]
+    input_dict['ra'] = hdu[0].header['RA']
+    input_dict['dec'] = hdu[0].header['DEC']
+
+    t = hdu[1].data
+    input_dict['spec'] = t['flux']
+    obs_wave = np.power(10, t['loglam'])
+    input_dict['wave'] = obs_wave
+    input_dict['noise'] = np.sqrt(1 / t['ivar'])
+    input_dict['flux_norm'] = 1e-17
+
+    dlam_gal = ((obs_wave[1]/obs_wave[0]) - 1)*obs_wave
+    input_dict['fwhm_res'] = 2.3548*(t['wdisp']*dlam_gal)
+    hdu.close()
+
+    badass.run_BADASS(input_dict, options_file=options_file)
 
 
 def test_muse_single():
@@ -104,7 +165,7 @@ def test_nirspec_aperture():
         shutil.rmtree(str(output_dir))
 
     badass.target_check(test_file, options_file=options_file)
-    # badass.run_BADASS(test_file, options_file=options_file)
+    badass.run_BADASS(test_file, options_file=options_file)
 
 
 def test_miri_single():
@@ -114,6 +175,14 @@ def test_miri_single():
     if output_dir.exists():
         shutil.rmtree(str(output_dir))
 
+    badass.run_BADASS(test_file, options_file=options_file)
+
+
+def test_kcwi_single():
+    options_file = OPTIONS_DIR.joinpath('kcwi_multi.py')
+    # test_file = EX_SPEC_DIR.joinpath('KCWI', 'PG1115.fits')
+    test_file = EX_SPEC_DIR.joinpath('KCWI', 'NGC_4418.fits')
+    # badass.target_check(test_file, options_file=options_file)
     badass.run_BADASS(test_file, options_file=options_file)
 
 
@@ -132,9 +201,11 @@ def create_line_json():
 
 
 def main():
-    test_single()
+    # test_single()
+    test_schema()
     # test_line()
     # test_config()
+    # test_input_dict()
 
     # test_muse_single()
     # test_muse_multi()
@@ -142,6 +213,7 @@ def main():
     # test_nirspec_single()
     # test_nirspec_aperture()
     # test_miri_single()
+    # test_kcwi_single()
 
     # test_random()
 

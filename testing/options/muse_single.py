@@ -7,14 +7,14 @@ io_options={
     "log_level" : "info",
     "err_level": "warning",
     "multiprocess": False,
-    "redshift": 0.002336,
-    "spaxel": (25,25),
 }
 
 ################################## Fit Options #################################
 # Fitting Parameters
 fit_options={
 "fit_reg"    : (4800,5200),# Fitting region; Note: Indo-US Library=(3460,9464)
+"redshift": 0.002336,
+"fit_area": {"spaxels": (25,25),},
 "good_thresh": 0.0, # percentage of "good" pixels required in fig_reg for fit.
 "mask_bad_pix": False, # mask pixels SDSS flagged as 'bad' (careful!)
 "mask_emline" : False, # automatically mask lines for continuum fitting.

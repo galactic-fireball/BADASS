@@ -3,23 +3,24 @@ io_options={
     "infmt" : "nirspec",
     "output_dir" : 'ns_ap_test', # same directory as input file
     "dust_cache" : None,
-    "overwrite" : False,
-    "log_level" : "debug",
+    "overwrite" : True,
+    "log_level" : "info",
     "err_level": "warning",
     "multiprocess": False,
     "filter": "290",
     "disperser": "h",
-    "redshift": 0.002336,
-    "fit_area": {
-        "aperture": {"type":"circular", "center":(30,27), "radius":5},
-        "plot_input": True,
-    },
 }
 
 ################################## Fit Options #################################
 # Fitting Parameters
 fit_options={
 "fit_reg"    : (36400,40000),# Fitting region; Note: Indo-US Library=(3460,9464)
+"redshift": 0.002336,
+"fit_area": {
+    "plot_input":True,
+    # "aperture": {"type":"circular", "center":(30,27), "radius":5, "sum_method":"center",},
+    "aperture": {"type":"rectangular", "center":(30,27), "width":10, "height":15},
+},
 "good_thresh": 0.0, # percentage of "good" pixels required in fig_reg for fit.
 "mask_bad_pix": False, # mask pixels SDSS flagged as 'bad' (careful!)
 "mask_emline" : False, # automatically mask lines for continuum fitting.

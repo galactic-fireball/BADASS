@@ -14,27 +14,27 @@ class ResultWriter:
 
 	_writer = None
 
-	def __new__(cls, options):
+	def __new__(cls, cfg):
 		if not cls._writer is None:
 			return cls._writer
 		cls._writer = super().__new__(cls)
-		cls._writer.options = options
+		cls._writer.cfg = cfg
 
 		# TODO: better way to specify
-		if not 'fit_area' in options.io_options:
+		if not 'fit_area' in cfg.fit:
 			cls._writer.fit_type = FitType.SINGLE
 			return cls._writer
 
-		if 'aperture' in options.io_options.fit_area:
+		if 'aperture' in cfg.fit.fit_area:
 			cls._writer.fit_type = FitType.APERTURE
 			return cls._writer
 
-		if 'spaxels' in options.io_options.fit_area:
+		if ('spaxel' in cfg.fit.fit_area) or ('spaxels' in cfg.fit.fit_area):
 			cls._writer.fit_type = FitType.SPAXELS
-			cls._writer.spaxels = options.io_options.fit_area.spaxels
+			cls._writer.spaxels = cfg.fit.fit_area.get('spaxels', cfg.fit.fit_area.get('spaxel', None))
 			return cls._writer
 
-		if 'bins' in options.io_options.fit_area:
+		if 'bins' in cfg.fit.fit_area:
 			cls._writer.fit_type = FitType.BINS
 			return cls._writer
 
@@ -49,7 +49,7 @@ class ResultWriter:
 	def compile_results(self):
 		# TODO: write output files and plots, rebuild cube if needed
 		# TODO: account for relative output_dir
-		out_dir = pathlib.Path(self.options.io_options.output_dir)
+		out_dir = pathlib.Path(self.cfg.io.output_dir)
 
 		def make_maps(fit_dirs, shape):
 			result_fits = fits.HDUList()

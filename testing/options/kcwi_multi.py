@@ -1,31 +1,33 @@
 ################################# IO Options ################################
 io_options={
-    "infmt" : "nirspec",
-    "output_dir" : 'nirspec_test', # same directory as input file
+    "infmt" : "kcwi",
+    "output_dir" : '../example_spectra/NGC1275', # same directory as input file
+    "product_name": "NGC1275",
     "dust_cache" : None,
     "overwrite" : False,
-    "log_level" : "info",
+    "log_level" : "debug",
     "err_level": "warning",
     "multiprocess": False,
-    "filter": "290",
-    "disperser": "h",
+    "redshift": 0.017559,
+    "fit_area": {
+        #"bins": {"side_length":10},
+        "spaxels": [(1,140),(1,124)],
+    },
 }
 
 ################################## Fit Options #################################
 # Fitting Parameters
 fit_options={
-"fit_reg"    : (36400,40000),# Fitting region; Note: Indo-US Library=(3460,9464)
-"redshift": 0.002336,
-"fit_area": {"spaxel": (30,27), "plot_input":True},
+"fit_reg"    : (4764.75, 5261.5),# Fitting region; Note: Indo-US Library=(3460,9464)
 "good_thresh": 0.0, # percentage of "good" pixels required in fig_reg for fit.
 "mask_bad_pix": False, # mask pixels SDSS flagged as 'bad' (careful!)
 "mask_emline" : False, # automatically mask lines for continuum fitting.
 "mask_metal": False, # interpolate over metal absorption lines for high-z spectra
 "fit_stat": "ML", # fit statistic; ML = Max. Like. , OLS = Ordinary Least Squares
-"n_basinhop": 15, # Number of consecutive basinhopping thresholds before solution achieved
+"n_basinhop": 25, # Number of consecutive basinhopping thresholds before solution achieved
 "reweighting":True, # re-weight the noise after initial fit to achieve RCHI2 = 1
-"test_lines": False, # Perform line/configuration testing for multiple components
-"max_like_niter": 10, # number of maximum likelihood iterations
+"test_lines": True, # Perform line/configuration testing for multiple components
+"max_like_niter": 25, # number of maximum likelihood iterations
 "output_pars": False, # only output free parameters of fit and stop code (diagnostic)
 "cosmology": {"H0":70.0, "Om0": 0.30}, # Flat Lam-CDM Cosmology
 }
@@ -58,11 +60,11 @@ comp_options={
 "fit_uv_iron"      : False, # UV Iron 
 "fit_balmer"       : False, # Balmer continuum (<4000 A)
 "fit_losvd"        : False, # stellar LOSVD
-"fit_host"         : False, # host template
-"fit_power"        : True, # AGN power-law
-"fit_poly"         : True, # Add polynomial continuum component
+"fit_host"         : True, # host template
+"fit_power"        : False, # AGN power-law
+"fit_poly"         : False, # Add polynomial continuum component
 "fit_narrow"       : True, # narrow lines
-"fit_broad"        : True, # broad lines
+"fit_broad"        : False, # broad lines
 "fit_absorp"       : False, # absorption lines
 "tie_line_disp"    : False, # tie line widths (dispersions)
 "tie_line_voff"    : False, # tie line velocity offsets
@@ -71,15 +73,15 @@ comp_options={
 # Line options for each narrow, broad, and absorption.
 narrow_options = {
 #     "amp_plim": (0,1), # line amplitude parameter limits; default (0,)
-    "disp_plim": (0,500), # line dispersion parameter limits; default (0,)
-    "voff_plim": (-200,200), # line velocity offset parameter limits; default (0,)
+    "disp_plim": (0,1000), # line dispersion parameter limits; default (0,)
+    "voff_plim": (-1000,1000), # line velocity offset parameter limits; default (0,)
     "line_profile": "gaussian", # line profile shape*
     "n_moments": 4, # number of higher order Gauss-Hermite moments (if line profile is gauss-hermite, laplace, or uniform)
 }
 
 broad_options ={
 #     "amp_plim": (0,40), # line amplitude parameter limits; default (0,)
-    "disp_plim": (0,1000), # line dispersion parameter limits; default (0,)
+    "disp_plim": (500,3000), # line dispersion parameter limits; default (0,)
     "voff_plim": (-1000,1000), # line velocity offset parameter limits; default (0,)
     "line_profile": "gaussian", # line profile shape*
     "n_moments": 4, # number of higher order Gauss-Hermite moments (if line profile is gauss-hermite, laplace, or uniform)
@@ -103,25 +105,72 @@ absorp_options = {
 # User lines overrides the default line list with a user-input line list!
 
 user_lines = {
-    "FEAT1": {"center":36584.56,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
-    "FEAT2": {"center":37400.61,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
-    "FEAT3": {"center":38077.33,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
-    "FEAT4": {"center":38462.13,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
-    "FEAT5": {"center":39337.88,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
+    "NA_H_BETA"      :{"center":4862.691,"amp":"free","disp":"NA_OIII_5007_DISP","voff":"NA_OIII_5007_VOFF","line_type":"na","label":r"H$\beta$","ncomp":1,},
+    "NA_H_BETA_2"    :{"center":4862.691,"amp":'NA_H_BETA_AMP*(NA_OIII_5007_2_AMP/NA_OIII_5007_AMP)',"disp":"NA_OIII_5007_2_DISP","voff":"NA_OIII_5007_2_VOFF","line_type":"na","ncomp":2,"parent":"NA_H_BETA"},
+    "NA_H_BETA_3"    :{"center":4862.691,"amp":'NA_H_BETA_AMP*(NA_OIII_5007_3_AMP/NA_OIII_5007_AMP)',"disp":"NA_OIII_5007_3_DISP","voff":"NA_OIII_5007_3_VOFF","line_type":"na","ncomp":3,"parent":"NA_H_BETA"}, 
+    #"NA_H_BETA_4"    :{"center":4862.691,"amp":"free","disp":"NA_OIII_5007_4_DISP","voff":"NA_OIII_5007_4_VOFF","line_type":"na","ncomp":4,"parent":"NA_H_BETA"}, 
+    #"NA_H_BETA_4"    :{"center":4862.691,"amp":"free","disp":"NA_OIII_5007_4_DISP","voff":"NA_OIII_5007_4_VOFF","line_type":"na","label":r"H$\beta$ HVS","ncomp":1}, 
+    #"NA_H_BETA_4_2"   :{"center":4862.691,"amp":"NA_H_BETA_4_AMP*(NA_OIII_5007_4_2_AMP/NA_OIII_5007_4_AMP)","disp":"NA_OIII_5007_4_2_DISP","voff":"NA_OIII_5007_4_2_VOFF","line_type":"na","ncomp":2,"parent":"NA_H_BETA_4"},
+    #"NA_H_BETA_5"    :{"center":4862.691,"amp":"free","disp":"NA_OIII_5007_5_DISP","voff":"NA_OIII_5007_5_VOFF","line_type":"na","ncomp":4,"parent":"NA_H_BETA"}, 
+
+
+    "NA_OIII_4960"   :{"center":4960.295,"amp":"(NA_OIII_5007_AMP/2.98)","disp":"NA_OIII_5007_DISP","voff":"NA_OIII_5007_VOFF","line_type":"na","label":r"[O III]","ncomp":1,},
+    "NA_OIII_4960_2" :{"center":4960.295,"amp":"(NA_OIII_5007_2_AMP/2.98)","disp":"NA_OIII_5007_2_DISP","voff":"NA_OIII_5007_2_VOFF","line_type":"na","ncomp":2,"parent":"NA_OIII_4960"},
+    "NA_OIII_4960_3" :{"center":4960.295,"amp":"(NA_OIII_5007_3_AMP/2.98)","disp":"NA_OIII_5007_3_DISP","voff":"NA_OIII_5007_3_VOFF","line_type":"na","ncomp":3,"parent":"NA_OIII_4960"},
+    #"NA_OIII_4960_4" :{"center":4960.295,"amp":"(NA_OIII_5007_4_AMP/2.98)","disp":"NA_OIII_5007_4_DISP","voff":"NA_OIII_5007_4_VOFF","line_type":"na","ncomp":4,"parent":"NA_OIII_4960"},
+    #"NA_OIII_4960_4" :{"center":4960.295,"amp":"(NA_OIII_5007_4_AMP/2.98)","disp":"NA_OIII_5007_4_DISP","voff":"NA_OIII_5007_4_VOFF","line_type":"na","label":r"[O III] HVS","ncomp":1},
+    #"NA_OIII_4960_4_2" :{"center":4960.295,"amp":"(NA_OIII_5007_4_2_AMP/2.98)","disp":"NA_OIII_5007_4_2_DISP","voff":"NA_OIII_5007_4_2_VOFF","line_type":"na","ncomp":2,"parent":"NA_OIII_4960_4"},
+    #"NA_OIII_4960_5" :{"center":4960.295,"amp":"(NA_OIII_5007_5_AMP/2.98)","disp":"NA_OIII_5007_5_DISP","voff":"NA_OIII_5007_5_VOFF","line_type":"na","ncomp":4,"parent":"NA_OIII_4960"},
+
+    "NA_OIII_5007"   :{"center":5008.240,"amp":"free","disp":"free","voff":"free","voff_init":0,"voff_plim":(-500,500),"line_type":"na","label":r"[O III]","ncomp":1,},
+    "NA_OIII_5007_2" :{"center":5008.240,"amp":"free","disp":"free","voff":"free","line_type":"na","ncomp":2,"parent":"NA_OIII_5007"},
+    "NA_OIII_5007_3" :{"center":5008.240,"amp":"free","disp":"free","disp_init":1000,"disp_plim":(0,2000),"voff":"free","voff_init":-350,"voff_plim":(-2000,2000),"line_type":"na","ncomp":3,"parent":"NA_OIII_5007"},
+    #"NA_OIII_5007_4" :{"center":5008.240,"amp":"free","disp":"free","voff":"free","voff_init":2900,"voff_plim":(2700,3200),"line_type":"na","ncomp":4,"parent":"NA_OIII_5007"},
+    #"NA_OIII_5007_4" :{"center":5008.240,"amp":"free","disp":"free","disp_init":20,"disp_plim":(0,300),"voff":"free","voff_init":2900,"voff_plim":(2500,3500),"line_type":"na","label":r"[O III] HVS","ncomp":1},
+    #"NA_OIII_5007_4_2" :{"center":5008.240,"amp":"free","disp":"free","disp_init":20,"disp_plim":(0,300),"voff":"free","voff_init":2900,"voff_plim":(2500,3500),"line_type":"na","ncomp":2,"parent":"NA_OIII_5007_4"},
+    #"NA_OIII_5007_5" :{"center":5008.240,"amp":"free","disp":"free","disp_init":1000,"disp_plim":(0,2000),"voff":"free","voff_init":400,"voff_plim":(-2000,2000),"line_type":"na","ncomp":4,"parent":"NA_OIII_5007"},
+    
+    "BR_H_BETA"      :{"center":4862.691,"amp":"free","disp":"free","voff":"free","line_type":"br","ncomp":1,},
+    "BR_OIII_5007"   :{"center":5008.240,"amp":"free","disp":"free","voff":"free","line_type":"br","ncomp":1,},
 }
 
 
-user_constraints = []
+test_options = {
+"test_mode":"line",
+#"lines": [["NA_OIII_5007","NA_OIII_4960","NA_H_BETA","NA_OIII_5007_4","NA_OIII_4960_4","NA_H_BETA_4","BR_H_BETA"]], # The lines to test
+#"lines": [["NA_OIII_5007","NA_OIII_4960","NA_H_BETA"],["NA_OIII_5007_4","NA_OIII_4960_4","NA_H_BETA_4"]], # The lines to test
+"lines": [["NA_OIII_5007","NA_OIII_4960","NA_H_BETA"]], # The lines to test
+"metrics": ["BADASS", "AON"],# Fitting metrics to use when determining the best model
+# "metrics": ["CHI2_RATIO", "AON"],
+"thresholds": [0.95, 3.0],
+"conv_mode": "all", # "any" single threshold satisfies the solution, or "all" must satisfy thresholds
+"auto_stop":False, # automatically stop testing once threshold is reached; False test all no matter what
+"full_verbose":True, # prints out all test fitting to screen
+"plot_tests":True, # plot the fit of each model comparison
+"force_best":True, # this forces the more-complex model to have a fit better than the previous.
+"continue_fit":True, # continue the fit with the best chosen model
+}
+
+user_constraints = [
+    # ("NA_OIII_5007_AMP","NA_OIII_5007_2_AMP"),
+    ("NA_OIII_5007_2_DISP","NA_OIII_5007_DISP"),
+    #("NA_OIII_5007_3_DISP","NA_OIII_5007_2_DISP"),
+    #("NA_OIII_5007_5_DISP","NA_OIII_5007_3_DISP")
+    #("NA_OIII_5007_3_DISP","NA_OIII_5007_DISP")
+]
+
 # User defined masked regions (list of tuples)
 user_mask = [
-#     (4840,5015),
+     (5012,5015)
 ]
 
 # Combined lines; define a composite line and calculate
 # its combined parameters.  These are automatically
 # generated for lines with multiple components (parent+child lines)
 combined_lines = {
-    "H_BETA_COMP"   :["NA_H_BETA","BR_H_BETA"],
+    "H_BETA_OUT_COMP"   :["NA_H_BETA_2","NA_H_BETA_3","NA_H_BETA_5"],
+    "OIII_5007_OUT_COMP"   :["NA_OIII_5007_2","NA_OIII_5007_3","NA_OIII_5007_5"],
+    "OIII_4960_OUT_COMP"   :["NA_OIII_4960_2","NA_OIII_4960_3","NA_OIII_4960_5"]
 }
 ########################## LOSVD Fitting & Options #############################
 # For direct fitting of the stellar kinematics (stellar LOSVD), one can 

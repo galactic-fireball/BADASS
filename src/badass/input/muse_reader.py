@@ -16,11 +16,11 @@ class MUSEReader(CubeReader):
         if not isinstance(input_data, pathlib.Path):
             raise Exception('Reading MUSE spectra from data currently unsupported') # TODO
 
-        if not 'redshift' in options.io_options:
+        if not 'redshift' in options.fit_options:
             raise Exception('Redshift for MUSE cube must be provided')
 
         cube_data = {}
-        cube_data['z'] = options.io_options.redshift
+        cube_data['z'] = options.fit_options.redshift
 
         cube_data['infile'] = input_data
         with fits.open(input_data) as hdu:
@@ -35,11 +35,10 @@ class MUSEReader(CubeReader):
             cube_spec = hdu['DATA'].data.T
             cube_noise = np.sqrt(hdu['STAT'].data.T)
 
-            # flux_norm = MUSE_FLUX_NORM
             div = int(np.floor(np.log10(np.abs(np.nanmedian(cube_spec)))))
             cube_data['spec'] = cube_spec / (10**div)
             cube_data['noise'] = cube_noise / (10**div)
-            cube_data['flux_norm'] = 10**div
+            cube_data['flux_norm'] = (10**div)*MUSE_FLUX_NORM
 
             # Default behavior for MUSE data cubes using https://www.aanda.org/articles/aa/pdf/2017/12/aa30833-17.pdf equation 7
             fwhm_res = 5.835e-8 * obs_wave**2 - 9.080e-4 * obs_wave + 5.983

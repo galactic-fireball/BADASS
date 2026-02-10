@@ -25,7 +25,9 @@ dependencies = [
     "astroml (>=1.0.2.post1,<2.0.0)",
     "corner (>=2.2.3,<3.0.0)",
     "photutils (>=2.3.0,<3.0.0)",
-    "plotly (>=6.3.1,<7.0.0)"
+    "plotly (>=6.3.1,<7.0.0)",
+    "spectres (>=2.2.2,<3.0.0)",
+    "pydantic (>=2.12.5,<3.0.0)"
 ]
 
 [tool.poetry]

@@ -19,38 +19,34 @@ class DefaultReader(BadassInput):
 
         # First, we must log-rebin the linearly-binned input spectrum
         # If the spectrum is NOT linearly binned, we need to do that before we try to log-rebin
-        wave = self.wave
-        if not np.isclose(wave[1]-wave[0], wave[-1]-wave[-2]):
+        if not np.isclose(self.wave[1]-self.wave[0], self.wave[-1]-self.wave[-2]):
             # TODO: how to handle before logger setup?
             # if verbose:
             #     print("\n Input spectrum is not linearly binned. BADASS will linearly rebin and conserve flux...")
-            new_wave = np.linspace(wave[0], wave[-1], len(wave))
-            spec, err = spectres.spectres(new_wavs=new_wave, spec_wavs=wave, spec_fluxes=self.spec,
+            new_wave = np.linspace(self.wave[0], self.wave[-1], len(self.wave))
+            self.spec, self.noise = spectres.spectres(new_wavs=new_wave, spec_wavs=self.wave, spec_fluxes=self.spec,
                                           spec_errs=self.noise, fill=None, verbose=False)
+            self.wave = new_wave
+
             # Fill in any NaN
-            mask = np.isnan(spec)
-            spec[mask] = np.interp(np.flatnonzero(mask), np.flatnonzero(~mask), spec[~mask])
-            mask = np.isnan(err)
-            err[mask] = np.interp(np.flatnonzero(mask), np.flatnonzero(~mask), err[~mask])
-            wave = new_wave
+            mask = np.isnan(self.spec)
+            self.spec[mask] = np.interp(np.flatnonzero(mask), np.flatnonzero(~mask), self.spec[~mask])
+            mask = np.isnan(self.noise)
+            self.noise[mask] = np.interp(np.flatnonzero(mask), np.flatnonzero(~mask), self.noise[~mask])
 
-        lam_range = (np.min(wave),np.max(wave))
-        spec, log_lam, velscale = log_rebin(lam_range, spec, velscale=None, flux=False)
-        noise, _, _ = log_rebin(lam_range, err, velscale=velscale, flux=False)
-        lam_gal = np.exp(log_lam)
-
-        self.wave = lam_gal
-        self.spec = spec
-        self.noise = noise
+        lam_range = (np.min(self.wave),np.max(self.wave))
+        self.spec, log_lam, velscale = log_rebin(lam_range, self.spec, velscale=None, flux=False)
+        self.noise, _, _ = log_rebin(lam_range, self.noise, velscale=velscale, flux=False)
+        self.wave = np.exp(log_lam)
         self.velscale = velscale[0]
 
         # if noise vector is zero, set it to 10%
         if np.nansum(self.noise) == 0:
-            self.noise = np.full_like(self.spec, 0.05)
+            self.noise = np.full_like(self.spec, 0.1*self.spec)
 
         frac = self.wave[1]/self.wave[0] # Constant lambda fraction per pixel
         dlam_gal = (frac - 1)*self.wave # Size of every pixel in Angstrom
-        if type(self.fwhm_res) in (list, np.ndarray):
+        if isinstance(self.fwhm_res, (list, np.ndarray)):
             self.disp_res = self.fwhm_res/2.3548
         else:
             self.disp_res = np.full(self.wave.shape, fill_value=self.fwhm_res/2.3548)
@@ -69,5 +65,6 @@ class DefaultReader(BadassInput):
         #         for b in m:
         #             fit_mask_bad.append(b)
 
+        super().__init__(input_data, options)
 
 Reader = DefaultReader

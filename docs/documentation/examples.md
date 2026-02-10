@@ -1,5 +1,16 @@
 ## Under Construction
 
+## Quick Start
+
+```python
+import badass
+
+spec_file # a string path or a pathlib.Path
+options # the path (string or pathlib) to a .py or .json file; or a python dict
+
+badass.run_BADASS(spec_file, options=options)
+```
+
 ## SDSS Sample
 
 ```python

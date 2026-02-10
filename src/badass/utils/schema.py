@@ -103,7 +103,7 @@ class DefaultValidator(Validator):
 DEFAULT_IO_OPTIONS = {
     'infmt': {
         'type': 'string',
-        'allowed': ['sdss', 'muse', 'nirspec', 'miri'],
+        'allowed': ['default', 'sdss', 'muse', 'nirspec', 'miri', 'kcwi'],
     },
     'output_dir': {
         'type': ['string', 'pathlib'],
@@ -135,8 +135,8 @@ DEFAULT_IO_OPTIONS = {
         'allowed': ['M', 'H', 'm', 'h'],
         'default': 'M',
     },
-    'redshift': {
-        'type': 'float',
+    'R': {
+        'type': 'integer',
     },
 }
 
@@ -145,11 +145,22 @@ DEFAULT_IO_OPTIONS = {
 DEFAULT_FIT_OPTIONS = {
     # Fitting region; Note: Indo-US Library=(3460,9464)
     'fit_reg': {
-        'type': 'list',
-        'minlength': 2,
-        'maxlength': 2,
-        'schema': {'type': ['integer', 'float']},
-        'default': (4400.0, 5500.0),
+        'oneof': [
+            {
+                'type': 'list',
+                'minlength': 2,
+                'maxlength': 2,
+                'schema': {'type': ['integer', 'float']},
+            },
+            { 'type': 'string', },
+        ],
+        'default': 'auto',
+    },
+    'redshift': {
+        'type': 'float',
+    },
+    'fit_area': {
+        'type': 'dict',
     },
     # percentage of "good" pixels required in fig_reg for fit.
     'good_thresh': {
@@ -157,6 +168,11 @@ DEFAULT_FIT_OPTIONS = {
         'min': 0,
         'max': 1,
         'default': 0.0,
+    },
+    'feature_edge_pad': {
+        'type': 'integer',
+        'min': 0,
+        'default': 10, # angstroms
     },
     # mask pixels SDSS flagged as 'bad' (careful!)
     'mask_bad_pix': 'bool_false',

@@ -12,11 +12,17 @@ BALMER_EDGE_WAVE = 3646.0 # Angstroms
 
 BALMER_TEMPLATE_FILE = consts.BADASS_DATA_DIR.joinpath('balmer_template', 'higher_order_balmer_n8_500.csv')
 
+# Balmer continuum following Kovacevic et al. (2014) and Calderone et al. (2017; QSFit)
+
 class BalmerTemplate(BadassTemplate):
+
+    OPTION_NAME = 'balmer'
+    PARAM_PREFIX = 'BALMER_'
+    TEMPLATE_PARAMS = ['ratio', 'amp', 'disp', 'voff', 'teff', 'tau']
 
     @classmethod
     def initialize_template(cls, ctx):
-        if not ctx.options.comp_options.fit_balmer:
+        if not ctx.cfg.comp.fit_balmer:
             return None
 
         if ctx.fit_wave[0] >= BALMER_TEMP_WAVE_MAX:
@@ -32,7 +38,7 @@ class BalmerTemplate(BadassTemplate):
 
 
     def __init__(self, ctx):
-        self.ctx = ctx
+        super.__init__(ctx)
 
         npad = 100 # Angstroms
         # Import the template for the higher-order balmer lines (7 <= n <= 500)
@@ -64,92 +70,25 @@ class BalmerTemplate(BadassTemplate):
         self.lam_balmer = np.exp(loglam_balmer)
 
 
-    def initialize_parameters(self, params, args):
-        # Balmer continuum following Kovacevic et al. (2014) and Calderone et al. (2017; QSFit)
-        self.ctx.log.info('- Fitting Balmer Continuum')
-        balmer_options = self.ctx.options.balmer_options
-
-        if not balmer_options.R_const.bool:
-            self.ctx.log.info('\t* varying Balmer ratio')
-            # Balmer continuum ratio
-            params['BALMER_RATIO'] = {
-                                        'init':10.0,
-                                        'plim':(0.0,100.0),
-                                     }
-
-        if not balmer_options.balmer_amp_const.bool:
-            self.ctx.log.info('\t* varying Balmer amplitude')
-            # Balmer continuum amplitude
-            params['BALMER_AMP'] = {
-                                        'init':0.1*args['median_flux'],
-                                        'plim':(0, args['max_flux']),
-                                   }
-
-        if not balmer_options.balmer_disp_const.bool:
-            self.ctx.log.info('\t* varying Balmer dispersion')
-            # Balmer continuum DISP
-            params['BALMER_DISP'] = {
-                                        'init':2500.0,
-                                        'plim':(500.0,15000.0),
-                                    }
-
-        if not balmer_options.balmer_voff_const.bool:
-            self.ctx.log.info('\t* varying Balmer voff')
-            # Balmer continuum VOFF
-            params['BALMER_VOFF'] = {
-                                        'init':0.0,
-                                        'plim':(-2000.0,2000.0),
-                                    }
-
-        if not balmer_options.Teff_const.bool:
-            self.ctx.log.info('\t* varying Balmer effective temperature')
-            # Balmer continuum effective temperature
-            params['BALMER_TEFF'] = {
-                                        'init':15000.0,
-                                        'plim':(1000.0,50000.0),
-                                    }
-
-        if not balmer_options.tau_const.bool:
-            self.ctx.log.info('\t* varying Balmer optical depth')
-            # Balmer continuum optical depth
-            params['BALMER_TAU'] = {
-                                        'init':1.0,
-                                        'plim':(0,1.0),
-                                   }
-
-
     def add_components(self, params, comp_dict, host_model):
-
-        balmer_options = self.ctx.options.balmer_options
-        val = lambda ok, ov, pk : balmer_options[ok][ov] if balmer_options[ok].bool else params[pk]
-
-        balmer_ratio = val('R_const', 'R_val', 'BALMER_RATIO')
-        balmer_amp = val('balmer_amp_const', 'balmer_amp_val', 'BALMER_AMP')
-        balmer_disp = val('balmer_disp_const', 'balmer_disp_val', 'BALMER_DISP')
-        if balmer_disp <= 0.01: balmer_disp = 0.01
-        balmer_voff = val('balmer_voff_const', 'balmer_voff_val', 'BALMER_VOFF')
-        balmer_Teff = val('Teff_const', 'Teff_val', 'BALMER_TEFF')
-        balmer_tau = val('tau_const', 'tau_val', 'BALMER_TAU')
-
         # We need to generate a new grid for the Balmer continuum that matches
         # that we made for the higher-order lines
-        def blackbody(lam, balmer_Teff):
+        def blackbody(lam, Teff):
             c = (consts.c*(u.km/u.s)).to(u.AA/u.s).value
             h = (consts.h*(((u.m)**2) * u.kg / u.s)).to(u.g*((u.AA**2)/(u.s**2))*u.s).value
             k = (consts.k*((u.m**2)*u.kg/(u.s**2)/u.K)).to(u.g * (u.AA**2) / (u.s**2) / u.K).value
-            return ((2.0*h*c**2.0)/lam**5.0)*(1.0/(np.exp((h*c)/(lam*k*balmer_Teff))-1.0))
+            return ((2.0*h*c**2.0)/lam**5.0)*(1.0/(np.exp((h*c)/(lam*k*Teff))-1.0))
 
         # Construct Balmer continuum from lam_balmer
-        Blam = blackbody(self.lam_balmer, balmer_Teff) # blackbody function [erg/s]
-        cont = Blam * (1.0-1.0/np.exp(balmer_tau*(self.lam_balmer/BALMER_EDGE_WAVE)**3.0))
+        Blam = blackbody(self.lam_balmer, self.get_param('teff', params)) # blackbody function [erg/s]
+        cont = Blam * (1.0-1.0/np.exp(self.get_param('tau', params)*(self.lam_balmer/BALMER_EDGE_WAVE)**3.0))
         # Normalize at 3000 Å
         cont = cont / np.max(cont)
         # Set Balmer continuum to zero after Balmer edge
         cont[find_nearest(self.lam_balmer, BALMER_EDGE_WAVE)[1]:] = 0.0
 
-        # TODO: this is also done in initialization, need to be done here?
         if (np.sum(self.spec_high_balmer)>0):
-            self.spec_high_balmer = self.spec_high_balmer/np.max(self.spec_high_balmer) * balmer_ratio
+            self.spec_high_balmer = self.spec_high_balmer/np.max(self.spec_high_balmer) * self.get_param('ratio', params)
 
         # Sum the two components
         full_balmer = self.spec_high_balmer + cont
@@ -158,16 +97,18 @@ class BalmerTemplate(BadassTemplate):
         balmer_fft, balmer_npad = template_rfft(full_balmer)
         vsyst = np.log(self.lam_balmer[0]/self.ctx.fit_wave[0])*consts.c
 
+        disp = self.get_param('disp', params)
+        if disp <= 0.01: disp = 0.01
         # Broaden the higher-order Balmer lines
         conv_temp = convolve_gauss_hermite(balmer_fft, balmer_npad, float(self.ctx.target.velscale),
-                                           [balmer_voff, balmer_disp], self.ctx.fit_wave.shape[0],
+                                           [self.get_param('voff', params), disp], self.ctx.fit_wave.shape[0],
                                            velscale_ratio=1, sigma_diff=0, vsyst=vsyst)
 
-        conv_temp = conv_temp/conv_temp[find_nearest(self.ctx.fit_wave,BALMER_EDGE_WAVE)[1]] * balmer_ratio
+        conv_temp = conv_temp/conv_temp[find_nearest(self.ctx.fit_wave,BALMER_EDGE_WAVE)[1]] * self.get_param('ratio', params)
         conv_temp = conv_temp.reshape(-1)
 
         # Normalize the full continuum to 1
-        balmer_cont = conv_temp/np.max(conv_temp) * balmer_amp
+        balmer_cont = conv_temp/np.max(conv_temp) * self.get_param('amp', params)
 
         comp_dict['BALMER_CONT'] = balmer_cont
         return host_model - balmer_cont

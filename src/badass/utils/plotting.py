@@ -36,7 +36,7 @@ def create_input_plot(ctx):
 
     ax1.set_title(r'Input Spectrum', fontsize=fontsize)
     ax1.set_xlabel(r'$\lambda_{\rm{rest}}$ ($\mathrm{\AA}$)', fontsize=fontsize)
-    ax1.set_ylabel(r'$f_\lambda$ ($10^{%d}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)' % (np.log10(ctx.options.fit_options.flux_norm)), fontsize=fontsize)
+    ax1.set_ylabel(r'$f_\lambda$ ($10^{%d}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)' % (np.log10(ctx.target.flux_norm)), fontsize=fontsize)
     ax1.set_xlim(np.min(ctx.fit_wave), np.max(ctx.fit_wave))
     ax1.legend(loc='best')
 
@@ -188,7 +188,7 @@ def create_test_plot(target, fit_results, label_A, label_B, test_title=None):
 
 def plot_ml_results(ctx):
     plot_best_model(ctx, 'max_likelihood_fit.pdf')
-    if (not ctx.target.options.mcmc_options.mcmc_fit) and (ctx.target.options.plot_options.plot_HTML):
+    if (not ctx.target.cfg.mcmc.mcmc_fit) and (ctx.target.cfg.plot.html):
         plotly_best_fit(ctx)
 
 
@@ -258,14 +258,14 @@ def plot_best_model(ctx, plot_name):
         ax1.plot(wave, comp_dict[line_name], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
 
 
-    # ibad = [i for i in range(len(ctx.target.wave)) if i not in fit_mask]
-    # for m in ibad:
-        # ax1.axvspan(ctx.target.wave[m], ctx.target.wave[m], alpha=0.25, color='xkcd:lime green')
-    # ax1.axvspan(0, 0, alpha=0.25, color='xkcd:lime green', label='bad pixels')
+    ibad = [i for i in range(len(ctx.target.wave)) if i not in fit_mask]
+    for m in ibad:
+        ax1.axvspan(ctx.target.wave[m], ctx.target.wave[m], alpha=0.25, color='xkcd:lime green')
+    ax1.axvspan(0, 0, alpha=0.25, color='xkcd:lime green', label='bad pixels')
 
     # Residuals
-    sigma_resid = np.nanstd(comp_dict['DATA']-comp_dict['MODEL'])
-    sigma_noise = np.nanmedian(comp_dict['NOISE'])
+    sigma_resid = np.nanstd(comp_dict['DATA'][fit_mask]-comp_dict['MODEL'][fit_mask])
+    sigma_noise = np.nanmedian(comp_dict['NOISE'][fit_mask])
     ax2.plot(ctx.target.wave, comp_dict['NOISE']*3.0, linewidth=0.5,color='xkcd:bright orange', label=r'$\sigma_{\mathrm{noise}}=%0.4f$' % sigma_noise)
     ax2.plot(ctx.target.wave, comp_dict['RESID']*3.0, linewidth=0.5,color='white', label=r'$\sigma_{\mathrm{resid}}=%0.4f$' % sigma_resid)
     ax1.axhline(0.0, linewidth=1.0, color='white', linestyle='--')
@@ -273,7 +273,7 @@ def plot_best_model(ctx, plot_name):
 
     # Axes limits
     ax_low = np.nanmin([ax1.get_ylim()[0], ax2.get_ylim()[0]])
-    ax_upp = np.nanmax(comp_dict['DATA'])+(3.0 * np.nanmedian(comp_dict['NOISE']))
+    ax_upp = np.nanmax(comp_dict['DATA'][fit_mask])+(3.0 * np.nanmedian(comp_dict['NOISE'][fit_mask]))
 
     minimum = [np.nanmin(val[np.where(np.isfinite(val))[0]]) for comp, val in comp_dict.items() if val[np.isfinite(val)[0]].size > 0]
     minimum = np.nanmin(minimum) if len(minimum) > 0 else 0.0
@@ -508,11 +508,11 @@ def corner_plot(ctx):
     plt.style.use('dark_background')
 
     flat_chains = ctx.mcmc_result_chains['flat_chains']
-    plot_pars = [par for par in ctx.options.plot_options.corner_options.pars if par in flat_chains]
+    plot_pars = [par for par in ctx.cfg.plot.corner.pars if par in flat_chains]
     if len(plot_pars) < 2: plot_pars = list(ctx.param_dict.keys()) # Default to free params
 
-    if len(ctx.options.plot_options.corner_options.labels) == len(plot_pars):
-        labels = ctx.options.plot_options.corner_options.labels
+    if len(ctx.cfg.plot.corner.labels) == len(plot_pars):
+        labels = ctx.cfg.plot.corner.labels
     else:
         labels = plot_pars
 

@@ -32,3 +32,6 @@ examples/example_spectra/LVS_Rodeo_cube/
 examples/example_spectra/J000338-LRIS-test/
 
 .hypothesis/
+kcwi.ipynb
+testing/example_spectra/NGC1275/
+kcwi.py

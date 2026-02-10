@@ -8,14 +8,17 @@ from badass.utils.utils import log_rebin
 
 
 class OpticalFeIITemplate(BadassTemplate):
+    OPTION_NAME = 'optfeii'
+    PARAM_PREFIX = 'OPT_FEII_'
+
     TEMP_LAM_RANGE = [0.0, -1.0]
 
     @classmethod
     def initialize_template(cls, ctx):
-        if not ctx.options.comp_options.fit_opt_feii:
+        if not ctx.cfg.comp.fit_feii:
             return None
 
-        temp_type = ctx.options.opt_feii_options.opt_template.type
+        temp_type = ctx.cfg.optfeii.template
         class_name = '%s_OpticalFeIITemplate' % (temp_type)
         if not class_name in globals():
             ctx.log.error('Optical FeII template unsupported: %s' % temp_type)
@@ -26,19 +29,14 @@ class OpticalFeIITemplate(BadassTemplate):
         if (temp_class.TEMP_LAM_RANGE[1] > 0.0 and ctx.fit_wave[0] > temp_class.TEMP_LAM_RANGE[1]) or (ctx.fit_wave[-1] < temp_class.TEMP_LAM_RANGE[0]):
             ctx.log.warn('Optical FeII template disabled because template is outside of fitting region')
             ctx.log.update_opt_feii()
-            ctx.options.comp_options.fit_opt_feii = False
+            ctx.cfg.comp.fit_feii = False
             return None
 
         return temp_class.initialize_template(ctx)
 
 
-    def __init__(self, ctx):
-        self.ctx = ctx
-
-
     def convolve(self, fft, feii_voff, feii_disp, npad=None):
-        if npad is None:
-            npad = self.npad
+        if npad is None: npad = self.npad
         return convolve_gauss_hermite(fft, npad, float(self.ctx.target.velscale),
                                      [feii_voff, feii_disp/2.3548], self.ctx.fit_wave.shape[0],
                                      velscale_ratio=1, sigma_diff=0, vsyst=self.vsyst)
@@ -53,6 +51,7 @@ class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
              for each template (6 free parameters)
     """
 
+    TEMPLATE_PARAMS = ['%s_%s'%(lt,attr) for lt in ['na','br'] for attr in ['amp','disp','voff']]
     TEMP_LAM_RANGE = [3400.0, 7200.0] # Angstrom
 
     vc04_data_dir = consts.BADASS_DATA_DIR.joinpath('feii_templates', 'veron-cetty_2004')
@@ -108,86 +107,20 @@ class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
         # shift the spectrum to match that of the input galaxy.
         self.vsyst = np.log(lam_feii[0]/self.ctx.fit_wave[0]) * consts.c
 
-        # If opt_disp_const AND opt_voff_const, we preconvolve the templates so we don't have to during the fit
-        opt_feii_options = self.ctx.options.opt_feii_options
-        self.pre_convolve = (opt_feii_options.opt_disp_const.bool) and (opt_feii_options.opt_voff_const.bool)
+        # if all params are constant, we can pre_convolve before the fit
+        self.pre_convolve = all([param in self.const_params for param in ['%s_%s'%(lt,attr) for lt in ['na','br'] for attr in ['disp','voff']]])
         if self.pre_convolve:
-
-            br_voff = opt_feii_options.opt_voff_const.br_opt_feii_val
-            br_disp = opt_feii_options.opt_disp_const.br_opt_feii_val
-            self.br_conv_temp = self.convolve(self.br_opt_feii_fft, br_voff, br_disp)
-
-            na_voff = opt_feii_options.opt_voff_const.na_opt_feii_val
-            na_disp = opt_feii_options.opt_disp_const.na_opt_feii_val
-            self.na_conv_temp = self.convolve(self.na_opt_feii_fft, na_voff, na_disp)
-
-
-    def initialize_parameters(self, params, args):
-        # Veron-Cerry et al. 2004 2-8 Parameter FeII template
-        self.ctx.log.info('- Fitting broad and narrow optical FeII using Veron-Cetty et al. (2004) optical FeII templates')
-        opt_feii_options = self.ctx.options.opt_feii_options
-        if not opt_feii_options.opt_amp_const.bool:
-            self.ctx.log.info('\t* varying optical FeII amplitudes')
-            # Narrow FeII amplitude
-            params['NA_OPT_FEII_AMP'] = {
-                                            'init':0.1*args['median_flux'],
-                                            'plim':(0, args['max_flux']),
-                                        }
-            # Broad FeII amplitude
-            params['BR_OPT_FEII_AMP'] = {
-                                            'init':0.1*args['median_flux'],
-                                            'plim':(0, args['max_flux']),
-                                        }
-
-        if not opt_feii_options.opt_disp_const.bool:
-            self.ctx.log.info('\t* varying optical FeII dispersion')
-            # Narrow FeII DISP
-            params['NA_OPT_FEII_DISP'] = {
-                                            'init':10.0,
-                                            'plim':(0.1,250.0),
-                                         }
-            # Broad FeII DISP
-            params['BR_OPT_FEII_DISP'] = {
-                                            'init':500.0,
-                                            'plim':(100.0,5000.0),
-                                         }
-
-        if not opt_feii_options.opt_voff_const.bool:
-            self.ctx.log.info('\t* varying optical FeII voff')
-            # Narrow FeII VOFF
-            params['NA_OPT_FEII_VOFF'] = {
-                                            'init':0.0,
-                                            'plim':(-1000.0,1000.0),
-                                         }
-            # Broad FeII VOFF
-            params['BR_OPT_FEII_VOFF'] = {
-                                            'init':0.0,
-                                            'plim':(-2000.0,2000.0),
-                                         }
+            self.br_conv_temp = self.convolve(self.br_opt_feii_fft, self.const_params['br_voff'], self.const_params['br_disp'])
+            self.na_conv_temp = self.convolve(self.na_opt_feii_fft, self.const_params['na_voff'], self.const_params['na_disp'])
 
 
     def add_components(self, params, comp_dict, host_model):
-
-        opt_feii_options = self.ctx.options.opt_feii_options
-        val = lambda ok, ov, pk : opt_feii_options[ok][ov] if opt_feii_options[ok].bool else params[pk]
-
-        # TODO: would this option ever change? ie. if amp, etc. are const, just set in init
-        br_opt_feii_amp = val('opt_amp_const', 'br_opt_feii_val', 'BR_OPT_FEII_AMP')
-        na_opt_feii_amp = val('opt_amp_const', 'na_opt_feii_val', 'NA_OPT_FEII_AMP')
-        br_opt_feii_disp = val('opt_disp_const', 'br_opt_feii_val', 'BR_OPT_FEII_DISP')
-        na_opt_feii_disp = val('opt_disp_const', 'na_opt_feii_val', 'NA_OPT_FEII_DISP')
-        br_opt_feii_voff = val('opt_voff_const', 'br_opt_feii_val', 'BR_OPT_FEII_VOFF')
-        na_opt_feii_voff = val('opt_voff_const', 'na_opt_feii_val', 'NA_OPT_FEII_VOFF')
-
         if not self.pre_convolve:
-            self.br_conv_temp = self.convolve(self.br_opt_feii_fft, br_opt_feii_voff, br_opt_feii_disp)
-            self.na_conv_temp = self.convolve(self.na_opt_feii_fft, na_opt_feii_voff, na_opt_feii_disp)
+            self.br_conv_temp = self.convolve(self.br_opt_feii_fft, self.get_param('br_voff',params), self.get_param('br_disp',params))
+            self.na_conv_temp = self.convolve(self.na_opt_feii_fft, self.get_param('na_voff',params), self.get_param('na_disp',params))
 
-        br_opt_feii_template = br_opt_feii_amp * self.br_conv_temp
-        na_opt_feii_template = na_opt_feii_amp * self.na_conv_temp
-
-        br_opt_feii_template = br_opt_feii_template.reshape(-1)
-        na_opt_feii_template = na_opt_feii_template.reshape(-1)
+        br_opt_feii_template = (self.get_param('br_amp',params) * self.br_conv_temp).reshape(-1)
+        na_opt_feii_template = (self.get_param('na_amp',params) * self.na_conv_temp).reshape(-1)
 
         # Set fitting region outside of template to zero to prevent convolution loops
         br_opt_feii_template[(self.ctx.fit_wave < self.TEMP_LAM_RANGE[0]) & (self.ctx.fit_wave > self.TEMP_LAM_RANGE[1])] = 0
@@ -215,7 +148,9 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
              cannot be determined at all.
     """
 
+    TEMPLATE_PARAMS = ['f_amp', 'g_amp', 's_amp', 'z_amp', 'disp', 'voff', 'temp']
     TEMP_LAM_RANGE = [4400.0, 5500.0]
+    k10_data_dir = consts.BADASS_DATA_DIR.joinpath('feii_templates', 'kovacevic_2010')
 
     class Transition:
 
@@ -264,7 +199,7 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
             self.rel_int = None
 
             self.feii_amp = None
-            self.template = None
+            self.templates = None
 
 
         def read_data(self, data_path):
@@ -277,7 +212,7 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
                 self.rel_int = self.df['rel_int'].to_numpy()
             else:
                 self.gf = self.df['gf'].to_numpy()
-                self.e2 = self.df['E2'].to_numpy()
+                self.e2 = self.df['E2_J'].to_numpy()
 
 
         def calc_rel_int(self, temp):
@@ -291,6 +226,10 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
 
     @classmethod
     def initialize_template(cls, ctx):
+        if not K10_OpticalFeIITemplate.k10_data_dir.exists():
+            ctx.log.error('K10 data directory not found: %s' % str(K10_OpticalFeIITemplate.k10_data_dir))
+            return None
+
         return cls(ctx)
 
 
@@ -312,11 +251,9 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
             g[-1] = g[-2]
             return g
 
-        k10_data_dir = consts.BADASS_DATA_DIR.joinpath('feii_templates', 'kovacevic_2010')
-
         self.transitions = {name:self.Transition(name) for name in self.Transition.TRANSITION_DICT.keys()}
         for trans in self.transitions.values():
-            trans.read_data(k10_data_dir.joinpath('K10_%s_transitions.csv' % trans.name))
+            trans.read_data(K10_OpticalFeIITemplate.k10_data_dir.joinpath('K10_%s_transitions.csv' % trans.name))
 
         # Generate a high-resolution wavelength scale that is universal to all transitions
         fwhm = 1.0 # Angstroms
@@ -326,109 +263,41 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
         lam_feii = np.arange(np.min(self.ctx.fit_wave)-npad, np.max(self.ctx.fit_wave)+npad, dlam_feii)
         lamRange_feii = [np.min(lam_feii), np.max(lam_feii)]
         # Get size of output log-rebinned spectrum
-        ga = gaussian_angstroms(lam_feii, self.transitions[0].wavelength[0], 1.0, disp, 0.0)
-        new_size, loglam_feii, velscale_feii = log_rebin(lamRange_feii, ga, velscale=velscale)
+        ga = gaussian_angstroms(lam_feii, self.transitions['F'].wavelength[0], 1.0, disp, 0.0)
+        new_size, loglam_feii, velscale_feii = log_rebin(lamRange_feii, ga, velscale=self.ctx.target.velscale)
 
         for trans in self.transitions.values():
             # Create storage arrays for each emission line of each transition
-            templates = np.empty((len(new_size), len(trans.wavelength)))
+            trans.templates = np.empty((len(new_size), len(trans.wavelength)))
 
             # Generate templates with an amplitude of 1.0
             for i in range(np.shape(trans.templates)[1]):
                 ga = gaussian_angstroms(lam_feii, trans.wavelength[i], 1.0, disp, 0.0)
                 new_temp = log_rebin(lamRange_feii, ga, velscale=self.ctx.target.velscale)[0]
-                templates[:,i] = new_temp/np.max(new_temp)
+                trans.templates[:,i] = new_temp/np.max(new_temp)
 
             # Pre-compute the FFT for each transition
-            trans.fft, trans.npad = template_rfft(templates)
+            trans.fft, trans.npad = template_rfft(trans.templates)
 
-        self.npad = self.transitions[0].npad
+        self.npad = self.transitions['F'].npad
         self.vsyst = np.log(lam_feii[0]/self.ctx.fit_wave[0]) * consts.c
 
-        # If opt_disp_const AND opt_voff_const, we preconvolve the templates so we don't have to during the fit
-        opt_feii_options = self.ctx.options.opt_feii_options
-        self.pre_convolve = (opt_feii_options.opt_disp_const.bool) and (opt_feii_options.opt_voff_const.bool)
+        # only if disp and voff are constant, can we pre_convolve before the fit
+        self.pre_convolve = ('disp' in self.const_params) and ('voff' in self.const_params)
+
         if self.pre_convolve:
-
-            feii_voff = opt_feii_options.opt_voff_const.opt_feii_val
-            feii_disp = opt_feii_options.opt_disp_const.opt_feii_val
-
             for trans in self.transitions.values():
-                trans.conv_temp = convolve(trans.fft, feii_voff, feii_disp, npad=trans.npad)
-
-
-    def initialize_parameters(self, params, args):
-        self.ctx.log.info('- Fitting optical FeII template from Kovacevic et al. (2010)')
-        opt_feii_options = self.ctx.options.opt_feii_options
-
-        # Kovacevic et al. 2010 7-parameter FeII template (for NLS1s and BAL QSOs)
-        # Consits of 7 free parameters
-        #   - 4 amplitude parameters for S,F,G,IZw1 line families
-        #   - 1 Temperature parameter determines relative intensities (5k-15k Kelvin)
-        #   - 1 DISP parameter
-        #   - 1 VOFF parameter
-        #   - all lines modeled as Gaussians
-
-        # Narrow FeII amplitude
-        if not opt_feii_options.opt_amp_const.bool:
-            params['OPT_FEII_F_AMP'] = {
-                                        'init':0.1*args['median_flux'],
-                                        'plim':(0, args['max_flux']),
-                                       }
-            params['OPT_FEII_S_AMP'] = {
-                                        'init':0.1*args['median_flux'],
-                                        'plim':(0,args['max_flux']),
-                                       }
-            params['OPT_FEII_G_AMP'] = {
-                                        'init':0.1*args['median_flux'],
-                                        'plim':(0,args['max_flux']),
-                                       }
-            params['OPT_FEII_Z_AMP'] = {
-                                        'init':0.1*args['median_flux'],
-                                        'plim':(0,args['max_flux']),
-                                       }
-
-        if not opt_feii_options.opt_disp_const.bool:
-            # FeII DISP
-            params['OPT_FEII_DISP'] = {
-                                        'init':250.0,
-                                        'plim':(0.1,2500.0),
-                                      }
-
-        if not opt_feii_options.opt_voff_const.bool:
-            # Narrow FeII amplitude
-            params['OPT_FEII_VOFF'] = {
-                                        'init':0.0,
-                                        'plim':(-1000.0,1000.0),
-                                      }
-
-        if not opt_feii_options.opt_temp_const.bool:
-            params['OPT_FEII_TEMP'] = {
-                                        'init':10000.0,
-                                        'plim':(2000.0,25000.0),
-                                      }
+                trans.conv_temp = convolve(trans.fft, self.const_params['voff'], self.const_params['disp'], npad=trans.npad)
 
 
     def add_components(self, params, comp_dict, host_model):
-        # f_template, s_template, g_template, z_template = K10_opt_feii_template(p, lam_gal, opt_feii_templates, opt_feii_options, velscale)
-
-        opt_feii_options = self.ctx.options.opt_feii_options
-        # TODO: would this option ever change? ie. if amp is const, just set in init
-        amp_const = opt_feii_options.opt_amp_const.bool
         for trans in self.transitions.values():
-            trans.feii_amp = opt_feii_options.opt_amp_const[trans.name.lower()+'_feii_val'] if amp_const else params['OPT_FEII_%s_AMP'%trans.name]
+            trans.feii_amp = self.get_param('%s_amp'%trans.name,params)
 
-        val = lambda ok, ov, pk : opt_feii_options[ok][ov] if opt_feii_options[ok].bool else params[pk]
-
-        opt_feii_disp = val('opt_disp_const', 'opt_feii_val', 'OPT_FEII_DISP')
-        opt_feii_voff = val('opt_voff_const', 'opt_feii_val', 'OPT_FEII_VOFF')
-        opt_feii_temp = val('opt_temp_const', 'opt_feii_val', 'OPT_FEII_TEMP')
-
-        for trans in self.transitions.values():
             if not self.pre_convolve:
                 # Perform the convolution
                 # TODO: set npad for each transition?
-                trans.conv_temp = self.convolve(trans.fft, opt_feii_voff, opt_feii_disp)
+                trans.conv_temp = self.convolve(trans.fft, self.get_param('voff',params), self.get_param('disp',params))
 
             # TODO: if we do pre-convolve do we need to do this here? Or can we do this once in init?
             # Normalize amplitudes to 1
@@ -439,17 +308,20 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
             # Calculate temperature dependent relative intensities
             # TODO: if temp is constant, do this in init?
             if trans.name != 'Z': # relative intensity set for Z in initialization
-                trans.calc_rel_int(opt_feii_temp)
+                trans.calc_rel_int(self.get_param('temp',params))
 
             # Multiply by relative intensities
             trans.conv_temp *= trans.rel_int
 
             # Sum templates along rows
-            trans.template = np.sum(trans.conv_temp, axis=1)
-            # TODO: should this be an '|'?
-            trans.template[(self.ctx.fit_wave < trans.range_min) & (self.ctx.fit_wave > trans.range_max)] = 0
+            trans.templates = np.sum(trans.conv_temp, axis=1)
 
-            comp_dict[trans.name+'_OPT_FEII_TEMPLATE'] = trans.template
-            host_model -= trans.template
+            if trans.name == 'Z':
+                trans.templates * self.get_param('z_amp',params)
+
+            trans.templates[(self.ctx.fit_wave < trans.range_min) | (self.ctx.fit_wave > trans.range_max)] = 0
+
+            comp_dict[trans.name+'_OPT_FEII_TEMPLATE'] = trans.templates
+            host_model -= trans.templates
 
         return host_model

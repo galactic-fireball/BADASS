@@ -57,12 +57,15 @@ def broken_power_law(x, amp, x_break, alpha_1, alpha_2, delta):
 
 class PowerLawTemplate(BadassTemplate):
 
+    OPTION_NAME = 'power'
+    PARAM_PREFIX = 'POWER_'
+
     @classmethod
     def initialize_template(cls, ctx):
-        if not ctx.options.comp_options.fit_power:
+        if not ctx.cfg.comp.fit_power:
             return None
 
-        temp_type = ctx.options.power_options.type
+        temp_type = ctx.cfg.power.type
         class_name = '%sPowerLawTemplate'%temp_type.capitalize()
         if not class_name in globals():
             ctx.log.error('Power Law template unsupported: %s' % temp_type)
@@ -72,34 +75,21 @@ class PowerLawTemplate(BadassTemplate):
         return temp_class(ctx)
 
 
-    def __init__(self, ctx):
-        self.ctx = ctx
-
-
 # Simple Power-Law (AGN continuum)
 class SimplePowerLawTemplate(PowerLawTemplate):
+
+    TEMPLATE_PARAMS = ['amp', 'slope']
 
     def __init__(self, ctx):
         super().__init__(ctx)
         self.ctx.log.info('- Fitting Simple AGN power-law continuum')
 
 
-    def initialize_parameters(self, params, args):
-        # AGN simple power-law amplitude
-        params['POWER_AMP'] = {
-                                'init':(0.5*args['median_flux']),
-                                'plim':(0,args['max_flux']),
-                              }
-
-        # AGN simple power-law slope
-        params['POWER_SLOPE'] = {
-                                    'init':-1.0,
-                                    'plim':(-6.0,6.0),
-                                }
-
-
     def add_components(self, params, comp_dict, host_model):
-        power = simple_power_law(self.ctx.fit_wave, params['POWER_AMP'], params['POWER_SLOPE'])
+        amp = self.get_param('amp', params)
+        slope = self.get_param('slope', params)
+
+        power = simple_power_law(self.ctx.fit_wave, amp, slope)
         comp_dict['POWER'] = power
         return host_model - power
 
@@ -107,46 +97,16 @@ class SimplePowerLawTemplate(PowerLawTemplate):
 # Smoothly-Broken Power-Law (AGN continuum)
 class BrokenPowerLawTemplate(PowerLawTemplate):
 
+    TEMPLATE_PARAMS = ['amp', 'break_', 'slope_1', 'slope_2', 'curvature']
+
     def __init__(self, ctx):
         super().__init__(ctx)
         self.ctx.log.info('- Fitting Smoothly-Broken AGN power-law continuum')
 
 
-    def initialize_parameters(self, params, args):
-        # AGN simple power-law amplitude
-        params['POWER_AMP'] = {
-                                'init':(0.5*args['median_flux']),
-                                'plim':(0,args['max_flux']),
-                              }
-
-        # AGN simple power-law break wavelength
-        params['POWER_BREAK'] = {
-                                    'init':(np.max(self.ctx.fit_wave) - (0.5*(np.max(self.ctx.fit_wave)-np.min(self.ctx.fit_wave)))),
-                                    'plim':(np.min(self.ctx.fit_wave), np.max(self.ctx.fit_wave)),
-                                }
-
-        # AGN simple power-law slope 1 (blue side)
-        params['POWER_SLOPE_1'] = {
-                                    'init':-1.0,
-                                    'plim':(-6.0,6.0),
-                                  }
-
-        # AGN simple power-law slope 2 (red side)
-        params['POWER_SLOPE_2'] = {
-                                    'init':-1.0,
-                                    'plim':(-6.0,6.0),
-                                  }
-
-        # Power-law curvature parameter (Delta)
-        params['POWER_CURVATURE'] = {
-                                        'init':0.10,
-                                        'plim':(0.01,1.0),
-                                    }
-
-
     def add_components(self, params, comp_dict, host_model):
-        power = broken_power_law(self.ctx.fit_wave, params['POWER_AMP'], params['POWER_BREAK'],
-                                         params['POWER_SLOPE_1'], cur_params['POWER_SLOPE_2'],
-                                         params['POWER_CURVATURE'])
+        power = broken_power_law(self.ctx.fit_wave, self.get_param('amp', params), self.get_param('break_', params),
+                                         self.get_param('slope_1', params), self.get_param('slope_2', params),
+                                         self.get_param('curvature', params))
         comp_dict['POWER'] = power
         return host_model - power

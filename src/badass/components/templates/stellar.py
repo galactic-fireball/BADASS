@@ -9,14 +9,18 @@ from badass.utils.utils import log_rebin
 
 class StellarTemplate(BadassTemplate):
 
+    OPTION_NAME = 'losvd'
+    PARAM_PREFIX = 'STEL_'
+    TEMPLATE_PARAMS = ['disp', 'vel']
+
     temp_dir = None
 
     @classmethod
     def initialize_template(cls, ctx):
-        if not ctx.options.comp_options.fit_losvd:
+        if not ctx.cfg.comp.fit_losvd:
             return None
 
-        StellarTemplate.temp_dir = consts.BADASS_DATA_DIR.joinpath(ctx.options.losvd_options.library)
+        StellarTemplate.temp_dir = consts.BADASS_DATA_DIR.joinpath(ctx.cfg.losvd.library)
         if not StellarTemplate.temp_dir.exists():
             ctx.log.error('Unable to find directory for stellar templates: %s' % str(StellarTemplate.temp_dir))
             return None
@@ -31,15 +35,15 @@ class StellarTemplate(BadassTemplate):
         for which can be found here: https://www-astro.physics.ox.ac.uk/~mxc/
         """
 
-        self.ctx = ctx
+        super().__init__(ctx)
 
         self.temp_fft = None
         self.npad = None
         self.vsyst = None
         self.conv_temp = None
 
-        losvd_options = self.ctx.options.losvd_options
-        fwhm_temp = consts.LOSVD_LIBRARIES[losvd_options.library].fwhm_temp
+        losvd_cfg = self.ctx.cfg.losvd
+        fwhm_temp = consts.LOSVD_LIBRARIES[losvd_cfg.library].fwhm_temp
         disp_temp = fwhm_temp/2.3548
 
         # Get a list of templates stored in temp_dir.  We only include 50 stellar
@@ -93,13 +97,20 @@ class StellarTemplate(BadassTemplate):
         sigma = disp_dif/h2['CDELT1'] # Sigma difference in pixels
 
         sspNew = log_rebin(lamRange_temp, ssp, velscale=ctx.target.velscale)[0]
+        if sspNew.shape[0] < self.ctx.fit_wave.shape[0]:
+            oversample = int(np.ceil(self.ctx.fit_wave.shape[0]/ssp.shape[0])) # make sure template size >= fit_wave size
+            sspNew = log_rebin(lamRange_temp, ssp, oversample=oversample)[0]
+
         templates = np.empty((sspNew.size, len(temp_list)))
         for j, fname in enumerate(temp_list):
             hdu = fits.open(fname)
             ssp = hdu[0].data
             ssp = ssp[mask_temp]
             ssp = gaussian_filter1d(ssp, sigma)  # perform convolution with variable sigma
-            sspNew,loglam_temp,velscale_temp = log_rebin(lamRange_temp, ssp, velscale=ctx.target.velscale)
+            sspNew = log_rebin(lamRange_temp, ssp, velscale=ctx.target.velscale)[0]
+            if sspNew.shape[0] < self.ctx.fit_wave.shape[0]:
+                oversample = int(np.ceil(self.ctx.fit_wave.shape[0]/ssp.shape[0])) # make sure template size >= fit_wave size
+                sspNew = log_rebin(lamRange_temp, ssp, oversample=oversample)[0]
             templates[:, j] = sspNew/np.median(sspNew) # Normalizes templates
             hdu.close()
 
@@ -118,52 +129,23 @@ class StellarTemplate(BadassTemplate):
         # Pre-compute FFT of templates, since they do not change (only the LOSVD and convolution changes)
         self.temp_fft, self.npad = template_rfft(templates)
 
-        # If vel_const AND disp_const are True, there is no need to convolve during the
-        # fit, so we perform the convolution here and pass the convolved templates to fit_model.
-        self.pre_convolve = (losvd_options.vel_const.bool) and (losvd_options.disp_const.bool)
+        # only if disp and vel are constant, can we pre_convolve before the fit
+        self.pre_convolve = ('disp' in self.const_params) and ('vel' in self.const_params)
+
         if self.pre_convolve:
-            stel_vel = losvd_options.vel_const.val
-            stel_disp = losvd_options.disp_const.val
-
             self.conv_temp = convolve_gauss_hermite(self.temp_fft, self.npad, float(self.ctx.target.velscale),
-                           [stel_vel, stel_disp], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
-
-
-    def initialize_parameters(self, params, args):
-        self.ctx.log.info('- Fitting the stellar LOSVD')
-        losvd_options = self.ctx.options.losvd_options
-
-        # Stellar velocity
-        if not losvd_options.vel_const.bool:
-            params['STEL_VEL'] = {
-                                    'init':100.0,
-                                    'plim':(-500.0,500.0),
-                                 }
-
-        # Stellar velocity dispersion
-        if not losvd_options.disp_const.bool:
-            params['STEL_DISP'] = {
-                                    'init':150.0,
-                                    'plim':(0.001,500.0),
-                                  }
+                           [self.const_params['vel'], self.const_params['disp']], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
 
 
     def add_components(self, params, comp_dict, host_model):
         if not self.pre_convolve:
-            losvd_options = self.ctx.options.losvd_options
-            val = lambda ok, ov, pk : losvd_options[ok][ov] if losvd_options[ok].bool else params[pk]
-
-            stel_vel = val('vel_const', 'val', 'STEL_VEL')
-            stel_disp = val('disp_const', 'val', 'STEL_DISP')
-
             self.conv_temp = convolve_gauss_hermite(self.temp_fft, self.npad, float(self.ctx.target.velscale),
-                           [stel_vel, stel_disp], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
-
+                           [self.get_param('vel',params), self.get_param('disp',params)], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
 
         host_model[~np.isfinite(host_model)] = 0
         self.conv_temp[~np.isfinite(self.conv_temp)] = 0
         # scipy.optimize Non-negative Least Squares
-        weights  = nnls(self.conv_temp, host_model)
+        weights = nnls(self.conv_temp, host_model)
         host_galaxy = (np.sum(weights*self.conv_temp, axis=1))
 
         if np.any(host_galaxy < 0):
