@@ -36,17 +36,17 @@
 ## `fit_narrow`
 *Type:* `bool`<br/>
 *Default:* `True`<br/>
-*Description:* Fit lines of the `line_type`:`na` in the line list. Narrow forbidden emission lines are seen in both Type 1 and Type 2 AGNs, as well as starforming galaxies.
+*Description:* Fit lines of the `line_type: 'na'` in the line list. Narrow forbidden emission lines are seen in both Type 1 and Type 2 AGNs, as well as starforming galaxies.
 
 ## `fit_broad`
 *Type:* `bool`<br/>
 *Default:* `True`<br/>
-*Description:* Fit lines of the `line_type`:`br` in the line list. Broad permitted emission lines are commonly seen in Type 1 AGN.
+*Description:* Fit lines of the `line_type: 'br'` in the line list. Broad permitted emission lines are commonly seen in Type 1 AGN.
 
 ## `fit_absorp`
 *Type:* `bool`<br/>
 *Default:* `False`<br/>
-*Description:* Fit lines of the `line_type`:`abs` in the line list. Occasionally one might need to fit a strong absorption feature that isn't described by stellar processes, such as a broad absorption line in a quasar.
+*Description:* Fit lines of the `line_type: 'abs'` in the line list. Occasionally one might need to fit a strong absorption feature that isn't described by stellar processes, such as a broad absorption line in a quasar.
 
 ## `tie_line_disp`
 *Type:* `bool`<br/>
@@ -57,3 +57,4 @@
 *Type:* `bool`<br/>
 *Default:* `False`<br/>
 *Description:* Ties the velocity offsets of all respective line types (all narrow lines are tied, all broad lines are tied, etc.). This can be done to significantly reduce the number of free parameters in the fit if fitting many lines, however it is not recommended.
+

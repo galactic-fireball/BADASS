@@ -16,6 +16,14 @@ MIN_FIT_REGION = 25 # (Angstroms), the minimum fitting region size
 FIT_STATS = ['ML','OLS','RCHI2','RMSE']
 LINE_PROFILES = ['gaussian','lorentzian','voigt','gauss-hermite','laplace','uniform']
 
+LINE_TYPE_TO_NAME = {
+    'na': 'narrow',
+    'br': 'broad',
+    'abs': 'absorp',
+}
+
+SUPPORTED_INSTRUMENTS = ['sdss', 'muse', 'nirspec', 'miri', 'kcwi']
+
 # For direct fitting of the stellar kinematics (stellar LOSVD), one can
 # specify a stellar template library (Indo-US, Vazdekis 2010, or eMILES).
 # One can also hold velocity or dispersion constant to avoid template

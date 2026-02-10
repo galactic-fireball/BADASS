@@ -46,6 +46,39 @@ def test_single():
         badass.run_BADASS(test_file, options_file=options_file)
 
 
+def test_schema():
+    test_file = EX_SPEC_DIR.joinpath('0-test', 'spec-1087-52930-0084.fits')
+
+    options = {
+        'io': {
+            'infmt': 'sdss',
+            'output_dir': 'schema_test',
+            'overwrite': True,
+        },
+        'fit': {
+            'fit_reg': (4400,5500),
+        },
+        # 'comp': {
+        #     'fit_balmer': True,
+        #     'fit_host': True,
+        #     'fit_poly': True,
+        # },
+        'power': {
+            'type': 'broken',
+        },
+        'optfeii': {
+            'template': 'K10',
+        },
+        'host': {
+            'age': [1.0,5.0,10.0],
+            'amp': {'init':'0.1*median_flux','plim':(0,'0.5*median_flux'),},
+        },
+    }
+
+    badass.run_BADASS(test_file, options=options)
+
+
+
 def test_line():
     options_file = OPTIONS_DIR.joinpath('line_test.py')
     # test_file = EX_SPEC_DIR.joinpath('0-test', 'spec-1087-52930-0084.fits')
@@ -174,9 +207,10 @@ def create_line_json():
 
 def main():
     # test_single()
+    test_schema()
     # test_line()
     # test_config()
-    test_input_dict()
+    # test_input_dict()
 
     # test_muse_single()
     # test_nirspec_single()

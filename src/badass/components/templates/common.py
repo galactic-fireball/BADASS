@@ -1,5 +1,6 @@
 from astropy.io import fits
 import natsort
+import numexpr as ne
 import numpy as np
 import pandas as pd
 from scipy import fftpack, optimize
@@ -144,8 +145,35 @@ def nnls(A, b, npoly=0):
 
 
 class BadassTemplate:
+
+    OPTION_NAME = None
+    PARAM_PREFIX = ''
+    TEMPLATE_PARAMS = []
+
     def __init__(self, ctx):
         self.ctx = ctx
+
+        # dictionary of all constant parameters for the template
+        self.const_params = {}
+        # dictionary of all free parameters for the template
+        self.hyperpars = {}
+
+        # Find all the free parameters, the rest are constants
+        self.opts = self.ctx.cfg[self.OPTION_NAME]
+        for param in self.TEMPLATE_PARAMS:
+            val = self.opts.get(param, None)
+
+            if val is None:
+                continue
+
+            # check for hyperpar dict, only copy init, plim, and prior vals
+            if isinstance(val, dict):
+                hyperpar_dict = {k:v for k,v in val.items() if k in ['init','plim','prior']}
+                if len(hyperpar_dict) > 0:
+                    self.hyperpars[param] = hyperpar_dict
+                    continue
+
+            self.const_params[param] = val
 
 
     @classmethod
@@ -154,11 +182,70 @@ class BadassTemplate:
 
 
     def initialize_parameters(self, params, args):
-        return
+        # Find all the free parameters, check if either hyperpar was
+        # set in the options, otherwise use the defaults
+        rm_pars = [] # params to remove from hyperpars list
+        for param, val in self.hyperpars.items():
+
+            for k in ['init', 'plim', 'prior']:
+                if not k in val:
+                    val[k] = self.opts.model_fields[param].default.get(k,None)
+
+            init = val['init']
+            plim = list(val['plim']) # make mutable
+
+            if isinstance(init, str):
+                init = ne.evaluate(init, local_dict=args).item()
+            if not isinstance(init, (float,int)):
+                self.ctx.log.warn('WARNING: Unable to evaluate hyperpar init expr, resorting to default')
+                default_val = self.opts.model_fields[param].default
+                if (isinstance(default_val, dict)) and ('init' in default_val): # default is a free parameter
+                    init = default_val['init']
+                else: # default is a constant, so remove this hyperpar
+                    self.const_params[param] = default_val
+                    rm_pars.append(param)
+                    continue
+
+            for i in [0,1]:
+                if isinstance(plim[i], str):
+                    plim[i] = ne.evaluate(plim[i], local_dict=args).item()
+                if not isinstance(plim[i], (float,int)):
+                    self.ctx.log.warn('WARNING: Unable to evaluate hyperpar plim expr, resorting to default')
+                    default_val = self.ctx.cfg[self.OPTION_NAME].model_fields[param].default
+                    if (isinstance(default_val, dict)) and ('plim' in default_val): # default is a free parameter
+                        plim[i] = default_val['plim'][i]
+                    else: # default is a constant, so remove this hyperpar
+                        self.const_params[param] = default_val
+                        rm_pars.append(param)
+                        continue
+
+            pname = '%s%s'%(self.PARAM_PREFIX,param.upper())
+            params[pname] = {
+                'init': init,
+                'plim': tuple(plim),
+            }
+
+            prior = self.hyperpars.get(param, {}).get('prior', None)
+            if not prior is None:
+                params[pname]['prior'] = prior
 
 
     def add_components(self, params, comp_dict, host_model):
         return comp_dict, host_model
+
+
+    def get_param(self, param_name, params):
+        # utility function, mostly for use in template's add_components func
+        # returns the constant if a constant, and the current param value if a free parameter
+        if param_name in self.const_params:
+            return self.const_params[param_name]
+
+        free_param_name = '%s%s'%(self.PARAM_PREFIX,param_name.upper())
+        if free_param_name in params:
+            return params[free_param_name]
+
+        self.ctx.log.warning('Unknown parameter: %s for template %s'%(param_name, self.__class__.__name__))
+        return np.nan
 
 
 # TODO: template initialize_parameter values in config file

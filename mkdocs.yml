@@ -35,7 +35,7 @@ nav:
   - Installation: documentation/installation.md
   - Usage:
     - I/O Options: documentation/usage/io.md
-    - Fitting Options: documentation/usage/fitting.md
+    - Fitting Options: documentation/usage/fit.md
     - MCMC Options: documentation/usage/mcmc.md
     - Model Component Options:
       - Template Components: documentation/usage/components/components.md
@@ -53,6 +53,13 @@ nav:
     - Other Options: documentation/usage/other.md
   - Examples: documentation/examples.md
   - Changelog: changes.md
+  - Spectral Fitting Tutorial:
+    - Overview: documentation/tutorial/overview.md
+    - Line profiles: documentation/tutorial/profiles.md
+    - Templates: documentation/tutorial/templates.md
+    - Bootstrap: documentation/tutorial/bootstrap.md
+    - MCMC: documentation/tutorial/mcmc.md
+    - IFU: documentation/tutorial/ifu.md
 
 
 markdown_extensions:

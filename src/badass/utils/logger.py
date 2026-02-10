@@ -2,7 +2,6 @@ import json
 import logging
 import numpy as np
 import sys
-import toml
 
 # TODO: create error file with warning +
 #           check err_level option
@@ -28,7 +27,7 @@ class BadassLogger:
         # File for all BADASS logging
         cls._logger.log_out_path = cls._logger.log_dir.joinpath('out_log.txt')
 
-        log_lvl = logging.getLevelName(cls._logger.ctx.options.io_options.log_level.upper())
+        log_lvl = logging.getLevelName(cls._logger.ctx.cfg.io.log_level.upper())
         log_lvl = log_lvl if isinstance(log_lvl, int) else logging.INFO
 
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
@@ -90,7 +89,7 @@ class BadassLogger:
 
         self.logger.info('\n')
         self.logger.info('{0:<30}'.format('Units:'))
-        self.logger.info('{0:<30}'.format('\t- Fluxes are in units of [%0.0e erg/s/cm2/Å]' % (self.ctx.options.fit_options.flux_norm)))
+        self.logger.info('{0:<30}'.format('\t- Fluxes are in units of [%0.0e erg/s/cm2/Å]' % (self.ctx.flux_norm)))
         self.logger.info('{0:<30}'.format('\t- Fiting normalization factor is %0.5f' % (self.ctx.fit_norm)))
         
         self.logger.info('\n')
@@ -112,33 +111,33 @@ class BadassLogger:
         self.logger.info('{0:<30}'.format('\t- Fluxes and Luminosities are in log-10'))
         self.logger.info('\n')
         self.logger.info('{0:<30}'.format('Cosmology:'))
-        self.logger.info('{0:<30}'.format('\t H0 = %0.1f' % self.ctx.options.fit_options.cosmology['H0']))
-        self.logger.info('{0:<30}'.format('\t Om0 = %0.2f' % self.ctx.options.fit_options.cosmology['Om0']))
+        self.logger.info('{0:<30}'.format('\t H0 = %0.1f' % self.ctx.cfg.fit.cosmology['H0']))
+        self.logger.info('{0:<30}'.format('\t Om0 = %0.2f' % self.ctx.cfg.fit.cosmology['Om0']))
         self.logger.info('\n')
         self.logger.info('-----------------------------------------------------------------------------------------------------------------')
 
 
     def log_fit_information(self):
-        # TODO: does it make more sense to just pretty print the entire options dict to a file?
-        # TODO: use options.<sub_option>.items() to just print all items?
+        # TODO: does it make more sense to just pretty print the entire cfg dict to a file?
+        # TODO: use cfg.<sub_option>.items() to just print all items?
         self.logger.info('### User-Input Fitting Paramters & Options ###')
         self.logger.info('-----------------------------------------------------------------------------------------------------------------')
 
-        self.logger.info(json.dumps(self.ctx.options, default=str, indent=4))
+        self.logger.info(json.dumps(self.ctx.cfg, default=str, indent=4))
 
 
     def pca_information(self, pca_nan_fix=False, pca_exp_var=None):
         self.logger.info('### PCA Options ###')
         self.logger.info('-----------------------------------------------------------------------------------------------------------------')
         self.logger.info('{0:<30}'.format('pca_options:'))
-        self.logger.info('{0:>30}{1:<2}{2:<30}'.format('do_pca', ':', str(self.ctx.options.pca_options.do_pca)))
-        if self.ctx.options.pca_options.do_pca:
+        self.logger.info('{0:>30}{1:<2}{2:<30}'.format('do_pca', ':', str(self.ctx.cfg.pca.do_pca)))
+        if self.ctx.cfg.pca.do_pca:
             self.logger.info('{0:>30}{1:<2}{2:<30.8f}'.format('exp_var', ':', pca_exp_var))
             self.logger.info('{0:>30}{1:<2}{2:<30}'.format('pca_nan_fix', ':', str(pca_nan_fix)))
-            n_comps = self.ctx.options.pca_options.n_components if self.ctx.options.pca_options.n_components else 'All'
+            n_comps = self.ctx.cfg.pca.n_components if self.ctx.cfg.pca.n_components else 'All'
             self.logger.info('{0:>30}{1:<2}{2:<30}'.format('n_components', ':', n_comps))
             self.logger.info('{0:>30}{1:<2}'.format('pca_masks', ':'))
-            pca_masks = self.ctx.options.pca_options.pca_masks
+            pca_masks = self.ctx.cfg.pca.pca_masks
             for ind, m in enumerate(pca_masks):
                 self.logger.info(', '.join([str(p) for p in pca_masks]))                
         self.logger.info('-----------------------------------------------------------------------------------------------------------------\n') 
@@ -221,8 +220,8 @@ class BadassLogger:
         self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
 
 
-    def output_options(self):
-        file_path = self.log_dir.joinpath('fit_options.toml')
+    def output_cfg(self):
+        file_path = self.log_dir.joinpath('fit_cfg.json')
         with open(file_path, 'w') as opt_out:
-            toml.dump(self.ctx.options.to_dict(), opt_out)
+            opt_out.write(self.ctx.cfg.model_dump_json())
 

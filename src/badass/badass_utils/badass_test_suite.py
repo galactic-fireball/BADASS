@@ -156,8 +156,8 @@ def calculate_AIC(mccomps_A, mccomps_B, k_A, k_B):
 
 def calculate_rsquared_ratio(mccomps_A, mccomps_B, eval_ind):
 
-    data_A = mccomps_A['DATA'][0][eval_ind].copy(), model_A = mccomps_A['MODEL'][0][eval_ind].copy()
-    data_B = mccomps_B['DATA'][0][eval_ind].copy(), model_B = mccomps_B['MODEL'][0][eval_ind].copy()
+    data_A, model_A = mccomps_A['DATA'][0][eval_ind].copy(), mccomps_A['MODEL'][0][eval_ind].copy()
+    data_B, model_B = mccomps_B['DATA'][0][eval_ind].copy(), mccomps_B['MODEL'][0][eval_ind].copy()
 
     # Since R-squared takes into account lines+continuum, we only want 
     # to be sensitive to flux that comes from lines, so we subtract
@@ -334,7 +334,7 @@ def collect_test_metrics(ctx, fit_results_A, fit_results_B, line_name):
         ctx.fit_spec[fit_mask],
         np.arange(len(resid_A)),
         ddof,
-        ctx.target.options.io_options.output_dir,
+        ctx.target.cfg.io.output_dir,
         plot=False
     )
     metrics['BADASS'] = conf
@@ -371,8 +371,8 @@ def collect_test_metrics(ctx, fit_results_A, fit_results_B, line_name):
 
 
 
-def thresholds_met(test_options, cur_metrics, fit_results):
-    pass_list = [cur_metrics[metric] >= thresh for metric, thresh in test_options.metrics.items() if metric in cur_metrics]
-    if 'AON' in test_options.metrics: pass_list.append(fit_results['aon'] >= test_options.metrics['AON']) # special case
-    mode_func = {'any':np.any, 'all':np.all}[test_options.conv_mode]
+def thresholds_met(test_cfg, cur_metrics, fit_results):
+    pass_list = [cur_metrics[metric] >= thresh for metric, thresh in test_cfg.metrics.items() if metric in cur_metrics]
+    if 'AON' in test_cfg.metrics: pass_list.append(fit_results['aon'] >= test_cfg.metrics['AON']) # special case
+    mode_func = {'any':np.any, 'all':np.all}[test_cfg.conv_mode]
     return mode_func(pass_list)

@@ -10,6 +10,10 @@ HOST_GAL_TEMP_AGE_MIN = 0.09
 
 class HostTemplate(BadassTemplate):
 
+    OPTION_NAME = 'host'
+    PARAM_PREFIX = 'HOST_TEMP_'
+    TEMPLATE_PARAMS = []
+
     temp_file = None
     def get_host_template_file(age):
         temp_file_fmt = 'Eku1.30Zp0.06T{:0>7.4f}_iTp0.00_baseFe_linear_FWHM_variable.fits'
@@ -18,11 +22,11 @@ class HostTemplate(BadassTemplate):
 
     @classmethod
     def initialize_template(cls, ctx):
-        if not ctx.options.comp_options.fit_host:
+        if not ctx.cfg.comp.fit_host:
             return None
 
         if ctx.fit_wave[0] < HOST_GAL_TEMP_WAVE_MIN:
-            ctx.options.comp_options.fit_host = False
+            ctx.cfg.comp.fit_host = False
             ctx.log.warn('Host galaxy SSP template disabled because template is outside of fitting region.')
             return None
 
@@ -36,14 +40,20 @@ class HostTemplate(BadassTemplate):
 
     def __init__(self, ctx):
 
-        self.ctx = ctx
+        host_cfg = ctx.cfg.host
+
+        if len(host_cfg.age) != 1:
+            self.TEMPLATE_PARAMS = ['disp', 'vel']
+        else:
+            self.TEMPLATE_PARAMS = ['amp', 'disp', 'vel']
+
+        super().__init__(ctx)
 
         self.ssp_fft = None
         self.npad = None
         self.vsyst = None
         self.conv_host = None
 
-        host_options = self.ctx.options.host_options
         fwhm_temp = consts.LOSVD_LIBRARIES.eMILES.fwhm_temp # FWHM resolution of eMILES in Å
         disp_temp = fwhm_temp/2.3548
 
@@ -80,8 +90,8 @@ class HostTemplate(BadassTemplate):
             oversample = int(np.ceil(self.ctx.fit_wave.shape[0]/ssp.shape[0])) # make sure template size >= fit_wave size
             sspNew = log_rebin(lamRange_temp, ssp, oversample=oversample)[0]
 
-        templates = np.empty((sspNew.size, len(host_options.age)))
-        for j, age in enumerate(host_options.age):
+        templates = np.empty((sspNew.size, len(host_cfg.age)))
+        for j, age in enumerate(host_cfg.age):
             atemp = HostTemplate.get_host_template_file(age)
             if not atemp.exists():
                 self.ctx.log.error('Could not find host galaxy template file: %s' % str(atemp))
@@ -111,52 +121,22 @@ class HostTemplate(BadassTemplate):
         self.vsyst = np.log(lam_temp[0]/self.ctx.fit_wave[0]) * consts.c
         self.ssp_fft, self.npad = template_rfft(templates)
 
-        self.pre_convolve = (host_options.vel_const.bool) and (host_options.disp_const.bool)
+        # only if disp and vel are constant, can we pre_convolve before the fit
+        self.pre_convolve = ('disp' in self.const_params) and ('vel' in self.const_params)
+
         if self.pre_convolve:
-            host_vel = host_options.vel_const.val
-            host_disp = host_options.disp_const.val
-
             self.conv_host = convolve_gauss_hermite(self.ssp_fft, self.npad, float(self.ctx.target.velscale),
-                           [host_vel, host_disp], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
-
-
-    def initialize_parameters(self, params, args):
-        self.ctx.log.info('- Fitting a SSP host-galaxy template')
-        host_options = self.ctx.options.host_options
-
-        if len(host_options.age) == 1:
-            params['HOST_TEMP_AMP'] = {
-                                        'init':0.5*args['median_flux'],
-                                        'plim':(0,args['max_flux']),
-                                      }
-
-        if not host_options.vel_const.bool:
-            params['HOST_TEMP_VEL'] = {
-                                        'init':0.0,
-                                        'plim':(-500.0,500),
-                                      }
-
-        if not host_options.disp_const.bool:
-            params['HOST_TEMP_DISP'] = {
-                                        'init':100.0,
-                                        'plim':(0.001,500.0),
-                                       }
+                           [self.const_params['vel'], self.const_params['disp']], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
 
 
     def add_components(self, params, comp_dict, host_model):
         if not self.pre_convolve:
-            host_options = self.ctx.options.host_options
-            val = lambda ok, ov, pk : host_options[ok][ov] if host_options[ok].bool else params[pk]
-
-            host_vel = val('vel_const', 'val', 'HOST_TEMP_VEL')
-            host_disp = val('disp_const', 'val', 'HOST_TEMP_DISP')
-
             self.conv_host = convolve_gauss_hermite(self.ssp_fft, self.npad, float(self.ctx.target.velscale),
-                           [host_vel, host_disp], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
+                           [self.get_param('vel',params), self.get_param('disp',params)], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
 
 
         if np.shape(self.conv_host)[1] == 1:
-            host_galaxy = (self.conv_host * params['HOST_TEMP_AMP']).reshape(-1)
+            host_galaxy = (self.conv_host * self.get_param('amp',params)).reshape(-1)
         elif np.shape(self.conv_host)[1] > 1:
             host_model[~np.isfinite(host_model)] = 0
             self.conv_host[~np.isfinite(self.conv_host)] = 0

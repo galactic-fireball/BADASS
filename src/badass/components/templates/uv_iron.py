@@ -15,13 +15,17 @@ UV_IRON_DISP_MIN = 0.01
 
 class UVIronTemplate(BadassTemplate):
 
+    OPTION_NAME = 'uv_iron'
+    PARAM_PREFIX = 'UV_IRON_'
+    TEMPLATE_PARAMS = ['amp', 'disp', 'voff']
+
     @classmethod
     def initialize_template(cls, ctx):
-        if not ctx.options.comp_options.fit_uv_iron:
+        if not ctx.cfg.comp.fit_uv_iron:
             return None
 
         if (ctx.fit_wave[0] > UV_IRON_TEMP_WAVE_MAX) or (ctx.fit_wave[-1] < UV_IRON_TEMP_WAVE_MIN):
-            ctx.options.comp_options.fit_uv_iron = False
+            ctx.cfg.comp.fit_uv_iron = False
             ctx.log.warn('UV Iron template disabled because template is outside of fitting region')
             ctx.log.update_uv_iron()
             return None
@@ -34,7 +38,7 @@ class UVIronTemplate(BadassTemplate):
 
 
     def __init__(self, ctx):
-        self.ctx = ctx
+        super().__init__(ctx)
 
         npad = 100 # anstroms
         df_uviron = pd.read_csv(UV_IRON_TEMPLATE_FILE) # UV B only
@@ -65,56 +69,16 @@ class UVIronTemplate(BadassTemplate):
                                                velscale_ratio=1, sigma_diff=0, vsyst=self.vsyst)
 
 
-    def initialize_parameters(self, params, args):
-        # Veron-Cerry et al. 2004 2-8 Parameter FeII template
-        self.ctx.log.info('- Fitting UV iron emission using Vestergaard & Wilkes (2001) UV iron template')
-        uv_iron_options = self.ctx.options.uv_iron_options
-        if not uv_iron_options.uv_amp_const.bool:
-            self.ctx.log.info('\t* varying UV iron amplitudes')
-            # Narrow FeII amplitude
-            params['UV_IRON_AMP'] = {
-                                        'init':0.1*args['median_flux'],
-                                        'plim':(0, args['max_flux']),
-                                    }
-
-        if not uv_iron_options.uv_disp_const.bool:
-            self.ctx.log.info('\t* varying UV iron dispersion')
-            # Narrow FeII DISP
-            params['UV_IRON_DISP'] = {
-                                        'init':1000.0,
-                                        'plim':(100.0,20000.0),
-                                     }
-
-        if not uv_iron_options.uv_voff_const.bool:
-            self.ctx.log.info('\t* varying UV iron voff')
-            # Narrow FeII VOFF
-            params['UV_IRON_VOFF'] = {
-                                        'init':0.0,
-                                        'plim':(-1000.0,1000.0),
-                                     }
-
-
     def add_components(self, params, comp_dict, host_model):
-
-        uv_iron_options = self.ctx.options.uv_iron_options
-        val = lambda ok, ov, pk : uv_iron_options[ok][ov] if uv_iron_options[ok].bool else params[pk]
-
-        # TODO: would this option ever change? ie. if amp, etc. are const, just set in init
-        uv_iron_amp = val('uv_amp_const', 'uv_iron_val', 'UV_IRON_AMP')
-        uv_iron_disp = val('uv_disp_const', 'uv_iron_val', 'UV_IRON_DISP')
-        uv_iron_voff = val('uv_voff_const', 'uv_iron_val', 'UV_IRON_VOFF')
-
-        conv_temp = self.convolve(uv_iron_voff, uv_iron_disp)
-
-        # Reshape
+        conv_temp = self.convolve(self.get_param('voff', params), self.get_param('disp', params))
         conv_temp = conv_temp.reshape(-1)
+
         # Re-normalize to 1
         conv_temp = conv_temp/np.max(conv_temp)
-        # Multiply by amplitude
-        template = uv_iron_amp * conv_temp
+        template = self.get_param('amp',params) * conv_temp
 
         # Set fitting region outside of template to zero to prevent convolution loops
-        template[(self.ctx.fit_wave < UV_IRON_TEMP_WAVE_MIN) & (self.ctx.fit_wave > UV_IRON_TEMP_WAVE_MAX)] = 0
+        template[(self.ctx.fit_wave < UV_IRON_TEMP_WAVE_MIN) | (self.ctx.fit_wave > UV_IRON_TEMP_WAVE_MAX)] = 0
 
         # If the summation results in 0.0, it means that features were too close 
         # to the edges of the fitting region (usually because the region is too 

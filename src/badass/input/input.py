@@ -17,7 +17,7 @@ from badass.utils.utils import ccm_unred, get_ebv, emline_masker, metal_masker
 
 class BadassInput():
 
-    def __init__(self, input_data, options):
+    def __init__(self, input_data, cfg):
         # TODO: make dataclass
         if not hasattr(self, 'valid'):
             self.valid = True
@@ -37,21 +37,21 @@ class BadassInput():
         if not hasattr(self, 'flux_norm'):
             self.flux_norm = 1.0
 
-        if not hasattr(self, 'options'):
-            self.options = options
+        if not hasattr(self, 'cfg'):
+            self.cfg = cfg
 
         if not hasattr(self, 'name'):
-            if hasattr(self.options.io_options, 'product_name'):
-                self.name = self.options.io_options.product_name
+            if hasattr(self.cfg.io, 'product_name'):
+                self.name = self.cfg.io.product_name
             elif hasattr(self, 'infile'):
                 self.name = self.infile.stem
             else:
                 self.name = 'spec-%d'%int(time.time() * 1000)
 
         if not hasattr(self, 'outdir'):
-            if hasattr(self.options.io_options, 'output_dir'):
-                self.outdir = pathlib.Path(self.options.io_options.output_dir)
-                if self.options.io_options.get('multi', False):
+            if hasattr(self.cfg.io, 'output_dir'):
+                self.outdir = pathlib.Path(self.cfg.io.output_dir)
+                if self.cfg.io.get('multi', False):
                     self.outdir = self.outdir.joinpath(self.name)
             elif hasattr(self, 'infile'):
                 self.outdir = self.infile.parent.resolve().joinpath(self.name)
@@ -62,7 +62,7 @@ class BadassInput():
 
         # TODO: check for fit completed
         if self.outdir.exists():
-            if self.options.io_options.get('overwrite', False):
+            if self.cfg.io.get('overwrite', False):
                 print('Removing old output directory: [%s]'%str(self.outdir))
                 shutil.rmtree(str(self.outdir))
             else:
@@ -100,13 +100,13 @@ class BadassInput():
         self.noise[inan] = 1.0 if all(np.isnan(self.noise)) else np.nanmedian(self.noise)
 
         fit_mask_bad = []
-        if self.options.fit_options.mask_bad_pix:
+        if self.cfg.fit.mask_bad_pix:
             fit_mask_bad.extend(self.bad_pix)
-        if self.options.fit_options.mask_emline:
+        if self.cfg.fit.mask_emline:
             fit_mask_bad.extend(emline_masker(self.wave,self.spec,self.noise))
-        for m in self.options.user_mask:
+        for m in self.cfg.user_mask:
             fit_mask_bad.extend(np.where((self.wave >= m[0]) & (self.wave <= m[1]))[0])
-        if self.options.fit_options.mask_metal:
+        if self.cfg.fit.mask_metal:
             fit_mask_bad.extend(metal_masker(self.wave,self.spec,self.noise))
 
         ebv = get_ebv(self.ra, self.dec)
@@ -117,7 +117,7 @@ class BadassInput():
         self.noise = self.noise / self.fit_norm
         self.noise[self.noise == 0] = np.nanmedian(self.noise)
 
-        if self.options.pca_options.do_pca:
+        if self.cfg.get('pca', {}).get('do_pca',False):
             pca_reconstruction(self) # TODO: test
 
         if np.isnan(self.spec).all():
@@ -138,8 +138,7 @@ class BadassInput():
         self.fit_reg = (self.wave[0], self.wave[-1])
         self.log.info('Initial fitting region: ({mi}, {ma})'.format(mi=self.fit_reg[0], ma=self.fit_reg[1]))
 
-        # TODO: set default to 'auto' in options schema
-        user_fit_reg = self.options.fit_options.fit_reg
+        user_fit_reg = self.cfg.fit.fit_reg
         if isinstance(user_fit_reg, (tuple,list)):
             if user_fit_reg[0] > user_fit_reg[1]:
                 self.log.error('Fitting boundaries overlap!')
@@ -167,9 +166,9 @@ class BadassInput():
 
         # The lower limit of the spectrum must be the lower limit of our stellar templates
         # TODO: template function to let each template affect the fitting region?
-        if self.options.comp_options.fit_losvd:
-            min_losvd = constants.LOSVD_LIBRARIES[self.options.losvd_options.library].min_losvd
-            max_losvd = constants.LOSVD_LIBRARIES[self.options.losvd_options.library].max_losvd
+        if self.cfg.comp.fit_losvd:
+            min_losvd = constants.LOSVD_LIBRARIES[self.cfg.losvd.library].min_losvd
+            max_losvd = constants.LOSVD_LIBRARIES[self.cfg.losvd.library].max_losvd
             if (self.fit_reg[0] < min_losvd) or (self.fit_reg[1] > max_losvd):
                 self.log.warn("Warning: Fitting LOSVD requires wavelenth range between {mi} Å and {ma} Å for stellar templates. BADASS will adjust your fitting range to fit the LOSVD...".format(mi=min_losvd, ma=max_losvd))
                 self.log.warn("\t- Available wavelength range: (%d, %d)" % (self.fit_reg[0], self.fit_reg[1]))
@@ -185,36 +184,23 @@ class BadassInput():
             self.fit_reg = None
             return
 
-        mask = ((self.wave >= self.fit_reg.min) & (self.wave <= self.fit_reg.max))
-        igood = np.where((self.spec[mask]>0) & (self.noise[mask]>0))[0]
-        good_frac = (len(igood)*1.0)/len(self.spec[mask])
-        if good_frac < self.options.fit_options.good_thresh:
-            self.log.error('Not enough good channels above threshold!')
-            self.fit_reg = None
-            return
+
+    @classmethod
+    def from_dict(cls, input_data, cfg=prodict.Prodict({})):
+        if (len(cfg) == 0) and (not input_data.get('cfg', None) is None):
+            cfg = prodict.Prodict(input_data['cfg'])
+
+        return cls.from_format(input_data, cfg)
 
 
     @classmethod
-    def from_dict(cls, input_data, options=prodict.Prodict({})):
-        if (len(options) == 0) and (not input_data.get('options', None) is None):
-            options = prodict.Prodict(input_data['options'])
-
-        if options.get('io_options', None) is None:
-            options.io_options = {}
-        if options.io_options.get('infmt', None) is None:
-            options.io_options.infmt = 'default'
-        return cls.from_format(input_data, options)
+    def parse(cls, input_data, cfg):
+        return cls(input_data, cfg)
 
 
     @classmethod
-    def parse(cls, input_data, options):
-        return cls(input_data, options)
-
-
-    @classmethod
-    def from_format(cls, input_data, options):
-        options = options if isinstance(options, dict) else options[0]
-        fmt = options.io_options.infmt+'_reader'
+    def from_format(cls, input_data, cfg):
+        fmt = cfg.io.infmt+'_reader'
 
         try:
             module = import_module('badass.input.'+fmt)
@@ -224,7 +210,7 @@ class BadassInput():
         if not getattr(module, 'Reader', None):
             raise Exception('No Reader specified in %s' % fmt)
 
-        readers = module.Reader.parse(input_data, options)
+        readers = module.Reader.parse(input_data, cfg)
         readers = readers if isinstance(readers, list) else [readers]
         # valid_readers = []
         # for reader in readers:
@@ -240,7 +226,7 @@ class BadassInput():
 
 
     @classmethod
-    def from_path(cls, _path, options, filter=None):
+    def from_path(cls, _path, cfg, filter=None):
         # TODO: implement support to filter different types
         #       of files from the supplied directory
 
@@ -249,7 +235,7 @@ class BadassInput():
             raise Exception('Unable to find input path: %s' % str(path))
 
         if path.is_file():
-            return cls.from_format(path, options)
+            return cls.from_format(path, cfg)
 
         inputs = []
         # TODO: add search string option and recursion option
@@ -258,47 +244,46 @@ class BadassInput():
             if not infile.is_file():
                 continue
 
-            ret = cls.from_format(infile, options)
+            ret = cls.from_format(infile, cfg)
             inputs.extend(ret if isinstance(ret, list) else [ret])
         return inputs
 
 
     @classmethod
-    def get_inputs(cls, input_data, options):
+    def get_inputs(cls, input_data, cfg):
         # TODO: from_previous_run
         if isinstance(input_data, list):
 
-            if isinstance(options, list) and (len(options) != 1 and len(options) != len(input_data)):
+            if isinstance(cfg, list) and (len(cfg) != 1 and len(cfg) != len(input_data)):
                 raise Exception('Options list must be same length as input data')
 
-            opts = options
-            if isinstance(options, dict):
-                opts = [options] * len(input_data)
-            elif len(options) == 1:
-                opts = [options[0]] * len(input_data)
+            if isinstance(cfg, dict):
+                cfg = [cfg] * len(input_data)
+            elif len(cfg) == 1:
+                cfg = [cfg[0]] * len(input_data)
 
             inputs = []
-            for ind, opt in zip(input_data, opts):
-                opt.io_options.multi = True
+            for ind, opt in zip(input_data, cfg):
+                opt.io.multi = True
                 inputs.extend(cls.get_inputs(ind, opt))
             return inputs
 
         if isinstance(input_data, dict):
-            ret = cls.from_dict(input_data, options)
+            ret = cls.from_dict(input_data, cfg)
             return ret if isinstance(ret, list) else [ret]
 
         if isinstance(input_data, pathlib.Path):
-            ret = cls.from_path(input_data, options)
+            ret = cls.from_path(input_data, cfg)
             return ret if isinstance(ret, list) else [ret]
 
         # Check if string path
         if isinstance(input_data, str):
             if pathlib.Path(input_data).exists():
-                ret = cls.from_path(input_data, options)
+                ret = cls.from_path(input_data, cfg)
                 return ret if isinstance(ret, list) else [ret]
             # if not, could be actual data
 
-        ret = cls.from_format(input_data, options)
+        ret = cls.from_format(input_data, cfg)
         return ret if isinstance(ret, list) else [ret]
 
 
@@ -321,9 +306,9 @@ class BadassInput():
 # TODO: use default_reader.py?
 # TODO: make Mixin instead so targets can still have their associated class
 class CustomReader(BadassInput):
-    def __init__(self, input_data, options):
+    def __init__(self, input_data, cfg):
         self.__dict__.update(input_data)
-        if not hasattr(self, 'options'):
-            self.options = options
-        super().__init__(input_data, options)
+        if not hasattr(self, 'cfg'):
+            self.cfg = cfg
+        super().__init__(input_data, cfg)
 
