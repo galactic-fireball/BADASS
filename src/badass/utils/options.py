@@ -153,9 +153,9 @@ class PolyOptions(CustomBaseModel):
     alt_doc_name = 'polynomial'
 
     apoly_order: int = 0
-    apoly_coeff: Param | list[Number] = {'init': 0.0, 'plim':(-1.0e2, 1.0e2)}
+    apoly_coeff: Param | list[Number] = {'init': 0.0, 'plim':(-1.0e2, 1.0e2), 'prior':{'type':'gaussian'}}
     mpoly_order: int = 0
-    mpoly_coeff: Param | list[Number] = {'init': 0.0, 'plim':(-1.0e2, 1.0e2)}
+    mpoly_coeff: Param | list[Number] = {'init': 0.0, 'plim':(-1.0e2, 1.0e2), 'prior':{'type':'gaussian'}}
 
 
 class LOSVDOptions(CustomBaseModel):
@@ -217,6 +217,15 @@ class K10_Options(OptFeIIOptions):
     voff: Param = {'init': 0.0, 'plim':(-1000.0, 1000.0)}
     temp: NonNegativeParam = {'init': 10000.0, 'plim':(2000.0, 20000.0)}
 
+    # template: Literal['K10'] = 'K10'
+    # f_amp: NonNegativeParam = {'init':'0.1*median_flux', 'plim':(0, 'max_flux')}
+    # s_amp: NonNegativeParam = {'init':'0.1*median_flux', 'plim':(0, 'max_flux')}
+    # g_amp: NonNegativeParam = {'init':'0.1*median_flux', 'plim':(0, 'max_flux')}
+    # z_amp: NonNegativeParam = {'init':'0.1*median_flux', 'plim':(0, 'max_flux')}
+    # disp: NonNegativeParam = {'init': 250.0, 'plim':(0.1, 2500.0)}
+    # voff: Param = {'init': 0.0, 'plim':(-500.0, 500.0)}
+    # temp: NonNegativeParam = {'init': 10000.0, 'plim':(2000.0, 25000.0)}
+
 
 class PlotOptions(CustomBaseModel):
     html: bool = True
@@ -229,27 +238,32 @@ class OutputOptions(CustomBaseModel):
 
 
 class GeneralLineOptions(CustomBaseModel):
+    # allow support for LineType
+    center: NonNegativeNum = 0.0
+    ncomp: NonNegativeInt = 1
+    parent: str | None = None
+
     line_type: Literal['na','br','abs'] = 'na'
 
     # General hyperpars; child classes can override
-    amp: NonNegativeParam = {'init':0.0, 'plim':(1.0,0.0)}
+    amp: NonNegativeParam = {'init':1.0, 'plim':(0.0,2.0)}
     amp_adjust: bool = True # allow BADASS to adjust amp depending on surrounding features
     disp: NonNegativeParam = {'init':50.0, 'plim':(0.001,300.0)}
-    voff: Param = {'init':0.0, 'plim':(-500.0,500.0)}
+    voff: Param = {'init':0.0, 'plim':(-500.0,500.0), 'prior':{'type':'gaussian'}}
     voff_adjust: bool = True # allow BADASS to adjust voff depending on surrounding features
 
     # Higher-order moments for Gauss-Hermite, Laplace, and Uniform line profiles
     n_moments: Number = 4
-    h: Param = {'init':0.0, 'plim':(-0.5,0.5)}
+    h: Param = {'init':0.0, 'plim':(-0.5,0.5)} # TODO: line classes need to handle converting this to h3, h4, etc.
 
     # Shape of the Voigt profile
-    shape: Param = {'init', 'plim'}
+    shape: Param = {'init':0.0, 'plim':(0.0,1.0)}
 
     line_profile: Literal[*(consts.LINE_PROFILES)] = 'gaussian'
 
 
 class NarrowLineOptions(GeneralLineOptions):
-    pass
+    line_type: Literal['na'] = 'na'
 
 
 class BroadLineOptions(GeneralLineOptions):
@@ -260,6 +274,8 @@ class BroadLineOptions(GeneralLineOptions):
 
 class AbsorpLineOptions(GeneralLineOptions):
     line_type: Literal['abs'] = 'abs'
+
+LineType = NarrowLineOptions | BroadLineOptions | AbsorpLineOptions
 
 
 # TODO: add descriptions
@@ -295,7 +311,7 @@ class BadassConfig(CustomBaseModel):
 
     test: TestOptions = Field(default=TestOptions(), alias=AliasChoices('test', 'test_options'))
 
-    user_lines: dict[str,dict] = {}
+    user_lines: dict[str,LineType] = {}
     combined_lines: dict[str,list[str]] = {}
     user_constraints: list[list[str | Number]] = []
     user_mask: list[list[NonNegativeNum]] = []

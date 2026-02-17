@@ -126,3 +126,15 @@ class ResultWriter:
 
 
 # TODO: save_run_state -> allow to be picked up by a new run
+
+
+# TODO: other output:
+# - spectra viewer input
+
+
+def make_full_result(ba_out_dir):
+	make_fit_goodness_report(ba_out_dir)
+
+# metrics from badass_test_suite
+# residual distribution
+# line window

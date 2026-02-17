@@ -38,7 +38,7 @@ class OpticalFeIITemplate(BadassTemplate):
     def convolve(self, fft, feii_voff, feii_disp, npad=None):
         if npad is None: npad = self.npad
         return convolve_gauss_hermite(fft, npad, float(self.ctx.target.velscale),
-                                     [feii_voff, feii_disp/2.3548], self.ctx.fit_wave.shape[0],
+                                     [feii_voff, feii_disp], self.ctx.fit_wave.shape[0],
                                      velscale_ratio=1, sigma_diff=0, vsyst=self.vsyst)
 
 
@@ -287,12 +287,12 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
 
         if self.pre_convolve:
             for trans in self.transitions.values():
-                trans.conv_temp = convolve(trans.fft, self.const_params['voff'], self.const_params['disp'], npad=trans.npad)
+                trans.conv_temp = self.convolve(trans.fft, self.const_params['voff'], self.const_params['disp'], npad=trans.npad)
 
 
     def add_components(self, params, comp_dict, host_model):
         for trans in self.transitions.values():
-            trans.feii_amp = self.get_param('%s_amp'%trans.name,params)
+            trans.feii_amp = self.get_param('%s_amp'%trans.name.lower(),params)
 
             if not self.pre_convolve:
                 # Perform the convolution
@@ -317,7 +317,7 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
             trans.templates = np.sum(trans.conv_temp, axis=1)
 
             if trans.name == 'Z':
-                trans.templates * self.get_param('z_amp',params)
+                trans.templates *= self.get_param('z_amp',params)
 
             trans.templates[(self.ctx.fit_wave < trans.range_min) | (self.ctx.fit_wave > trans.range_max)] = 0
 
