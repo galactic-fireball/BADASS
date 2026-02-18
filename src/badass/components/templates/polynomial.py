@@ -82,7 +82,7 @@ class PolynomialTemplate(BadassTemplate):
 
         if self.fit_mpoly:
             nw = np.linspace(-1, 1, len(self.ctx.fit_wave))
-            coeff = np.empty(mpoly_order+1)
+            coeff = np.empty(self.mpoly_order+1)
             coeff[0] = 0.0
             for n in range(1, len(coeff)):
                 coeff[n] = self.get_param('mpoly_coeff_%d'%n, params)

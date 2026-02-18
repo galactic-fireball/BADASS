@@ -175,7 +175,7 @@ class BadassLogger:
         self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
         for line in sorted(list(line_list)):
             self.logger.info('{0:<30}{1:<30}{2:<30.2}'.format(line, '',''))
-            for par in sorted(list(line_list[line])):
+            for par in sorted(list(line_list[line].dict().keys())):
                 self.logger.info('{0:<30}{1:<30}{2:<30}'.format('', par,str(line_list[line][par])))
                 if line_list[line][par] == 'free': nfree+=1
         self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
@@ -195,7 +195,7 @@ class BadassLogger:
         self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
         for line in sorted(list(line_list)):
             self.logger.info('{0:<30}{1:<30}{2:<30.2}'.format(line, '',''))
-            for par in sorted(list(line_list[line])):
+            for par in sorted(list(line_list[line].dict().keys())):
                 self.logger.info('{0:<30}{1:<30}{2:<30}'.format('',par,str(line_list[line][par])))
                 if line_list[line][par] == 'free': nfree+=1
         self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
