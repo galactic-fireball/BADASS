@@ -20,7 +20,7 @@ class UVIronTemplate(BadassTemplate):
     TEMPLATE_PARAMS = ['amp', 'disp', 'voff']
 
     @classmethod
-    def initialize_template(cls, ctx):
+    def initialize_component(cls, ctx):
         if not ctx.cfg.comp.fit_uv_iron:
             return None
 

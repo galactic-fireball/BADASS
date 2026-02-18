@@ -16,7 +16,7 @@ class StellarTemplate(BadassTemplate):
     temp_dir = None
 
     @classmethod
-    def initialize_template(cls, ctx):
+    def initialize_component(cls, ctx):
         if not ctx.cfg.comp.fit_losvd:
             return None
 

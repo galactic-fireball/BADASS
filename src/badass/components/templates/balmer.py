@@ -21,7 +21,7 @@ class BalmerTemplate(BadassTemplate):
     TEMPLATE_PARAMS = ['ratio', 'amp', 'disp', 'voff', 'teff', 'tau']
 
     @classmethod
-    def initialize_template(cls, ctx):
+    def initialize_component(cls, ctx):
         if not ctx.cfg.comp.fit_balmer:
             return None
 

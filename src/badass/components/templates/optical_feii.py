@@ -14,7 +14,7 @@ class OpticalFeIITemplate(BadassTemplate):
     TEMP_LAM_RANGE = [0.0, -1.0]
 
     @classmethod
-    def initialize_template(cls, ctx):
+    def initialize_component(cls, ctx):
         if not ctx.cfg.comp.fit_feii:
             return None
 
@@ -32,7 +32,7 @@ class OpticalFeIITemplate(BadassTemplate):
             ctx.cfg.comp.fit_feii = False
             return None
 
-        return temp_class.initialize_template(ctx)
+        return temp_class.initialize_component(ctx)
 
 
     def convolve(self, fft, feii_voff, feii_disp, npad=None):
@@ -60,7 +60,7 @@ class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
 
 
     @classmethod
-    def initialize_template(cls, ctx):
+    def initialize_component(cls, ctx):
         if (not VC04_OpticalFeIITemplate.br_path.exists()) or (not VC04_OpticalFeIITemplate.na_path.exists()):
             ctx.log.error('VC04 data directory not found: %s' % str(VC04_OpticalFeIITemplate.vc04_data_dir))
             return None
@@ -108,19 +108,20 @@ class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
         self.vsyst = np.log(lam_feii[0]/self.ctx.fit_wave[0]) * consts.c
 
         # if all params are constant, we can pre_convolve before the fit
-        self.pre_convolve = all([param in self.const_params for param in ['%s_%s'%(lt,attr) for lt in ['na','br'] for attr in ['disp','voff']]])
+        self.pre_convolve = all([not self.pr.is_free(param) for param in self.comp_params])
+
         if self.pre_convolve:
-            self.br_conv_temp = self.convolve(self.br_opt_feii_fft, self.const_params['br_voff'], self.const_params['br_disp'])
-            self.na_conv_temp = self.convolve(self.na_opt_feii_fft, self.const_params['na_voff'], self.const_params['na_disp'])
+            self.br_conv_temp = self.convolve(self.br_opt_feii_fft, self.get_param('br_voff'), self.get_param('br_disp'))
+            self.na_conv_temp = self.convolve(self.na_opt_feii_fft, self.get_param('na_voff'), self.get_param('na_disp'))
 
 
-    def add_components(self, params, comp_dict, host_model):
+    def add_components(self, comp_dict, host_model):
         if not self.pre_convolve:
-            self.br_conv_temp = self.convolve(self.br_opt_feii_fft, self.get_param('br_voff',params), self.get_param('br_disp',params))
-            self.na_conv_temp = self.convolve(self.na_opt_feii_fft, self.get_param('na_voff',params), self.get_param('na_disp',params))
+            self.br_conv_temp = self.convolve(self.br_opt_feii_fft, self.get_param('br_voff'), self.get_param('br_disp'))
+            self.na_conv_temp = self.convolve(self.na_opt_feii_fft, self.get_param('na_voff'), self.get_param('na_disp'))
 
-        br_opt_feii_template = (self.get_param('br_amp',params) * self.br_conv_temp).reshape(-1)
-        na_opt_feii_template = (self.get_param('na_amp',params) * self.na_conv_temp).reshape(-1)
+        br_opt_feii_template = (self.get_param('br_amp') * self.br_conv_temp).reshape(-1)
+        na_opt_feii_template = (self.get_param('na_amp') * self.na_conv_temp).reshape(-1)
 
         # Set fitting region outside of template to zero to prevent convolution loops
         br_opt_feii_template[(self.ctx.fit_wave < self.TEMP_LAM_RANGE[0]) & (self.ctx.fit_wave > self.TEMP_LAM_RANGE[1])] = 0
@@ -225,7 +226,7 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
 
 
     @classmethod
-    def initialize_template(cls, ctx):
+    def initialize_component(cls, ctx):
         if not K10_OpticalFeIITemplate.k10_data_dir.exists():
             ctx.log.error('K10 data directory not found: %s' % str(K10_OpticalFeIITemplate.k10_data_dir))
             return None
@@ -283,21 +284,21 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
         self.vsyst = np.log(lam_feii[0]/self.ctx.fit_wave[0]) * consts.c
 
         # only if disp and voff are constant, can we pre_convolve before the fit
-        self.pre_convolve = ('disp' in self.const_params) and ('voff' in self.const_params)
+        self.pre_convolve = all([not self.pr.is_free(param) for param in self.comp_params])
 
         if self.pre_convolve:
             for trans in self.transitions.values():
-                trans.conv_temp = convolve(trans.fft, self.const_params['voff'], self.const_params['disp'], npad=trans.npad)
+                trans.conv_temp = convolve(trans.fft, self.get_param('voff'), self.get_param('disp'), npad=trans.npad)
 
 
     def add_components(self, params, comp_dict, host_model):
         for trans in self.transitions.values():
-            trans.feii_amp = self.get_param('%s_amp'%trans.name,params)
+            trans.feii_amp = self.get_param('%s_amp'%trans.name)
 
             if not self.pre_convolve:
                 # Perform the convolution
                 # TODO: set npad for each transition?
-                trans.conv_temp = self.convolve(trans.fft, self.get_param('voff',params), self.get_param('disp',params))
+                trans.conv_temp = self.convolve(trans.fft, self.get_param('voff'), self.get_param('disp'))
 
             # TODO: if we do pre-convolve do we need to do this here? Or can we do this once in init?
             # Normalize amplitudes to 1
@@ -308,7 +309,7 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
             # Calculate temperature dependent relative intensities
             # TODO: if temp is constant, do this in init?
             if trans.name != 'Z': # relative intensity set for Z in initialization
-                trans.calc_rel_int(self.get_param('temp',params))
+                trans.calc_rel_int(self.get_param('temp'))
 
             # Multiply by relative intensities
             trans.conv_temp *= trans.rel_int
@@ -317,7 +318,7 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
             trans.templates = np.sum(trans.conv_temp, axis=1)
 
             if trans.name == 'Z':
-                trans.templates * self.get_param('z_amp',params)
+                trans.templates * self.get_param('z_amp')
 
             trans.templates[(self.ctx.fit_wave < trans.range_min) | (self.ctx.fit_wave > trans.range_max)] = 0
 

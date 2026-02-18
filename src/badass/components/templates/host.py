@@ -21,7 +21,7 @@ class HostTemplate(BadassTemplate):
 
 
     @classmethod
-    def initialize_template(cls, ctx):
+    def initialize_component(cls, ctx):
         if not ctx.cfg.comp.fit_host:
             return None
 

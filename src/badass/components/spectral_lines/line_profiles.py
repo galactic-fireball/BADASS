@@ -5,12 +5,15 @@ import numpy as np
 from numpy.polynomial import hermite
 from scipy import special
 
-from badass.components.spectral_lines.spectral_line import FitParameter, SpectralLine, hyperpars
+from badass.components.components import ParameterRegistry
+from badass.components.spectral_lines.spectral_line import SpectralLine, hyperpars
 
 # Valid line profiles: will be populated as each profile class is defined
 line_profiles = {}
 
 class LineProfile:
+
+    param_reg = ParameterRegistry()
 
     @staticmethod
     def get_line_profile(profile_name):
@@ -18,7 +21,7 @@ class LineProfile:
 
 
     @staticmethod
-    def initialize_parameters(line, args):
+    def initialize_parameters(line):
         pass
 
 
@@ -40,7 +43,11 @@ class VoigtProfile(LineProfile):
     @staticmethod
     def initialize_parameters(line, args):
         par = 'SHAPE'
-        if line.ctx.options.comp_options.tie_line_disp:
+        if line.ctx.cfg.comp.tie('disp:'):
+            fp = SpectralLine.add_tied_param(line.line_type, par)
+            line.parameters[line.name+'_'+par] = fp
+
+
             par_name = line.name + '_' + par
             line.parameters[par_name] = FitParameter(name=par_name, expr=line.prefix + '_' + par)
             SpectralLine.add_tied_param(line.line_type, par)

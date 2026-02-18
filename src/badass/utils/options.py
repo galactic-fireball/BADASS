@@ -4,7 +4,7 @@ import json
 import pathlib
 import prodict
 from pydantic import AfterValidator, AliasChoices, BeforeValidator, BaseModel, ConfigDict, DirectoryPath, Field, FiniteFloat, NonNegativeInt, NonNegativeFloat, PositiveInt, PositiveFloat
-from typing import Annotated, Any, ClassVar, Literal, types
+from typing import Annotated, Any, ClassVar, List, Literal, types, Union
 
 import badass.utils.constants as consts
 from badass.utils.schema import DefaultValidator, DEFAULT_OPTIONS_SCHEMA
@@ -67,7 +67,7 @@ class IOOptions(CustomBaseModel):
     log_level: str = Field('info', description='The output log level. Options: `[\'debug\', \'info\', \'warning\', \'error\', \'critical\']`')
     filter: str = Field(None, description='The filter of the provided NIRSpec data cube.')
     disperser: str = Field(None, description='The disperser of the provided NIRSpec data cube.')
-    dust_cache: Annotated[DirectoryPath, BeforeValidator(to_path)] = Field(None, description='Directory path to cache of Irsa dust extinction data.')
+    dust_cache: Annotated[DirectoryPath | None, BeforeValidator(to_path)] = Field(None, description='Directory path to cache of Irsa dust extinction data.')
 
 
 def validate_fitreg(v:list|str) -> list:
@@ -128,6 +128,19 @@ class CompOptions(CustomBaseModel):
     fit_absorp: bool = Field(False, description='Fit lines of the `line_type: \'abs\'` in the line list. Occasionally one might need to fit a strong absorption feature that isn\'t described by stellar processes, such as a broad absorption line in a quasar.')
     tie_line_disp: bool = Field(False, description='Ties the widths of all respective line types (all narrow lines are tied, all broad lines are tied, etc.). This can be done to significantly reduce the number of free parameters in the fit if fitting many lines, however it is not recommended.')
     tie_line_voff: bool = Field(False, description='Ties the velocity offsets of all respective line types (all narrow lines are tied, all broad lines are tied, etc.). This can be done to significantly reduce the number of free parameters in the fit if fitting many lines, however it is not recommended.')
+
+    def fit(self, comp_name):
+        fit_name = 'fit_'+comp_name
+        if not hasattr(self, fit_name):
+            return False
+        return getattr(self, fit_name)
+
+
+    def tie(self, attr):
+        tie_name = 'tie_line_'+attr
+        if not hasattr(self, tie_name):
+            return False
+        return getattr(self, tie_name)
 
 
 Number = int | FiniteFloat
@@ -228,14 +241,24 @@ class OutputOptions(CustomBaseModel):
     write_chain: bool = True
 
 
-class GeneralLineOptions(CustomBaseModel):
-    line_type: Literal['na','br','abs'] = 'na'
+class SpectralLine(CustomBaseModel):
+    name: str = ''
+    type: Literal['narrow', 'broad', 'absorb', 'combined'] = 'narrow'
+    center: float | int | None = None
+
+
+class CombinedLine(SpectralLine):
+    type: Literal['combined'] = 'combined'
+    children: list[Union['CombinedLine', 'NarrowLine', 'BroadLine', 'AbsorpLine']] = []
+
+
+class BaseLine(SpectralLine):
 
     # General hyperpars; child classes can override
-    amp: NonNegativeParam = {'init':0.0, 'plim':(1.0,0.0)}
+    amp: NonNegativeParam = {'init':0.0, 'plim':(0.0,1.0)}
     amp_adjust: bool = True # allow BADASS to adjust amp depending on surrounding features
     disp: NonNegativeParam = {'init':50.0, 'plim':(0.001,300.0)}
-    voff: Param = {'init':0.0, 'plim':(-500.0,500.0)}
+    voff: Param = {'init':0.0, 'plim':(-500.0,500.0), 'prior':{'type':'gaussian'}}
     voff_adjust: bool = True # allow BADASS to adjust voff depending on surrounding features
 
     # Higher-order moments for Gauss-Hermite, Laplace, and Uniform line profiles
@@ -245,21 +268,21 @@ class GeneralLineOptions(CustomBaseModel):
     # Shape of the Voigt profile
     shape: Param = {'init', 'plim'}
 
-    line_profile: Literal[*(consts.LINE_PROFILES)] = 'gaussian'
+    profile: Literal[*(consts.LINE_PROFILES)] = 'gaussian'
 
 
-class NarrowLineOptions(GeneralLineOptions):
-    pass
+class NarrowLine(BaseLine):
+    type: Literal['narrow'] = 'narrow'
 
 
-class BroadLineOptions(GeneralLineOptions):
-    line_type: Literal['br'] = 'br'
+class BroadLine(BaseLine):
+    type: Literal['broad'] = 'broad'
     disp: NonNegativeParam = {'init':500.0, 'plim':(300.0,3000.0)}
-    voff: Param = {'init':0.0, 'plim':(-1000.0,1000.0)}
+    voff: Param = {'init':0.0, 'plim':(-1000.0,1000.0), 'prior':{'type':'gaussian'}}
 
 
-class AbsorpLineOptions(GeneralLineOptions):
-    line_type: Literal['abs'] = 'abs'
+class AbsorpLine(BaseLine):
+    type: Literal['absorp'] = 'absorp'
 
 
 # TODO: add descriptions
@@ -289,14 +312,13 @@ class BadassConfig(CustomBaseModel):
     plot: PlotOptions = Field(default=PlotOptions(), alias=AliasChoices('plot', 'plot_options'))
     out: OutputOptions = Field(default=OutputOptions(), alias=AliasChoices('out', 'output_options'))
 
-    narrow: NarrowLineOptions = Field(default=NarrowLineOptions(), alias=AliasChoices('narrow','narrow_options'))
-    broad: BroadLineOptions = Field(default=BroadLineOptions(), alias=AliasChoices('broad','broad_options'))
-    absorp: AbsorpLineOptions = Field(default=AbsorpLineOptions(), alias=AliasChoices('absorp','absorp_options'))
+    narrow: NarrowLine = Field(default=NarrowLine(), alias=AliasChoices('narrow','narrow_options'))
+    broad: BroadLine = Field(default=BroadLine(), alias=AliasChoices('broad','broad_options'))
+    absorp: AbsorpLine = Field(default=AbsorpLine(), alias=AliasChoices('absorp','absorp_options'))
 
     test: TestOptions = Field(default=TestOptions(), alias=AliasChoices('test', 'test_options'))
 
-    user_lines: dict[str,dict] = {}
-    combined_lines: dict[str,list[str]] = {}
+    user_lines: list[CombinedLine | NarrowLine | BroadLine | AbsorpLine] = [] # TODO: | SpectralLine
     user_constraints: list[list[str | Number]] = []
     user_mask: list[list[NonNegativeNum]] = []
 

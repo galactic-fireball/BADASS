@@ -201,8 +201,8 @@ def create_line_json():
 
 
 def main():
-    # test_single()
-    test_schema()
+    test_single()
+    # test_schema()
     # test_line()
     # test_config()
     # test_input_dict()

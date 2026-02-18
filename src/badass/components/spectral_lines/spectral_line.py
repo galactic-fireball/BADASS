@@ -6,13 +6,12 @@ from scipy import signal
 from scipy.interpolate import interp1d
 from typing import Dict, Optional
 
-from badass.badass_tools import badass_tools
 import badass.utils.constants as consts
 import badass.utils.utils as ba_utils
+from badass.components.components import BadassComponent, ParameterRegistry
 from badass.components.spectral_lines.default_hyperpars import type_default_hyperpars, profile_default_hyperpars
 
 EDGE_PAD = 10
-DEFAULT_TYPE = 'NARROW'
 
 short_type_to_type = {
     'NA': 'NARROW',
@@ -42,33 +41,18 @@ def capitalize(data):
 primary_pars = ['AMP', 'DISP', 'VOFF']
 hyperpars = ['INIT', 'PLIM', 'PRIOR']
 
-# TODO: move into components.py and use in templates
-@dataclass
-class FitParameter:
-    name: str = ''
-    expr: [str,float,int] = 'FREE'
-    is_free: bool = False
-    expr: [str,float,int] = 0.0
-    init: Optional[float] = None
-    plim: Optional[tuple] = None
-    prior: Optional[Dict] = None
-    value: Optional[float] = None
 
-    def __post_init__(self):
-        self.is_free = self.expr == 'FREE'
-
-
-class SpectralLine:
+class SpectralLine(BadassComponent):
 
     ctx = None
     line_list = []
     common_params = {}
-    all_type_options = {}
+    param_reg = None
 
     @staticmethod
     def initialize_spectral_lines(_ctx, _line_list):
         SpectralLine.ctx = _ctx
-        SpectralLine.all_type_options = {t:capitalize([SpectralLine.ctx.options.get('%s_options'%t.lower(),{})])[0] for t in short_type_to_type.values()}
+        SpectralLine.param_reg = SpectralLine.ctx.param_reg
         SpectralLine.line_list = [SpectralLine.from_dict(line_dict, None) for line_dict in capitalize(_line_list)]
         # TODO: just call initialize_parameters here?
 
@@ -111,9 +95,9 @@ class SpectralLine:
             return profile_default
 
         hparam_name = par + '_' + hparam
-        type_options = SpectralLine.all_type_options.get(line_type, {})
-        # check in order: type_options, default type options, common options
-        type_default = type_options.get(hparam_name, type_default_hyperpars.get(line_type, {}).get(par, {}).get(hparam, type_default_hyperpars['COMMON'].get(par, {}).get(hparam, None)))
+        type_cfg = SpectralLine.ctx.cfg[line_type.lower()]
+        # check in order: type_cfg, default type options, common options
+        type_default = type_cfg.get(hparam_name, type_default_hyperpars.get(line_type, {}).get(par, {}).get(hparam, type_default_hyperpars['COMMON'].get(par, {}).get(hparam, None)))
         return type_default
 
 
@@ -125,14 +109,14 @@ class SpectralLine:
         if param_name in SpectralLine.common_params:
             return
 
-        type_options = SpectralLine.all_type_options[line_type]
-        fp = FitParameter(name=param_name, expr=type_options.get(par, 'FREE'))
+        type_cfg = SpectralLine.ctx.cfg[line_type]
+        fp = SpectralLine.param_reg.new_param(name=param_name, expr=type_cfg.get(par, 'FREE'))
         SpectralLine.common_params[param_name] = fp
         if not fp.is_free:
             return
 
         for hparam in hyperpars:
-            # check each in order: type_options, default hyperpar dict
+            # check each in order: type_cfg, default hyperpar dict
             hparam_val = SpectralLine.get_hyperpar_val(line_type, par, hparam)
 
             if (hparam != 'PRIOR') and (hparam_val is None):
@@ -143,24 +127,23 @@ class SpectralLine:
 
     @classmethod
     def from_dict(cls, line_dict, parent):
-        center = line_dict.get('CENTER', parent.center if parent else None)
-        if center is None:
-            raise Exception('Line center needed for: %s'%line_dict['NAME'])
+        if (not 'CENTER' in line_dict) or (line_dict['CENTER'] is None):
+            if parent is None:
+                raise Exception('Line center needed for: %s'%line_dict['NAME'])
+            line_dict['CENTER'] = parent.center
 
-        if (center <= SpectralLine.ctx.target.wave[0]+EDGE_PAD) or (center >= SpectralLine.ctx.target.wave[-1]-EDGE_PAD):
+        if (line_dict['CENTER'] <= SpectralLine.ctx.target.wave[0]+EDGE_PAD) or (line_dict['CENTER'] >= SpectralLine.ctx.target.wave[-1]-EDGE_PAD):
             SpectralLine.ctx.log.warning('Not fitting %s line (out of fit region): %s'%(line_type,line_dict['NAME']))
             return None
 
-        if not 'NAME' in line_dict:
-            line_dict['NAME'] = 'FEAT_.5%f'%center
+        if (not 'NAME' in line_dict) or (line_dict['NAME'] is None) or (line_dict['NAME'] == ''):
+            line_dict['NAME'] = 'FEAT_.5%f'%line_dict['CENTER']
 
-        if not 'TYPE' in line_dict:
-            line_dict['TYPE'] = DEFAULT_TYPE
         line_type = line_dict['TYPE'].upper()
         if len(line_type) < 4: line_type = short_type_to_type[line_type]
         line_dict['TYPE'] = line_type
 
-        if (line_type != 'COMBINED') and (not SpectralLine.ctx.options.comp_options.get('fit_%s'%line_type.lower(), True)):
+        if (line_type != 'COMBINED') and (not SpectralLine.ctx.cfg.comp.fit(line_type.lower())):
             SpectralLine.ctx.log.warning('Not fitting %s line (unfit type): %s'%(line_type,line_dict['NAME']))
             return None
 
@@ -171,19 +154,16 @@ class SpectralLine:
         self.line_dict = line_dict
         self.parent = parent
         self.name = self.line_dict['NAME']
-        self.line_type = self.line_dict.get('TYPE', DEFAULT_TYPE)
+        self.line_type = self.line_dict['TYPE']
         self.is_combined = self.line_type == 'COMBINED'
         self.prefix = prefix(self.line_type)
-        self.center = self.line_dict.get('CENTER', parent.center if parent else None) # TODO: center is unit-configurable
+        self.center = self.line_dict['CENTER'] # TODO: center is unit-configurable
 
         if self.is_combined:
             self.type_options = {}
             self.line_profile = None
         else:
-            self.type_options = SpectralLine.all_type_options.get(self.line_type, {})
-            profile = self.line_dict.get('PROFILE', self.type_options.get('profile', None))
-            if profile is None:
-                raise Exception('Line profile required for non-combined line: %s'%self.name)
+            profile = self.line_dict['PROFILE']
             from badass.components.spectral_lines.line_profiles import LineProfile # need to avoid circular imports
             self.line_profile = LineProfile.get_line_profile(profile)
             if self.line_profile is None:
@@ -191,51 +171,44 @@ class SpectralLine:
 
         self.children = [SpectralLine.from_dict(child_dict, self) for child_dict in self.line_dict.get('CHILDREN', [])]
 
-        # Fit parameters, either free, constant, or expression
-        # Parameters for combined lines will be calculated post-fit
-        self.parameters = {}
-
         SpectralLine.ctx.log.debug('Added line: %s'%str(self))
+        super().__init__(SpectralLine.ctx)
 
 
-    def initialize_parameters(self, params, args):
+    def initialize_parameters(self):
         if self.is_combined:
             for child in self.children:
-                child.initialize_parameters(params, args)
+                child.initialize_parameters()
             return
 
-        for par in primary_pars:
-            self.set_hyperpars(par, args)
-        self.line_profile.initialize_parameters(self, args) # add profile-unique parameters
-        self.validate_hyperpars()
+        for param in primary_pars:
+            val = self.line_dict.get(param.upper())
 
-        # TODO: pass a dict of {name: FitParameter}
-        for param in self.parameters.values():
-            if not param.is_free:
-                continue
+            # if (param == 'amp') and (self.line_dict['amp_adjust']) and (isinstance(val,dict)):
+            #     val = self.get_amp_hyperpar()
 
-            params[param.name] = {
-                'init': param.init,
-                'plim': param.plim
-            }
-            if param.prior:
-                params[param.name]['prior'] = param.prior
+            # if (param == 'voff') and (self.line_dict['voff_adjust']) and (isinstance(val,dict)):
+            #     val = self.get_voff_hyperpar()
 
-        for child in self.children:
-            child.initialize_parameters(params, args)
+            param_name = self.name + '_' + param.upper()
+            self.pr.add_param(name=param_name, expr=val, source=self.name)
+            self.comp_params.append(param_name)
+
+        # add profile-unique parameters
+        # self.line_profile.initialize_parameters()
 
 
     def set_hyperpars(self, par, args):
         par_name = self.name + '_' + par
 
-        if ((par == 'VOFF') and (SpectralLine.ctx.options.comp_options.tie_line_voff)) \
-            or ((par == 'DISP') and (SpectralLine.ctx.options.comp_options.tie_line_disp)):
-            self.parameters[par_name] = FitParameter(name=par_name, expr=self.prefix + '_' + par)
+        if ((par == 'VOFF') and (SpectralLine.ctx.cfg.comp.tie('voff'))) \
+            or ((par == 'DISP') and (SpectralLine.ctx.cfg.comp.tie('disp'))):
             SpectralLine.add_tied_param(self.line_type, par)
             return
 
         # If not in line_dict or type_options => default to a free parameter
-        fp = FitParameter(name=par_name, expr=self.line_dict.get(par, self.type_options.get(par, 'FREE')))
+        # TODO: get the expr from the line_dict (should already be filled with needed defaults by config validator)
+        fp = SpectralLine.param_reg.new_param(name=par_name, expr=self.line_dict.get(par, self.type_options.get(par, 'FREE')))
         self.parameters[par_name] = fp
 
         if not fp.is_free:
@@ -285,7 +258,7 @@ class SpectralLine:
             if not fp.is_free:
                 continue
 
-            if (fp.plim[0] < fp.init) or (fp.init > fp.plim[1]):
+            if (fp.plim[0] > fp.init) or (fp.init > fp.plim[1]):
                 new_init = fp.plim[1] - (fp.plim[1]-fp.plim[0])
                 self.ctx.log.warn('init value for %s [%f] outside limits (%f,%f), resetting to %f'%(pname,fp.init,fp.plim[0],fp.plim[1],new_init))
                 fp.init = new_init
@@ -299,10 +272,10 @@ class SpectralLine:
                 s += '\n\t'
                 s += str(c).replace('\t', '\t\t')
             s += '\n'
-        if self.parameters:
-            s += '\n\tParameters:'
-            for key, val in self.parameters.items():
-                s += '\n\t\t%s = %s' % (key, str(val))
+        # if self.parameters:
+        #     s += '\n\tParameters:'
+        #     for key, val in self.parameters.items():
+        #         s += '\n\t\t%s = %s' % (key, str(val))
         return s
 
 
@@ -355,7 +328,7 @@ class SpectralLine:
 
 
 def get_spec_features(wave, spec, noise, line_list=None):
-    galaxy_csub = badass_tools.continuum_subtract(wave,spec,noise,sigma_clip=2.0,plot=False,verbose=False)
+    galaxy_csub = ba_utils.continuum_subtract(wave,spec,noise,sigma_clip=2.0,plot=False,verbose=False)
 
     try:
         # normalize by noise

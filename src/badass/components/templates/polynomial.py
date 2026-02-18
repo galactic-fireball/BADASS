@@ -9,7 +9,7 @@ class PolynomialTemplate(BadassTemplate):
     TEMPLATE_PARAMS = []
 
     @classmethod
-    def initialize_template(cls, ctx):
+    def initialize_component(cls, ctx):
         if not ctx.cfg.comp.fit_poly:
             return None
 

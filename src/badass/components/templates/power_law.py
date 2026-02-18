@@ -61,7 +61,7 @@ class PowerLawTemplate(BadassTemplate):
     PARAM_PREFIX = 'POWER_'
 
     @classmethod
-    def initialize_template(cls, ctx):
+    def initialize_component(cls, ctx):
         if not ctx.cfg.comp.fit_power:
             return None
 
@@ -80,6 +80,7 @@ class SimplePowerLawTemplate(PowerLawTemplate):
 
     TEMPLATE_PARAMS = ['amp', 'slope']
 
+    # TODO: have a 'description' variable to log instead of overriding each time
     def __init__(self, ctx):
         super().__init__(ctx)
         self.ctx.log.info('- Fitting Simple AGN power-law continuum')
