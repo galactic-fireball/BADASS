@@ -108,7 +108,7 @@ class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
         self.vsyst = np.log(lam_feii[0]/self.ctx.fit_wave[0]) * consts.c
 
         # if all params are constant, we can pre_convolve before the fit
-        self.pre_convolve = all([not self.pr.is_free(param) for param in self.comp_params])
+        self.pre_convolve = not any([self.pr.is_free(param) for param in self.comp_params])
 
         if self.pre_convolve:
             self.br_conv_temp = self.convolve(self.br_opt_feii_fft, self.get_param('br_voff'), self.get_param('br_disp'))
@@ -291,7 +291,7 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
                 trans.conv_temp = convolve(trans.fft, self.get_param('voff'), self.get_param('disp'), npad=trans.npad)
 
 
-    def add_components(self, params, comp_dict, host_model):
+    def add_components(self, comp_dict, host_model):
         for trans in self.transitions.values():
             trans.feii_amp = self.get_param('%s_amp'%trans.name)
 

@@ -5,7 +5,7 @@ import numpy as np
 from numpy.polynomial import hermite
 from scipy import special
 
-from badass.components.components import ParameterRegistry
+from badass.components.params import ParameterRegistry
 from badass.components.spectral_lines.spectral_line import SpectralLine, hyperpars
 
 # Valid line profiles: will be populated as each profile class is defined
@@ -25,14 +25,80 @@ class LineProfile:
         pass
 
 
+    @staticmethod
+    def construct_line(line):
+        return None
+
+
 class GaussianProfile(LineProfile):
     name = 'GAUSSIAN'
+
+    @staticmethod
+    def construct_line(line):
+
+        # Gaussian dispersion in km/s
+        sigma = line.get_param('disp')
+        # dispersion in pixels (velscale = km/s/pixel)
+        sigma_pix = sigma / SpectralLine.ctx.target.velscale
+        if sigma_pix <= 0.01: sigma_pix = 0.01
+
+        # velocity offset in pixels
+        voff_pix = line.get_param('voff') / SpectralLine.ctx.target.velscale
+        # shift the line center by voff in pixels
+        center_pix = line.center + voff_pix
+
+        # pixels vector
+        x_pix = np.array(range(len(SpectralLine.ctx.fit_wave)), dtype=float)
+        # reshape into row
+        x_pix = x_pix.reshape((len(x_pix), 1))
+
+        # construct Gaussian
+        g = line.get_param('amp') * np.exp(-0.5*(x_pix-center_pix)**2/sigma_pix**2)
+        g = np.sum(g, axis=1)
+
+        # Make sure edges of gaussian are zero to avoid wierd things
+        g[(g > -1e-6) & (g < 1e-6)] = 0.0
+        g[0] = g[1]
+        g[-1] = g[-2]
+
+        return g
 
 line_profiles[GaussianProfile.name] = GaussianProfile
 
 
 class LorentzianProfile(LineProfile):
     name = 'LORENTZIAN'
+
+    @staticmethod
+    def construct_line(line):
+        # Produces a lorentzian vector the length of x with the specified parameters
+        # (See: https://docs.astropy.org/en/stable/api/astropy.modeling.functional_models.Lorentz1D.html)
+
+        fwhm = line.get_param('disp')*2.3548
+        # fwhm in pixels (velscale = km/s/pixel)
+        fwhm_pix = fwhm / SpectralLine.ctx.target.velscale
+        if fwhm_pix <= 0.01: fwhm_pix = 0.01
+
+        # velocity offset in pixels
+        voff_pix = line.get_param('voff') / SpectralLine.ctx.target.velscale
+        # shift the line center by voff in pixels
+        center_pix = line.center + voff_pix
+
+        # pixels vector
+        x_pix = np.array(range(len(SpectralLine.ctx.fit_wave)), dtype=float)
+        # reshape into row
+        x_pix = x_pix.reshape((len(x_pix), 1))
+
+        gamma = 0.5*fwhm_pix
+        # construct lorenzian
+        l = amp*((gamma**2) / (gamma**2+(x_pix-center_pix)**2))
+        l = np.sum(l, axis=1)
+
+        # Make sure edges of lorenzian are zero to avoid wierd things
+        l[(l > -1e-6) & (l < 1e-6)] = 0.0
+        l[0] = l[1]
+        l[-1] = l[-2]
+        return l
 
 line_profiles[LorentzianProfile.name] = LorentzianProfile
 
@@ -43,7 +109,7 @@ class VoigtProfile(LineProfile):
     @staticmethod
     def initialize_parameters(line, args):
         par = 'SHAPE'
-        if line.ctx.cfg.comp.tie('disp:'):
+        if line.ctx.cfg.comp.tie('disp'):
             fp = SpectralLine.add_tied_param(line.line_type, par)
             line.parameters[line.name+'_'+par] = fp
 
@@ -54,6 +120,51 @@ class VoigtProfile(LineProfile):
             return
 
         line.set_hyperpars(par, args)
+
+
+    @staticmethod
+    def construct_line(line):
+        # Pseudo-Voigt profile implementation from:
+        # https://docs.mantidproject.org/nightly/fitting/fitfunctions/PseudoVoigt.html
+
+        # fwhm in pixels (velscale = km/s/pixel)
+        fwhm_pix = (line.get_param('disp')*2.3548) / SpectralLine.ctx.target.velscale
+        if fwhm_pix <= 0.01: fwhm_pix = 0.01
+
+        sigma_pix = fwhm_pix/2.3548
+        if sigma_pix <= 0.01: sigma_pix = 0.01
+
+        # velocity offset in pixels
+        voff_pix = line.get_param('voff') / SpectralLine.ctx.target.velscale
+        # shift the line center by voff in pixels
+        center_pix = line.center + voff_pix
+
+        # pixels vector
+        x_pix = np.array(range(len(wave)), dtype=float)
+        # reshape into row
+        x_pix = x_pix.reshape((len(x_pix), 1))
+
+        # Gaussian contribution
+        a_G = 1.0/(sigma_pix * np.sqrt(2.0*np.pi))
+        g = a_G * np.exp(-0.5*(x_pix-(center_pix))**2/(sigma_pix)**2)
+        g = np.sum(g, axis=1)
+
+        # Lorentzian contribution
+        l = (1.0/np.pi) * (fwhm_pix/2.0)/((x_pix-center_pix)**2 + (fwhm_pix/2.0)**2)
+        l = np.sum(l,axis=1)
+
+        # Voigt profile
+        pv = (float(shape) * g) + ((1.0-float(shape))*l)
+
+        # Normalize and multiply by amplitude
+        pv = pv/np.max(pv) * line.get_param('amp')
+
+        # Replace the ends with the same value
+        pv[(pv > -1e-6) & (pv < 1e-6)] = 0.0
+        pv[0] = pv[1]
+        pv[-1] = pv[-2]
+        return pv
+
 
 line_profiles[VoigtProfile.name] = VoigtProfile
 
@@ -75,6 +186,53 @@ class GaussHermiteProfile(LineProfile):
                 continue
 
             line.set_hyperpars(par, args)
+
+
+    @staticmethod
+    def construct_line(line):
+        # Produces a Gauss-Hermite vector the length of x with the specified parameters
+
+        # dispersion in pixels (velscale = km/s/pixel)
+        sigma_pix = line.get_param('disp') / SpectralLine.ctx.target.velscale
+        if sigma_pix <= 0.01: sigma_pix = 0.01
+
+        # velocity offset in pixels
+        voff_pix = line.get_param('voff') / SpectralLine.ctx.target.velscale
+        # shift the line center by voff in pixels
+        center_pix = line.center + voff_pix
+
+        # pixels vector
+        x_pix = np.array(range(len(wave)), dtype=float)
+        x_pix = x_pix.reshape((len(x_pix), 1))
+
+        # Taken from Riffel 2010 - profit: a new alternative for emission-line profile fitting
+        w = (x_pix-center_pix) / sigma_pix
+        alpha = 1.0/np.sqrt(2.0)*np.exp(-w**2/2.0)
+
+        if hmoments is None:
+            coeff = np.array([1, 0, 0])
+            h = hermite.hermval(w, coeff)
+            g = (amp*alpha) / sigma_pix*h
+        else:
+            mom = len(hmoments)+2
+            n = np.arange(3, mom + 1)
+            nrm = np.sqrt(special.factorial(n)*2**n) # Normalization
+            coeff = np.append([1, 0, 0], hmoments/nrm)
+            h = hermite.hermval(w,coeff)
+            g = (amp*alpha)/sigma_pix*h
+
+        g = np.sum(g, axis=1)
+        # We ensure any values of the line profile that are negative are zeroed out (See Van der Marel 1993)
+        g[g < 0] = 0.0
+        g = g/np.max(g) # Normalize to 1
+        g = amp*g # Apply amplitude
+
+        # Replace the ends with the same value
+        g[(g > -1e-6) & (g < 1e-6)] = 0.0
+        g[0] = g[1]
+        g[-1] = g[-2]
+        return g
+
 
 
 line_profiles[GaussHermiteProfile.name] = GaussHermiteProfile
@@ -170,90 +328,6 @@ def line_constructor(ctx, line_name, line_dict):
     return line_model
 
 
-def gaussian_line_profile(wave, amp, disp, voff, center_pix, velscale):
-    # Produces a gaussian vector the length of x with the specified parameters
-
-    sigma = disp # Gaussian dispersion in km/s
-    sigma_pix = sigma / velscale # dispersion in pixels (velscale = km/s/pixel)
-    if sigma_pix <= 0.01: sigma_pix = 0.01
-    voff_pix = voff / velscale # velocity offset in pixels
-    center_pix = center_pix + voff_pix # shift the line center by voff in pixels
-
-    x_pix = np.array(range(len(wave)), dtype=float) # pixels vector
-    x_pix = x_pix.reshape((len(x_pix), 1)) # reshape into row
-    g = amp*np.exp(-0.5*(x_pix-center_pix)**2/sigma_pix**2) # construct gaussian
-    g = np.sum(g, axis=1)
-
-    # Make sure edges of gaussian are zero to avoid wierd things
-    g[(g > -1e-6) & (g < 1e-6)] = 0.0
-    g[0] = g[1]
-    g[-1] = g[-2]
-    return g
-
-
-def lorentzian_line_profile(wave, amp, disp, voff, center_pix, velscale):
-    # Produces a lorentzian vector the length of x with the specified parameters
-    # (See: https://docs.astropy.org/en/stable/api/astropy.modeling.functional_models.Lorentz1D.html)
-
-    fwhm = disp*2.3548
-    fwhm_pix = fwhm / velscale # fwhm in pixels (velscale = km/s/pixel)
-    if fwhm_pix <= 0.01: fwhm_pix = 0.01
-    voff_pix = voff / velscale # velocity offset in pixels
-    center_pix = center_pix + voff_pix # shift the line center by voff in pixels
-
-    x_pix = np.array(range(len(wave)), dtype=float) # pixels vector
-    x_pix = x_pix.reshape((len(x_pix), 1)) # reshape into row
-    gamma = 0.5*fwhm_pix
-    l = amp*((gamma**2) / (gamma**2+(x_pix-center_pix)**2)) # construct lorenzian
-    l= np.sum(l, axis=1)
-
-    # Make sure edges of lorenzian are zero to avoid wierd things
-    l[(l > -1e-6) & (l < 1e-6)] = 0.0
-    l[0] = l[1]
-    l[-1] = l[-2]
-    return l
-
-
-def gauss_hermite_line_profile(wave, amp, disp, voff, hmoments, center_pix, velscale):
-    # Produces a Gauss-Hermite vector the length of x with the specified parameters
-
-    sigma_pix = disp / velscale # dispersion in pixels (velscale = km/s/pixel)
-    if sigma_pix <= 0.01: sigma_pix = 0.01
-    voff_pix = voff / velscale # velocity offset in pixels
-    center_pix = center_pix + voff_pix # shift the line center by voff in pixels
-
-    x_pix = np.array(range(len(wave)), dtype=float) # pixels vector
-    x_pix = x_pix.reshape((len(x_pix), 1))
-
-    # Taken from Riffel 2010 - profit: a new alternative for emission-line profile fitting
-    w = (x_pix-center_pix) / sigma_pix
-    alpha = 1.0/np.sqrt(2.0)*np.exp(-w**2/2.0)
-
-    if hmoments is None:
-        coeff = np.array([1, 0, 0])
-        h = hermite.hermval(w, coeff)
-        g = (amp*alpha) / sigma_pix*h
-    else:
-        mom = len(hmoments)+2
-        n = np.arange(3, mom + 1)
-        nrm = np.sqrt(special.factorial(n)*2**n) # Normalization
-        coeff = np.append([1, 0, 0], hmoments/nrm)
-        h = hermite.hermval(w,coeff)
-        g = (amp*alpha)/sigma_pix*h
-
-    g = np.sum(g, axis=1)
-    # We ensure any values of the line profile that are negative are zeroed out (See Van der Marel 1993)
-    g[g < 0] = 0.0
-    g = g/np.max(g) # Normalize to 1
-    g = amp*g # Apply amplitude
-
-    # Replace the ends with the same value
-    g[(g > -1e-6) & (g < 1e-6)] = 0.0
-    g[0] = g[1]
-    g[-1] = g[-2]
-    return g
-
-
 def laplace_line_profile(wave, amp, disp, voff, hmoments, center_pix, velscale):
     # Produces a Laplace kernel vector the length of x with the specified parameters
     # Laplace kernel from Sanders & Evans (2020): https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.5806S/abstract
@@ -306,37 +380,3 @@ def uniform_line_profile(wave, amp, disp, voff, hmoments, center_pix, velscale):
     return g
 
 
-def voigt_line_profile(wave, amp, disp, voff, shape, center_pix, velscale):
-    # Pseudo-Voigt profile implementation from:
-    # https://docs.mantidproject.org/nightly/fitting/fitfunctions/PseudoVoigt.html
-
-    fwhm_pix = (disp*2.3548) / velscale # fwhm in pixels (velscale = km/s/pixel)
-    if fwhm_pix <= 0.01: fwhm_pix = 0.01
-    sigma_pix = fwhm_pix/2.3548
-    if sigma_pix <= 0.01: sigma_pix = 0.01
-    voff_pix = voff / velscale # velocity offset in pixels
-    center_pix = center_pix + voff_pix # shift the line center by voff in pixels
-
-    x_pix = np.array(range(len(wave)), dtype=float) # pixels vector
-    x_pix = x_pix.reshape((len(x_pix), 1)) # reshape into row
-
-    # Gaussian contribution
-    a_G = 1.0/(sigma_pix * np.sqrt(2.0*np.pi))
-    g = a_G * np.exp(-0.5*(x_pix-(center_pix))**2/(sigma_pix)**2)
-    g = np.sum(g, axis=1)
-
-    # Lorentzian contribution
-    l = (1.0/np.pi) * (fwhm_pix/2.0)/((x_pix-center_pix)**2 + (fwhm_pix/2.0)**2)
-    l = np.sum(l,axis=1)
-
-    # Voigt profile
-    pv = (float(shape) * g) + ((1.0-float(shape))*l)
-
-    # Normalize and multiply by amplitude
-    pv = pv/np.max(pv)*amp
-
-    # Replace the ends with the same value
-    pv[(pv > -1e-6) & (pv < 1e-6)] = 0.0
-    pv[0] = pv[1]
-    pv[-1] = pv[-2]
-    return pv

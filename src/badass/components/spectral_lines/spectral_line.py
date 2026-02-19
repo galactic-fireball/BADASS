@@ -8,7 +8,8 @@ from typing import Dict, Optional
 
 import badass.utils.constants as consts
 import badass.utils.utils as ba_utils
-from badass.components.components import BadassComponent, ParameterRegistry
+from badass.components.components import BadassComponent
+from badass.components.params import ParameterRegistry
 from badass.components.spectral_lines.default_hyperpars import type_default_hyperpars, profile_default_hyperpars
 
 EDGE_PAD = 10
@@ -63,68 +64,6 @@ class SpectralLine(BadassComponent):
             print(line) # TODO: logger
 
 
-    @ staticmethod
-    def add_line(line_dict):
-        pass # TODO
-
-
-    @staticmethod
-    def remove_line(line_name):
-        pass # TODO
-
-
-    @staticmethod
-    def get_free_parameters(line_list):
-        pass # TODO
-
-
-    @staticmethod
-    def dump():
-        pass # TODO
-
-
-    @staticmethod
-    def pretty_print():
-        pass # TODO
-
-
-    @staticmethod
-    def get_hyperpar_val(par, hparam, line_type='', line_profile=''):
-        profile_default = profile_default_hyperpars.get(line_profile, {}).get(par, {}).get(hparam, None)
-        if not profile_default is None:
-            return profile_default
-
-        hparam_name = par + '_' + hparam
-        type_cfg = SpectralLine.ctx.cfg[line_type.lower()]
-        # check in order: type_cfg, default type options, common options
-        type_default = type_cfg.get(hparam_name, type_default_hyperpars.get(line_type, {}).get(par, {}).get(hparam, type_default_hyperpars['COMMON'].get(par, {}).get(hparam, None)))
-        return type_default
-
-
-    @staticmethod
-    def add_tied_param(line_type, par):
-        # TODO: instead of add to params, return class parameters
-        pre = prefix(line_type)
-        param_name = pre + '_' + par
-        if param_name in SpectralLine.common_params:
-            return
-
-        type_cfg = SpectralLine.ctx.cfg[line_type]
-        fp = SpectralLine.param_reg.new_param(name=param_name, expr=type_cfg.get(par, 'FREE'))
-        SpectralLine.common_params[param_name] = fp
-        if not fp.is_free:
-            return
-
-        for hparam in hyperpars:
-            # check each in order: type_cfg, default hyperpar dict
-            hparam_val = SpectralLine.get_hyperpar_val(line_type, par, hparam)
-
-            if (hparam != 'PRIOR') and (hparam_val is None):
-                raise Exception('Could not find voff hyperpar [%s] for line type [%s]'%(hparam_name,line_type))
-
-            setattr(fp, hparam.lower(), hparam_val)
-
-
     @classmethod
     def from_dict(cls, line_dict, parent):
         if (not 'CENTER' in line_dict) or (line_dict['CENTER'] is None):
@@ -177,8 +116,6 @@ class SpectralLine(BadassComponent):
 
     def initialize_parameters(self):
         if self.is_combined:
-            for child in self.children:
-                child.initialize_parameters()
             return
 
         for param in primary_pars:
@@ -196,6 +133,68 @@ class SpectralLine(BadassComponent):
 
         # add profile-unique parameters
         # self.line_profile.initialize_parameters()
+
+
+    def get_param(self, param_name):
+        full_name = self.name + '_' + param_name.upper()
+        return self.pr.get_param_val(full_name)
+
+
+    @staticmethod
+    def add_line_components(comp_dict, host_model):
+        for line in SpectralLine.line_list:
+            host_model = line.add_components(comp_dict, host_model)
+        return host_model
+
+
+    def add_components(self, comp_dict, host_model):
+        if self.is_combined:
+            for line in self.children:
+                host_model = line.add_components(comp_dict, host_model)
+            return host_model
+
+        line_comp = self.line_profile.construct_line(self)
+        comp_dict[self.name] = line_comp
+        host_model -= line_comp
+
+        return host_model
+
+
+    @staticmethod
+    def get_hyperpar_val(par, hparam, line_type='', line_profile=''):
+        profile_default = profile_default_hyperpars.get(line_profile, {}).get(par, {}).get(hparam, None)
+        if not profile_default is None:
+            return profile_default
+
+        hparam_name = par + '_' + hparam
+        type_cfg = SpectralLine.ctx.cfg[line_type.lower()]
+        # check in order: type_cfg, default type options, common options
+        type_default = type_cfg.get(hparam_name, type_default_hyperpars.get(line_type, {}).get(par, {}).get(hparam, type_default_hyperpars['COMMON'].get(par, {}).get(hparam, None)))
+        return type_default
+
+
+    @staticmethod
+    def add_tied_param(line_type, par):
+        # TODO: instead of add to params, return class parameters
+        pre = prefix(line_type)
+        param_name = pre + '_' + par
+        if param_name in SpectralLine.common_params:
+            return
+
+        type_cfg = SpectralLine.ctx.cfg[line_type]
+        fp = SpectralLine.param_reg.new_param(name=param_name, expr=type_cfg.get(par, 'FREE'))
+        SpectralLine.common_params[param_name] = fp
+        if not fp.is_free:
+            return
+
+        for hparam in hyperpars:
+            # check each in order: type_cfg, default hyperpar dict
+            hparam_val = SpectralLine.get_hyperpar_val(line_type, par, hparam)
+
+            if (hparam != 'PRIOR') and (hparam_val is None):
+                raise Exception('Could not find voff hyperpar [%s] for line type [%s]'%(hparam_name,line_type))
+
+            setattr(fp, hparam.lower(), hparam_val)
 
 
     def set_hyperpars(self, par, args):

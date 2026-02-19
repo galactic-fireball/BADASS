@@ -86,9 +86,9 @@ class SimplePowerLawTemplate(PowerLawTemplate):
         self.ctx.log.info('- Fitting Simple AGN power-law continuum')
 
 
-    def add_components(self, params, comp_dict, host_model):
-        amp = self.get_param('amp', params)
-        slope = self.get_param('slope', params)
+    def add_components(self, comp_dict, host_model):
+        amp = self.get_param('amp')
+        slope = self.get_param('slope')
 
         power = simple_power_law(self.ctx.fit_wave, amp, slope)
         comp_dict['POWER'] = power
@@ -105,9 +105,9 @@ class BrokenPowerLawTemplate(PowerLawTemplate):
         self.ctx.log.info('- Fitting Smoothly-Broken AGN power-law continuum')
 
 
-    def add_components(self, params, comp_dict, host_model):
-        power = broken_power_law(self.ctx.fit_wave, self.get_param('amp', params), self.get_param('break_', params),
-                                         self.get_param('slope_1', params), self.get_param('slope_2', params),
-                                         self.get_param('curvature', params))
+    def add_components(self, comp_dict, host_model):
+        power = broken_power_law(self.ctx.fit_wave, self.get_param('amp'), self.get_param('break_'),
+                                         self.get_param('slope_1'), self.get_param('slope_2'),
+                                         self.get_param('curvature'))
         comp_dict['POWER'] = power
         return host_model - power

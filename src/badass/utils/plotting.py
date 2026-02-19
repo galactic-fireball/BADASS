@@ -2,6 +2,7 @@ import astropy.constants as const
 from astropy.stats import mad_std
 import copy
 import corner
+import importlib
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numexpr as ne
@@ -13,6 +14,14 @@ plt.rcParams['text.usetex'] = False
 
 def calc_new_center(center, voff):
         return (voff*center)/const.c.to('km/s').value + center
+
+
+def initialize(ctx):
+    # Check to make sure plotly is installed for HTML interactive plots:
+    if (ctx.cfg.plot.html) and (not importlib.util.find_spec('plotly')):
+        ctx.cfg.plot.html = False
+
+    create_input_plot(ctx)
 
 
 def create_input_plot(ctx):

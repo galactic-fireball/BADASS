@@ -129,14 +129,14 @@ class HostTemplate(BadassTemplate):
                            [self.const_params['vel'], self.const_params['disp']], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
 
 
-    def add_components(self, params, comp_dict, host_model):
+    def add_components(self, comp_dict, host_model):
         if not self.pre_convolve:
             self.conv_host = convolve_gauss_hermite(self.ssp_fft, self.npad, float(self.ctx.target.velscale),
-                           [self.get_param('vel',params), self.get_param('disp',params)], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
+                           [self.get_param('vel'), self.get_param('disp')], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
 
 
         if np.shape(self.conv_host)[1] == 1:
-            host_galaxy = (self.conv_host * self.get_param('amp',params)).reshape(-1)
+            host_galaxy = (self.conv_host * self.get_param('amp')).reshape(-1)
         elif np.shape(self.conv_host)[1] > 1:
             host_model[~np.isfinite(host_model)] = 0
             self.conv_host[~np.isfinite(self.conv_host)] = 0

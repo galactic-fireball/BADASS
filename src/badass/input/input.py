@@ -130,6 +130,9 @@ class BadassInput():
         fit_mask_bad = np.sort(np.unique(fit_mask_bad))
         self.fit_mask = np.setdiff1d(np.arange(0,len(self.wave),1,dtype=int),fit_mask_bad)
 
+        if self.cfg.io.dust_cache != None:
+            IrsaDust.cache_location = str(dust_cache)
+
 
     def set_fit_region(self):
         # Determines the fitting region for an input spectrum and fit options

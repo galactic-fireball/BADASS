@@ -8,22 +8,22 @@ from badass.input.input import BadassInput
 
 class CubeReader(BadassInput):
 
-    def __init__(self, input_data, options):
+    def __init__(self, input_data, cfg):
         if not isinstance(input_data, dict):
             raise Exception('Default user data input should be dict')
 
         self.__dict__.update(input_data)
-        super().__init__(input_data, options)
+        super().__init__(input_data, cfg)
 
     @classmethod
-    def parse(cls, input_data, options):
+    def parse(cls, input_data, cfg):
 
         # input_data is already a 1D spectrum
         if (isinstance(input_data, dict)) and ('spec' in input_data) and (len(input_data['spec'].shape) == 1):
-            return cls(input_data, options)
+            return cls(input_data, cfg)
 
-        cube_dict = cls.get_cube_data(input_data, options)
-        cube_dict['options'] = options
+        cube_dict = cls.get_cube_data(input_data, cfg)
+        cube_dict['cfg'] = cfg
 
         # TODO: separate subclasses
         area_parsers = {
@@ -33,7 +33,7 @@ class CubeReader(BadassInput):
             'aperture': cls.aperture_parse,
         }
 
-        fit_area = options.fit_options.fit_area
+        fit_area = cfg.fit.fit_area
         fit_area_func = None
         for key in fit_area.keys():
             if key in area_parsers:
@@ -43,12 +43,12 @@ class CubeReader(BadassInput):
         if fit_area_func is None:
             raise Exception('Fit area type unsupported: %s'%fit_area_type)
 
-        return fit_area_func(cube_dict, input_data, options)
+        return fit_area_func(cube_dict, input_data, cfg)
 
 
     @classmethod
-    def spaxel_parse(cls, cube_dict, input_data, options):
-        spaxels = options.fit_options.fit_area.get('spaxels', options.fit_options.fit_area.get('spaxel', None))
+    def spaxel_parse(cls, cube_dict, input_data, cfg):
+        spaxels = cfg.fit.fit_area.get('spaxels', cfg.fit.fit_area.get('spaxel', None))
         nx = cube_dict.get('nx', cube_dict['spec'].shape[0])
         ny = cube_dict.get('ny', cube_dict['spec'].shape[1])
 
@@ -72,7 +72,7 @@ class CubeReader(BadassInput):
         else:
             raise Exception('spaxel list invalid')
 
-        if options.fit_options.fit_area.get('plot_input', False):
+        if cfg.fit.fit_area.get('plot_input', False):
             medcube = np.nanmedian(cube_dict['spec'], axis=2)
             medcube[np.isnan(medcube)] = 0.0
 
@@ -89,8 +89,9 @@ class CubeReader(BadassInput):
         inputs = []
         for x,y in fit_spaxels:
             spax_dict = copy.deepcopy(cube_dict)
-            spax_dict['options'].fit_options.fit_area.spaxels = (x,y)
-            spax_dict['options'].io_options.output_dir = '%s/spaxel_%d_%d' % (spax_dict['options'].io_options.output_dir,x,y)
+            spax_dict['cfg'].fit.fit_area.spaxels = (x,y)
+            spax_dict['cfg'].io.output_dir = '%s/spaxel_%d_%d' % (spax_dict['cfg'].io.output_dir,x,y)
+            spax_dict['name'] = 'spaxel_%d_%d'%(x,y)
 
             for key, val in split_dict.items():
                 spax_dict[key] = val[x,y,:]

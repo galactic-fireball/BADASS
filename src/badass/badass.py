@@ -16,7 +16,6 @@ from astroquery.irsa_dust import IrsaDust
 import copy
 from dataclasses import dataclass, field
 import emcee
-import importlib
 import json
 import multiprocessing as mp
 from numbers import Number
@@ -42,9 +41,10 @@ warnings.filterwarnings('ignore', category=UserWarning)
 # TODO: reorganize
 from badass.badass_utils import badass_test_suite
 
-from badass.components.components import ParameterRegistry
+from badass.components.params import ParameterRegistry
+from badass.components.blobs import BlobRegistry
 
-from badass.utils.options import BadassConfig
+from badass.utils.config import BadassConfig
 from badass.input.input import BadassInput
 from badass.utils.output import ResultWriter
 import badass.utils.utils as ba_utils
@@ -143,11 +143,13 @@ class BadassRunContext:
         self.force_thresh = np.inf
 
         self.templates = None
-        self.param_dict = {}
-        self.prior_params = []
-        self.cur_params = {} # contains the parameter values of the current fit
-        self.soft_cons = []
-        self.blob_pars = {}
+        self.line_list = None
+        self.param_reg = None
+        self.blob_reg = None
+
+        # self.cur_params = {} # contains the parameter values of the current fit
+        # self.soft_cons = []
+        # self.blob_pars = {}
 
         self.mc_attr_store = {}
         self.fit_results = {}
@@ -162,12 +164,11 @@ class BadassRunContext:
     def run(self):
         # TODO: allow ability to run_emcee without ML first
         #       - specify inputs and output of each (maybe separate classes?)
-        plotting.create_input_plot(self)
 
-        if self.initialize_fit() is None:
-            return
+        self.initialize_fit()
 
-        # Line testing is performed first for a better line list determination and number of components
+        # Line testing is performed first for a better line list
+        # determination and number of components
         if not self.run_tests():
             return
 
@@ -180,29 +181,13 @@ class BadassRunContext:
 
 
     def initialize_fit(self):
-        # TODO: needed? move to input class?
-        if self.cfg.io.dust_cache != None:
-            IrsaDust.cache_location = str(dust_cache)
+        plotting.initialize(self)
 
-        # Check to make sure plotly is installed for HTML interactive plots:
-        if (self.cfg.plot.html) and (not importlib.util.find_spec('plotly')):
-            self.cfg.plot.html = False
-
-        # TODO: make this more adaptable to input type
-        if ('fit_area' in self.target.cfg.fit) and ('spaxels' in self.target.cfg.fit.fit_area):
-            spx, spy = self.target.cfg.fit.fit_area.spaxels
-            self.target.log.info(f'> Starting fit for spaxel {spx}_{spy}')
-        else:
-            self.target.log.info('> Starting fit for %s' % self.target.name)
-
+        self.target.log.info('> Starting fit for %s' % self.target.name)
         self.target.log.log_target_info()
-
         self.start_time = time.time()
 
         self.param_reg = ParameterRegistry(self)
-
-        self.target.log.log_fit_information()
-
         self.templates = initialize_templates(self)
         spec_line.SpectralLine.initialize_spectral_lines(self, [line.dict() for line in self.cfg.user_lines])
 
@@ -216,10 +201,12 @@ class BadassRunContext:
             'min_wave':np.min(self.fit_wave), 'max_wave':np.max(self.fit_wave),
         }
 
+        self.param_reg.dump_parameters()
         self.param_reg.init_values(component_args)
         self.param_reg.dump_parameters()
-        breakpoint()
 
+        self.blob_reg = BlobRegistry(self)
+        self.blob_reg.dump_blobs()
 
         # TODO: input from past line test or user config
         # Set force_thresh to np.inf. This will get overridden if the user does the line test
@@ -227,13 +214,7 @@ class BadassRunContext:
         if not np.isfinite(self.force_thresh):
             self.force_thresh = np.inf
 
-        # Output all free parameters of fit prior to fitting (useful for diagnostics)
-        self.target.log.output_free_pars(self.line_list, self.param_dict, self.soft_cons)
-        self.target.log.output_line_list(self.line_list, self.soft_cons)
-
-        self.set_blob_pars()
         self.target.log.output_cfg()
-        return init_pars
 
 
     def check_hard_cons(self, param_keys, remove_lines=False):
@@ -579,8 +560,7 @@ class BadassRunContext:
     def max_likelihood(self, line_test=False):
 
         self.target.log.debug('Performing max likelihood fitting')
-        self.target.log.debug('free params: ' + json.dumps(self.param_dict, indent=4, sort_keys=True))
-        if len(self.param_dict) == 0:
+        if len(self.param_reg.get_free_parameters()) == 0:
             self.target.log.warn('No parameters to fit!')
 
             # TODO: handle differently
@@ -592,19 +572,27 @@ class BadassRunContext:
 
             return
 
-        self.prior_params = [key for key,val in self.param_dict.items() if ('prior' in val)]
-        self.cur_params = {k:v['init'] for k,v in self.param_dict.items()}
+        self.global_optimize()
+        breakpoint()
+        self.local_optimize()
+        self.compile_results()
 
-        bounds = [val['plim'] for key,val in self.param_dict.items()]
-        lb, ub = zip(*bounds)
-        param_bounds = op.Bounds(lb, ub, keep_feasible=True)
 
-        def eval_con(params, param_names, expr1, expr2):
-            local_dict = dict(zip(param_names,params))
+    def lnprob_wrapper(self, fit_vals):
+            self.param_reg.update_vals(fit_vals)
+            return -(self.lnprob()[0]) # only care about the first returned value
+
+
+    def global_optimize(self):
+
+        def eval_con(x, ctx, expr1, expr2):
+            ctx.param_reg.update_vals(x)
+            local_dict = ctx.param_reg.get_param_dict()
             r1 = ne.evaluate(expr1, local_dict=local_dict).item()
             r2 = ne.evaluate(expr2, local_dict=local_dict).item()
             return r1 - r2
-        cons = [{'type':'ineq', 'fun':eval_con, 'args':(list(self.param_dict.keys()), con[0], con[1])} for con in self.soft_cons]
+        cons = [{'type':'ineq', 'fun':eval_con, 'args':(self, con[0], con[1])} for con in self.cfg.user_constraints]
+
 
         n_basinhop = self.cfg.fit.n_basinhop
         lowest_rmse = badass_test_suite.root_mean_squared_error(self.fit_spec, np.zeros(len(self.fit_spec)))
@@ -650,47 +638,70 @@ class BadassRunContext:
                 # self.target.log.debug('\tFit Status: %s\n\tForce threshold: %0.4f\n\tLowest RMSE: %0.4f\n\tCurrent RMSE: %0.4f\n\tAccepted Count: %d\n\tBasinhop Count: %d'%(terminate,self.force_thresh,lowest_rmse,rmse,accepted_count,basinhop_count))
                 return terminate
 
+        self.param_reg.init_store(1)
+        self.blob_reg.init_store(1)
 
-        def lnprob_wrapper(fit_vals):
-            self.cur_params = dict(zip(self.cur_params.keys(), fit_vals))
-            return -(self.lnprob()[0]) # only care about the first returned value
+        lo, hi = self.param_reg.get_fit_bounds()
+        param_bounds = op.Bounds(lo, hi, keep_feasible=True)
 
         minimizer_args = {'method':'SLSQP', 'bounds':param_bounds,'constraints':cons,'options':{'disp':False,}}
-        result = op.basinhopping(func=lnprob_wrapper, x0=list(self.cur_params.values()), stepsize=1.0, interval=1, niter=2500, minimizer_kwargs=minimizer_args,
+        result = op.basinhopping(func=self.lnprob_wrapper, x0=self.param_reg.fit_vector(), stepsize=1.0, interval=1, niter=2500, minimizer_kwargs=minimizer_args,
                                  disp=False, niter_success=n_basinhop, callback=callback_ftn)
 
-        best_fit = result['x']
-        self.cur_params = dict(zip(self.cur_params.keys(), best_fit))
-        fun_result = result['fun']
+        self.param_reg.update_vals(result['x'])
+        self.param_reg.do_store()
+        self.blob_reg.do_store()
+
+        self.param_reg.dump_parameters()
+        log_like = result['fun']
         self.fit_model()
         self.reweight()
 
+        return log_like
+
+
+    def local_optimize(self):
+
         max_like_niter = self.cfg.fit.max_like_niter
-        self.init_mc_store(max_like_niter+1)
-        self.update_mc_store(0, fun_result)
+        if max_like_niter == 0:
+            return
 
-        if max_like_niter:
-            self.target.log.info('Performing Monte Carlo bootstrapping')
-            orig_fit_spec = self.fit_spec.copy()
+        self.target.log.info('Performing Monte Carlo bootstrapping')
 
-            for n in range(1, max_like_niter+1):
-                # Generate a simulated galaxy spectrum with noise added at each pixel
-                mcgal = np.random.normal(self.fit_spec, np.abs(self.fit_noise))
-                # Get rid of any infs or nan if there are none; this will cause scipy.optimize to fail
-                mcgal[~np.isfinite(mcgal)] = np.nanmedian(mcgal)
-                self.fit_spec = mcgal
+        self.param_reg.init_store(max_like_niter)
+        self.blob_reg.init_store(max_like_niter)
 
-                resultmc = op.minimize(fun=lnprob_wrapper, x0=list(self.cur_params.values()), method='SLSQP',
-                                       bounds=param_bounds, constraints=cons, options={'maxiter':1000,'disp': False})
+        self.param_reg.do_store()
+        self.blob_reg.do_store()
 
-                # return original spectrum for fitting model
-                self.fit_spec = orig_fit_spec
-                best_fit = resultmc['x']
-                self.cur_params = dict(zip(self.cur_params.keys(), best_fit))
-                fun_result = resultmc['fun']
-                self.fit_model()
-                self.update_mc_store(n, fun_result) # TODO: each component handles it's own stuff
+        # self.init_mc_store(max_like_niter+1)
+        # self.update_mc_store(0, fun_result)
 
+        orig_fit_spec = self.fit_spec.copy()
+
+        for n in range(1, max_like_niter+1):
+            # Generate a simulated galaxy spectrum with noise added at each pixel
+            mcgal = np.random.normal(self.fit_spec, np.abs(self.fit_noise))
+            # Get rid of any infs or nan if there are none; this will cause scipy.optimize to fail
+            mcgal[~np.isfinite(mcgal)] = np.nanmedian(mcgal)
+            self.fit_spec = mcgal
+
+            result = op.minimize(fun=self.lnprob_wrapper, x0=self.param_reg.fit_vector(), method='SLSQP',
+                                   bounds=param_bounds, constraints=cons, options={'maxiter':1000,'disp': False})
+
+            # return original spectrum for fitting model
+            self.fit_spec = orig_fit_spec
+
+            self.param_reg.update_vals(result['x'])
+            self.fit_model()
+            self.param_reg.do_store()
+            self.blob_reg.do_store()
+
+            fun_result = result['fun']
+            # self.update_mc_store(n, fun_result) # TODO: each component handles it's own stuff
+
+
+    def compile_results(self):
         self.compile_mc_results()
 
         # TODO: handle differently
@@ -969,10 +980,10 @@ class BadassRunContext:
         if not self.cfg.fit.reweighting:
             return
         self.target.log.debug('Reweighting noise to achieve a reduced chi-squared ~ 1')
-        cur_rchi2 = badass_test_suite.r_chi_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'], self.fit_noise, len(self.cur_params))
+        cur_rchi2 = badass_test_suite.r_chi_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'], self.fit_noise, self.param_reg.free_count)
         self.target.log.debug('\tCurrent reduced chi-squared = %0.5f' % cur_rchi2)
         self.fit_noise = self.fit_noise*np.sqrt(cur_rchi2)
-        new_rchi2 = badass_test_suite.r_chi_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'], self.fit_noise, len(self.cur_params))
+        new_rchi2 = badass_test_suite.r_chi_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'], self.fit_noise, self.param_reg.free_count)
         self.target.log.debug('\tNew reduced chi-squared = %0.5f' % new_rchi2)
 
 
@@ -1014,22 +1025,24 @@ class BadassRunContext:
     def lnprior(self):
         # Log-prior function
 
-        lp_arr = []
-        for key, val in self.cur_params.items():
-            lower, upper = self.param_dict[key]['plim']
-            assert upper > lower
-            lp_arr.append(0.0 if lower <= val <= upper else -np.inf)
+        lp_arr = self.param_reg.get_lnpriors()
 
         # Loop through soft constraints
-        for expr1, expr2 in self.soft_cons:
-            con_pass = ne.evaluate(expr1, local_dict=self.cur_params).item() - ne.evaluate(expr2, local_dict=self.cur_params).item() >= 0
+        local_dict = self.param_reg.get_param_dict()
+        for expr1, expr2 in self.cfg.user_constraints:
+            con_pass = ne.evaluate(expr1, local_dict=local_dict).item() - ne.evaluate(expr2, local_dict=local_dict).item() >= 0
             lp_arr.append(0.0 if con_pass else -np.inf)
 
         # Loop through parameters with priors on them
         prior_map = {'gaussian': lnprior_gaussian, 'halfnorm': lnprior_halfnorm, 'jeffreys': lnprior_jeffreys, 'flat': lnprior_flat}
-        p = [prior_map[self.param_dict[key]['prior']['type']](self.cur_params[key],**self.param_dict[key]) for key in self.prior_params]
 
-        lp_arr += p
+        for param in self.param_reg.get_prior_parameters():
+            prior_type = param.prior['type']
+            if not prior_type in prior_map: # TODO: validate elsewhere
+                continue
+
+            lp_arr += prior_map[prior_type](param.value, **self.param_reg.get_param_hyperdict(param.name))
+
         return np.sum(lp_arr)
 
 
@@ -1037,34 +1050,24 @@ class BadassRunContext:
     def fit_model(self):
         # Constructs galaxy model
         host_model = np.copy(self.fit_spec)
-
         self.comp_dict = {}
 
-        # Emission Line Components
-        for line_name, line_dict in self.line_list.items():
-            # Check if we are fitting lines of this type
-            if not self.cfg.comp['fit_'+ba_consts.LINE_TYPE_TO_NAME[line_dict['line_type']]]:
-                continue
-
-            line_model = line_constructor(self, line_name, line_dict)
-            if line_model is None:
-                continue
-            self.comp_dict[line_name] = line_model
-            host_model = host_model - self.comp_dict[line_name]
+        host_model = spec_line.SpectralLine.add_line_components(self.comp_dict, host_model)
 
         for template in self.templates.values():
-            host_model = template.add_components(self.cur_params, self.comp_dict, host_model)
+            host_model = template.add_components(self.comp_dict, host_model)
 
         # The final model
         self.model = np.sum((self.comp_dict[d] for d in self.comp_dict), axis=0)
 
         # Add combined lines to comp_dict
-        for comb_line, line_dict in self.combined_line_list.items():
-            self.comp_dict[comb_line] = np.zeros(len(self.fit_wave))
-            for line_name in line_dict['lines']:
-                if not self.cfg.comp['fit_'+ba_consts.LINE_TYPE_TO_NAME[self.line_list[line_name]['line_type']]]:
-                    continue # TODO: also check if there's only one component left in the combined line
-                self.comp_dict[comb_line] += self.comp_dict[line_name]
+        # TODO in SpectralLine
+        # for comb_line, line_dict in self.combined_line_list.items():
+        #     self.comp_dict[comb_line] = np.zeros(len(self.fit_wave))
+        #     for line_name in line_dict['lines']:
+        #         if not self.cfg.comp['fit_'+ba_consts.LINE_TYPE_TO_NAME[self.line_list[line_name]['line_type']]]:
+        #             continue # TODO: also check if there's only one component left in the combined line
+        #         self.comp_dict[comb_line] += self.comp_dict[line_name]
 
         # Add last components to comp_dict for plotting purposes
         # Add galaxy, sigma, model, and residuals to comp_dict
@@ -1715,7 +1718,7 @@ def auto_window(taus, c):
     return len(taus) - 1
 
 
-# TODO: all in line_profile util
+# TODO: all in prior util
 def lnprior_gaussian(x,**kwargs):
     """
     Log-Gaussian prior based on user-input. If not specified, mu and sigma

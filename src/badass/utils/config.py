@@ -7,7 +7,6 @@ from pydantic import AfterValidator, AliasChoices, BeforeValidator, BaseModel, C
 from typing import Annotated, Any, ClassVar, List, Literal, types, Union
 
 import badass.utils.constants as consts
-from badass.utils.schema import DefaultValidator, DEFAULT_OPTIONS_SCHEMA
 
 
 PositiveNum = PositiveInt | PositiveFloat
@@ -84,9 +83,11 @@ def dict_to_prodict(v:dict|prodict.Prodict) -> prodict.Prodict:
 
 class FitOptions(CustomBaseModel):
     fit_reg: Annotated[list[NonNegativeNum] | str, AfterValidator(validate_fitreg)] = Field('auto', description='The minimum and maximum desired fitting wavelength in angstroms.', examples=[(4400,5500), '\'auto\''])
+    redshift: NonNegativeNum = Field(-1.0, description='Redshift of the fitting target')
     n_basinhop: NonNegativeInt = Field(25, description='Number of successive `niter_success` times the basinhopping algorithm needs to achieve a solution. The fit becomes much better with more success times, however this can increase the time to a solution significantly.')
     max_like_niter: NonNegativeInt = Field(10, description='Number of bootstrapping iterations to perform after the initial basinhopping fit. This is a means to obtain uncertainties on parameters without performing MCMC fitting, however, do not produce as robust uncertainties as MCMC.')
-    fit_area: dict[str, list | dict] = Field({}, description='Defines the area to be fit for data cubes. See `examples/muse_examples.py` for usage.')
+    # TODO: fit_area specific definition
+    fit_area: Annotated[dict[str, list | dict | bool] | prodict.Prodict, AfterValidator(dict_to_prodict)] = Field({}, description='Defines the area to be fit for data cubes. See `examples/muse_examples.py` for usage.')
     reweighting: bool = Field(True, description='If `True`, BADASS will reweight the noise vector to achieve a reduced chi-squared ~ 1. This is done after the initial basinhopping fit, and applied to any bootstrapped uncertainties and MCMC fitting performed afterward. This does not affect the chi-squared ratio metric used in line and configuration testing, but does effect the amplitude-over-noise and SNR calculations in BADASS.')
     fit_stat: str = Field('ML', description='The fit statistic used for the likelihood. Options:\n\n* `\'ML\'` for standard maximum likelihood (pixels weighted by noise with no noise scaling).\n* `\'OLS\'` for ordinary least-squares fitting (all pixels weighted by same amount).')
     cosmology: Annotated[dict[str,NonNegativeNum] | prodict.Prodict, AfterValidator(dict_to_prodict)] = Field(prodict.Prodict({'H0':70.0, 'Om0': 0.30}), description='The flat Lambda-CDM cosmology assumed for calculating luminosities from fluxes.')

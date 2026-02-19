@@ -91,7 +91,7 @@ class BadassLogger:
         self.logger.info('{0:<30}'.format('Units:'))
         self.logger.info('{0:<30}'.format('\t- Fluxes are in units of [%0.0e erg/s/cm2/Å]' % (self.ctx.flux_norm)))
         self.logger.info('{0:<30}'.format('\t- Fiting normalization factor is %0.5f' % (self.ctx.fit_norm)))
-        
+
         self.logger.info('\n')
         self.logger.info(
         """
@@ -165,59 +165,6 @@ class BadassLogger:
         self.logger.info('{0:<30}{1:<30.4f}'.format('NOISE_STD.', noise_std ))
         self.logger.info('{0:<30}{1:<30.4f}'.format('RESID_STD', resid_std ))
         self.logger.info('-----------------------------------------------------------------------------------------------------------------')
-
-
-    # TODO: just pretty print line list, soft cons?
-    def output_line_list(self, line_list, soft_cons):
-        self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
-        self.logger.info('Line List:')
-        nfree = 0 
-        self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
-        for line in sorted(list(line_list)):
-            self.logger.info('{0:<30}{1:<30}{2:<30.2}'.format(line, '',''))
-            for par in sorted(list(line_list[line].dict().keys())):
-                self.logger.info('{0:<30}{1:<30}{2:<30}'.format('', par,str(line_list[line][par])))
-                if line_list[line][par] == 'free': nfree+=1
-        self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
-        self.logger.info('Soft Constraints:')
-        for con in soft_cons:
-            self.logger.info('\n{0:>30}{1:<0}{2:<0}'.format(con[0], ' > ',con[1]))
-        self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
-
-
-    # TODO: just pretty print?
-    def output_free_pars(self, line_list, par_input, soft_cons):
-        self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
-        self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
-
-        self.logger.info('Line List:')
-        nfree = 0 
-        self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
-        for line in sorted(list(line_list)):
-            self.logger.info('{0:<30}{1:<30}{2:<30.2}'.format(line, '',''))
-            for par in sorted(list(line_list[line].dict().keys())):
-                self.logger.info('{0:<30}{1:<30}{2:<30}'.format('',par,str(line_list[line][par])))
-                if line_list[line][par] == 'free': nfree+=1
-        self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
-        self.logger.info('Number of Free Line Parameters: %d' % nfree)
-        self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
-        self.logger.info('All Free Parameters:')
-        self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
-
-        nfree = 0
-        for par in sorted(list(par_input)):
-            self.logger.info('{0:<30}{1:<30}{2:<30.2}'.format(par, '',''))
-            nfree+=1
-            for hpar in sorted(list(par_input[par])):
-                self.logger.info('{0:<30}{1:<30}{2:<30}'.format('', hpar,str(par_input[par][hpar])))
-        self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
-        self.logger.info('Total number of free parameters: %d' % nfree)
-        self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
-        self.logger.info('Soft Constraints:')
-        for con in soft_cons:
-            self.logger.info('{0:>30}{1:<0}{2:<0}'.format(con[0],' > ',con[1]))
-        self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
-        self.logger.info('----------------------------------------------------------------------------------------------------------------------------------------')
 
 
     def output_cfg(self):

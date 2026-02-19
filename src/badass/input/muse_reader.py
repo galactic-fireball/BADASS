@@ -12,15 +12,15 @@ MUSE_FLUX_NORM = 1e-20
 class MUSEReader(CubeReader):
 
     @classmethod
-    def get_cube_data(cls, input_data, options):
+    def get_cube_data(cls, input_data, cfg):
         if not isinstance(input_data, pathlib.Path):
             raise Exception('Reading MUSE spectra from data currently unsupported') # TODO
 
-        if not 'redshift' in options.fit_options:
+        if cfg.fit.redshift < 0.0:
             raise Exception('Redshift for MUSE cube must be provided')
 
         cube_data = {}
-        cube_data['z'] = options.fit_options.redshift
+        cube_data['z'] = cfg.fit.redshift
 
         cube_data['infile'] = input_data
         with fits.open(input_data) as hdu:

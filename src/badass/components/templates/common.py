@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from scipy import fftpack, optimize
 
-from badass.components.components import BadassComponent, FitParameter
+from badass.components.components import BadassComponent
 import badass.utils.constants as consts
 from badass.utils.utils import log_rebin, rebin
 
@@ -166,7 +166,7 @@ class BadassTemplate(BadassComponent):
 
 
     def get_param(self, param_name):
-        full_name = self.PARAM_PREFIX + param.upper()
+        full_name = self.PARAM_PREFIX + param_name.upper()
         return self.pr.get_param_val(full_name)
 
 

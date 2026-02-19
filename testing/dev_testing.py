@@ -143,8 +143,8 @@ def test_muse_multi():
         shutil.rmtree(str(output_dir))
 
     # badass.target_check(test_file, options_file=options_file)
-    badass.run_BADASS(test_file, options_file=options_file, nprocesses=2)
-
+    # badass.run_BADASS(test_file, options_file=options_file, nprocesses=2)
+    badass.run_BADASS(test_file, options_file=options_file)
 
 
 def test_nirspec_single():
@@ -198,6 +198,16 @@ def create_line_json():
 
 
 
+# TO TEST:
+# - all components
+# - all line profiles
+# - tied line components
+# - parameter plims
+# - combined lines
+# - hard constraints
+# - soft constraints
+# - parameter expressions
+# - all prior distributions
 
 
 def main():

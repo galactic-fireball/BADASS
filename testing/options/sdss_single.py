@@ -2,7 +2,7 @@ io = {
     'infmt': 'sdss',
     'output_dir': 'examples/example_spectra/0-test/sdss_test', # same directory as input file
     'overwrite': True,
-    'log_level': 'info',
+    'log_level': 'debug',
 }
 
 fit = {

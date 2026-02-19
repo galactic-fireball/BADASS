@@ -69,13 +69,13 @@ class UVIronTemplate(BadassTemplate):
                                                velscale_ratio=1, sigma_diff=0, vsyst=self.vsyst)
 
 
-    def add_components(self, params, comp_dict, host_model):
-        conv_temp = self.convolve(self.get_param('voff', params), self.get_param('disp', params))
+    def add_components(self, comp_dict, host_model):
+        conv_temp = self.convolve(self.get_param('voff'), self.get_param('disp'))
         conv_temp = conv_temp.reshape(-1)
 
         # Re-normalize to 1
         conv_temp = conv_temp/np.max(conv_temp)
-        template = self.get_param('amp',params) * conv_temp
+        template = self.get_param('amp') * conv_temp
 
         # Set fitting region outside of template to zero to prevent convolution loops
         template[(self.ctx.fit_wave < UV_IRON_TEMP_WAVE_MIN) | (self.ctx.fit_wave > UV_IRON_TEMP_WAVE_MAX)] = 0

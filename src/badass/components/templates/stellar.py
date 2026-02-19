@@ -130,17 +130,17 @@ class StellarTemplate(BadassTemplate):
         self.temp_fft, self.npad = template_rfft(templates)
 
         # only if disp and vel are constant, can we pre_convolve before the fit
-        self.pre_convolve = ('disp' in self.const_params) and ('vel' in self.const_params)
+        self.pre_convolve = not any([self.pr.is_free(param) for param in self.comp_params])
 
         if self.pre_convolve:
             self.conv_temp = convolve_gauss_hermite(self.temp_fft, self.npad, float(self.ctx.target.velscale),
-                           [self.const_params['vel'], self.const_params['disp']], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
+                           [self.get_param('vel'), self.get_param('disp')], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
 
 
-    def add_components(self, params, comp_dict, host_model):
+    def add_components(self, comp_dict, host_model):
         if not self.pre_convolve:
             self.conv_temp = convolve_gauss_hermite(self.temp_fft, self.npad, float(self.ctx.target.velscale),
-                           [self.get_param('vel',params), self.get_param('disp',params)], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
+                           [self.get_param('vel'), self.get_param('disp')], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
 
         host_model[~np.isfinite(host_model)] = 0
         self.conv_temp[~np.isfinite(self.conv_temp)] = 0

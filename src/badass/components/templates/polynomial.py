@@ -68,13 +68,13 @@ class PolynomialTemplate(BadassTemplate):
         super().__init__(ctx)
 
 
-    def add_components(self, params, comp_dict, host_model):
+    def add_components(self, comp_dict, host_model):
         if self.fit_apoly:
             nw = np.linspace(-1, 1, len(self.ctx.fit_wave))
             coeff = np.empty(self.apoly_order+1)
             coeff[0] = 0.0
             for n in range(1, len(coeff)):
-                coeff[n] = self.get_param('apoly_coeff_%d'%n, params)
+                coeff[n] = self.get_param('apoly_coeff_%d'%n)
             apoly = np.polynomial.legendre.legval(nw, coeff)
 
             comp_dict['APOLY'] = apoly
@@ -85,7 +85,7 @@ class PolynomialTemplate(BadassTemplate):
             coeff = np.empty(self.mpoly_order+1)
             coeff[0] = 0.0
             for n in range(1, len(coeff)):
-                coeff[n] = self.get_param('mpoly_coeff_%d'%n, params)
+                coeff[n] = self.get_param('mpoly_coeff_%d'%n)
             mpoly = np.polynomial.legendre.legval(nw, coeff)
 
             comp_dict['MPOLY'] = mpoly

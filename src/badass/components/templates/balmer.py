@@ -70,7 +70,7 @@ class BalmerTemplate(BadassTemplate):
         self.lam_balmer = np.exp(loglam_balmer)
 
 
-    def add_components(self, params, comp_dict, host_model):
+    def add_components(self, comp_dict, host_model):
         # We need to generate a new grid for the Balmer continuum that matches
         # that we made for the higher-order lines
         def blackbody(lam, Teff):
@@ -80,15 +80,15 @@ class BalmerTemplate(BadassTemplate):
             return ((2.0*h*c**2.0)/lam**5.0)*(1.0/(np.exp((h*c)/(lam*k*Teff))-1.0))
 
         # Construct Balmer continuum from lam_balmer
-        Blam = blackbody(self.lam_balmer, self.get_param('teff', params)) # blackbody function [erg/s]
-        cont = Blam * (1.0-1.0/np.exp(self.get_param('tau', params)*(self.lam_balmer/BALMER_EDGE_WAVE)**3.0))
+        Blam = blackbody(self.lam_balmer, self.get_param('teff')) # blackbody function [erg/s]
+        cont = Blam * (1.0-1.0/np.exp(self.get_param('tau')*(self.lam_balmer/BALMER_EDGE_WAVE)**3.0))
         # Normalize at 3000 Å
         cont = cont / np.max(cont)
         # Set Balmer continuum to zero after Balmer edge
         cont[find_nearest(self.lam_balmer, BALMER_EDGE_WAVE)[1]:] = 0.0
 
         if (np.sum(self.spec_high_balmer)>0):
-            self.spec_high_balmer = self.spec_high_balmer/np.max(self.spec_high_balmer) * self.get_param('ratio', params)
+            self.spec_high_balmer = self.spec_high_balmer/np.max(self.spec_high_balmer) * self.get_param('ratio')
 
         # Sum the two components
         full_balmer = self.spec_high_balmer + cont
@@ -97,18 +97,18 @@ class BalmerTemplate(BadassTemplate):
         balmer_fft, balmer_npad = template_rfft(full_balmer)
         vsyst = np.log(self.lam_balmer[0]/self.ctx.fit_wave[0])*consts.c
 
-        disp = self.get_param('disp', params)
+        disp = self.get_param('disp')
         if disp <= 0.01: disp = 0.01
         # Broaden the higher-order Balmer lines
         conv_temp = convolve_gauss_hermite(balmer_fft, balmer_npad, float(self.ctx.target.velscale),
-                                           [self.get_param('voff', params), disp], self.ctx.fit_wave.shape[0],
+                                           [self.get_param('voff'), disp], self.ctx.fit_wave.shape[0],
                                            velscale_ratio=1, sigma_diff=0, vsyst=vsyst)
 
-        conv_temp = conv_temp/conv_temp[find_nearest(self.ctx.fit_wave,BALMER_EDGE_WAVE)[1]] * self.get_param('ratio', params)
+        conv_temp = conv_temp/conv_temp[find_nearest(self.ctx.fit_wave,BALMER_EDGE_WAVE)[1]] * self.get_param('ratio')
         conv_temp = conv_temp.reshape(-1)
 
         # Normalize the full continuum to 1
-        balmer_cont = conv_temp/np.max(conv_temp) * self.get_param('amp', params)
+        balmer_cont = conv_temp/np.max(conv_temp) * self.get_param('amp')
 
         comp_dict['BALMER_CONT'] = balmer_cont
         return host_model - balmer_cont
