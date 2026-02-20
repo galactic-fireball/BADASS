@@ -23,8 +23,8 @@ import badass
 def test_single():
     options_file = OPTIONS_DIR.joinpath('sdss_single.py')
 
-    test_file = EX_SPEC_DIR.joinpath('0-test', 'spec-1087-52930-0084.fits')
-    # test_file = EX_SPEC_DIR.joinpath('1-test', 'spec-7748-58396-0782.fits')
+    # test_file = EX_SPEC_DIR.joinpath('0-test', 'spec-1087-52930-0084.fits')
+    test_file = EX_SPEC_DIR.joinpath('1-test', 'spec-7748-58396-0782.fits')
     # test_file = EX_SPEC_DIR.joinpath('2-test', 'spec-2756-54508-0579.fits')
 
     if test_old:

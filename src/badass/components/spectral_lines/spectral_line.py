@@ -8,6 +8,7 @@ from typing import Dict, Optional
 
 import badass.utils.constants as consts
 import badass.utils.utils as ba_utils
+from badass.components.blobs import ComponentBlob, LineVelBlob
 from badass.components.components import BadassComponent
 from badass.components.params import ParameterRegistry
 from badass.components.spectral_lines.default_hyperpars import type_default_hyperpars, profile_default_hyperpars
@@ -54,8 +55,7 @@ class SpectralLine(BadassComponent):
     def initialize_spectral_lines(_ctx, _line_list):
         SpectralLine.ctx = _ctx
         SpectralLine.param_reg = SpectralLine.ctx.param_reg
-        SpectralLine.line_list = [SpectralLine.from_dict(line_dict, None) for line_dict in capitalize(_line_list)]
-        # TODO: just call initialize_parameters here?
+        return [SpectralLine.from_dict(line_dict, None) for line_dict in capitalize(_line_list)]
 
 
     @staticmethod
@@ -109,6 +109,7 @@ class SpectralLine(BadassComponent):
                 raise Exception('Invalid line profile (%s) for line: %s'%(profile,self.name))
 
         self.children = [SpectralLine.from_dict(child_dict, self) for child_dict in self.line_dict.get('CHILDREN', [])]
+        self.add_disp_res()
 
         SpectralLine.ctx.log.debug('Added line: %s'%str(self))
         super().__init__(SpectralLine.ctx)
@@ -121,6 +122,7 @@ class SpectralLine(BadassComponent):
         for param in primary_pars:
             val = self.line_dict.get(param.upper())
 
+            # TODO
             # if (param == 'amp') and (self.line_dict['amp_adjust']) and (isinstance(val,dict)):
             #     val = self.get_amp_hyperpar()
 
@@ -135,22 +137,23 @@ class SpectralLine(BadassComponent):
         # self.line_profile.initialize_parameters()
 
 
+    def register_blobs(self):
+        if self.is_combined:
+            self.br.register_blob(LineVelBlob(name=self.name.upper(), center=self.center, ctx=SpectralLine.ctx))
+        self.br.register_blob(ComponentBlob(component=self.name))
+
+
     def get_param(self, param_name):
         full_name = self.name + '_' + param_name.upper()
         return self.pr.get_param_val(full_name)
-
-
-    @staticmethod
-    def add_line_components(comp_dict, host_model):
-        for line in SpectralLine.line_list:
-            host_model = line.add_components(comp_dict, host_model)
-        return host_model
 
 
     def add_components(self, comp_dict, host_model):
         if self.is_combined:
             for line in self.children:
                 host_model = line.add_components(comp_dict, host_model)
+
+            comp_dict[self.name] = np.sum([comp_dict[line.name] for line in self.children], axis=0)
             return host_model
 
         line_comp = self.line_profile.construct_line(self)
@@ -158,6 +161,28 @@ class SpectralLine(BadassComponent):
         host_model -= line_comp
 
         return host_model
+
+
+    def add_disp_res(self):
+        c = const.c.to('km/s').value
+        # Perform linear interpolation on the disp_res array as a function of wavelength
+        # We will use this to determine the dispersion resolution as a function of wavelength for each
+        # emission line so we can correct for the resolution at every iteration.
+        # TODO: make this common
+        disp_res_ftn = interp1d(SpectralLine.ctx.target.wave,SpectralLine.ctx.target.disp_res,kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
+        # Interpolation function that maps x (in angstroms) to pixels so we can get the exact
+        # location in pixel space of the emission line.
+        x_pix = np.array(range(len(SpectralLine.ctx.target.wave)))
+        pix_interp_ftn = interp1d(SpectralLine.ctx.target.wave,x_pix,kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
+
+        self.center_pix = float(pix_interp_ftn(self.center)) # line center in pixels
+        self.disp_res_ang = float(disp_res_ftn(self.center)) # instrumental FWHM resolution in angstroms
+        self.disp_res_kms = (self.disp_res_ang/self.center)*c # instrumental FWHM resolution in km/s
+
+
+
+
+
 
 
     @staticmethod
@@ -276,30 +301,6 @@ class SpectralLine(BadassComponent):
         #     for key, val in self.parameters.items():
         #         s += '\n\t\t%s = %s' % (key, str(val))
         return s
-
-
-    @staticmethod
-    def add_disp_res():
-        c = const.c.to('km/s').value
-        # Perform linear interpolation on the disp_res array as a function of wavelength
-        # We will use this to determine the dispersion resolution as a function of wavelength for each
-        # emission line so we can correct for the resolution at every iteration.
-        disp_res_ftn = interp1d(SpectralLine.ctx.target.wave,SpectralLine.ctx.target.disp_res,kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
-        # Interpolation function that maps x (in angstroms) to pixels so we can get the exact
-        # location in pixel space of the emission line.
-        x_pix = np.array(range(len(SpectralLine.ctx.target.wave)))
-        pix_interp_ftn = interp1d(SpectralLine.ctx.target.wave,x_pix,kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
-
-        def add_disp_values(line):
-            line.center_pix = float(pix_interp_ftn(line.center)) # line center in pixels
-            line.disp_res_ang = float(disp_res_ftn(center)) # instrumental FWHM resolution in angstroms
-            line.disp_res_kms = (line.disp_res_ang/line.center)*c # instrumental FWHM resolution in km/s
-
-            for child_line in line.children:
-                add_disp_values(child_line)
-
-        for line in SpectralLine.ctx.line_list:
-            add_disp_values(line)
 
 
     @staticmethod

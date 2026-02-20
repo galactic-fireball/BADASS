@@ -5,15 +5,12 @@ import numpy as np
 from numpy.polynomial import hermite
 from scipy import special
 
-from badass.components.params import ParameterRegistry
 from badass.components.spectral_lines.spectral_line import SpectralLine, hyperpars
 
 # Valid line profiles: will be populated as each profile class is defined
 line_profiles = {}
 
 class LineProfile:
-
-    param_reg = ParameterRegistry()
 
     @staticmethod
     def get_line_profile(profile_name):
@@ -45,7 +42,7 @@ class GaussianProfile(LineProfile):
         # velocity offset in pixels
         voff_pix = line.get_param('voff') / SpectralLine.ctx.target.velscale
         # shift the line center by voff in pixels
-        center_pix = line.center + voff_pix
+        center_pix = line.center_pix + voff_pix
 
         # pixels vector
         x_pix = np.array(range(len(SpectralLine.ctx.fit_wave)), dtype=float)
@@ -58,8 +55,12 @@ class GaussianProfile(LineProfile):
 
         # Make sure edges of gaussian are zero to avoid wierd things
         g[(g > -1e-6) & (g < 1e-6)] = 0.0
+        g[np.isnan(g)] = 0.0
         g[0] = g[1]
         g[-1] = g[-2]
+
+        if np.all([np.isnan(g)]):
+            breakpoint()
 
         return g
 
@@ -82,7 +83,7 @@ class LorentzianProfile(LineProfile):
         # velocity offset in pixels
         voff_pix = line.get_param('voff') / SpectralLine.ctx.target.velscale
         # shift the line center by voff in pixels
-        center_pix = line.center + voff_pix
+        center_pix = line.center_pix + voff_pix
 
         # pixels vector
         x_pix = np.array(range(len(SpectralLine.ctx.fit_wave)), dtype=float)
@@ -137,7 +138,7 @@ class VoigtProfile(LineProfile):
         # velocity offset in pixels
         voff_pix = line.get_param('voff') / SpectralLine.ctx.target.velscale
         # shift the line center by voff in pixels
-        center_pix = line.center + voff_pix
+        center_pix = line.center_pix + voff_pix
 
         # pixels vector
         x_pix = np.array(range(len(wave)), dtype=float)
@@ -199,7 +200,7 @@ class GaussHermiteProfile(LineProfile):
         # velocity offset in pixels
         voff_pix = line.get_param('voff') / SpectralLine.ctx.target.velscale
         # shift the line center by voff in pixels
-        center_pix = line.center + voff_pix
+        center_pix = line.center_pix + voff_pix
 
         # pixels vector
         x_pix = np.array(range(len(wave)), dtype=float)

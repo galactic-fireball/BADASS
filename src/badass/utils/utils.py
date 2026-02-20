@@ -13,6 +13,10 @@ def dered(wave, z=0.0):
     return wave / (1 + z)
 
 
+def redden(wave, z=0.0):
+    return wave * (1 + z)
+
+
 def valid_expression(expr, local_dict):
     try:
         val = ne.evaluate(expr, local_dict=local_dict).item()

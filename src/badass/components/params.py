@@ -47,23 +47,13 @@ class FitParameter:
 
 class ParameterRegistry:
 
-    _registry = None
+    def __init__(self, ctx):
+        super().__init__()
 
-    def __new__(cls, ctx=None):
-
-        if cls._registry:
-            return cls._registry
-
-        cls._registry = super().__new__(cls)
-
-        cls._registry.ctx = ctx
-        cls._registry.params = {}
-        cls._registry.free_count = 0
-        cls._registry.expr_dict = {}
-        # non-free parameters that need to be re-evaluated every round
-        cls._registry.expr_params = []
-        cls._registry.store = None
-        return cls._registry
+        self.ctx = ctx
+        self.params = {}
+        self.free_count = 0
+        self.expr_dict = {}
 
 
     def add_param(self, **kwargs) -> FitParameter:
@@ -173,6 +163,7 @@ class ParameterRegistry:
             if (isinstance(param.expr, str)) and (ne.validate(param.expr, local_dict=valid_dict)):
                 self.ctx.log.error('Parameter [%s] expr value: %s is invalid!'%(param.name,param.expr))
                 param.expr = param.init
+                # TODO: something more drastic? make free parameter?
 
             if not param.is_free:
                 continue
@@ -191,20 +182,8 @@ class ParameterRegistry:
 
         self._update_all(self.expr_dict)
 
-
-    def init_store(self, iters):
-        fp = self.get_free_parameters()
-        self.free_count = len(fp)
-        self.store = np.zeros((iters, len(fp)))
-        self.st_iter = 0
-
-        for idx, p in enumerate(fp):
+        for idx, p in enumerate(self.get_free_parameters()):
             p.idx = idx
-
-
-    def do_store(self):
-        self.store[self.st_iter] = self.fit_vector()
-        self.st_iter += 1
 
 
     def fit_vector(self) -> np.ndarray:
@@ -223,7 +202,7 @@ class ParameterRegistry:
         for p in fp:
             p.value = theta[p.idx]
 
-        self._update_all(self.expr_dict.copy(), todo=self.expr_params)
+        self._update_all(self.expr_dict.copy())
 
 
     def get_fit_bounds(self):
@@ -265,6 +244,26 @@ class ParameterRegistry:
 
     def get_param_dict(self):
         return {param.name:param.value for param in self.params.values()}
+
+
+    def validate_constraints(self):
+        local_dict = self.get_param_dict()
+
+        valid_cons = []
+        for con in self.ctx.cfg.user_constraints:
+            if any([ne.validate(c, local_dict=local_dict) for c in con]):
+                self.ctx.log.info('%s constraint removed because one or more free parameters not available'%con)
+                continue
+
+            val1 = ne.evaluate(con[0],local_dict=local_dict).item()
+            val2 = ne.evaluate(con[1],local_dict=local_dict).item()
+            if val1 < val2:
+                self.ctx.log.info('%s constraint removed because it is violated by the initial values'%con)
+                continue
+
+            valid_cons.append(con)
+
+        self.ctx.cfg.user_constraints = valid_cons
 
 
     def dump_parameters(self) -> None:

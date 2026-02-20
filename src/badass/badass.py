@@ -54,7 +54,8 @@ import badass.utils.plotting as plotting
 # from badass.components.spectral_lines.line_lists.optical_qso import optical_qso_default
 # from badass.components.spectral_lines.line_profiles import line_constructor
 
-import badass.components.spectral_lines.spectral_line as spec_line
+from badass.components.spectral_lines.spectral_line import SpectralLine
+import badass.stage.stores as stores
 
 
 __author__ = 'Remington O. Sexton (USNO), Sara M. Doan (GMU), Michael A. Reefe (GMU), William Matzko (GMU), Nicholas Darden (UCR)'
@@ -147,14 +148,7 @@ class BadassRunContext:
         self.param_reg = None
         self.blob_reg = None
 
-        # self.cur_params = {} # contains the parameter values of the current fit
-        # self.soft_cons = []
-        # self.blob_pars = {}
-
-        self.mc_attr_store = {}
-        self.fit_results = {}
-        self.model = None
-        self.comp_dict = {}
+        self.store = stores.StageStore(ctx=self)
 
         self.chain_df = None
         self.mcmc_results_dict = {}
@@ -183,13 +177,15 @@ class BadassRunContext:
     def initialize_fit(self):
         plotting.initialize(self)
 
-        self.target.log.info('> Starting fit for %s' % self.target.name)
-        self.target.log.log_target_info()
+        self.log.info('> Starting fit for %s' % self.target.name)
+        self.log.log_target_info()
         self.start_time = time.time()
 
         self.param_reg = ParameterRegistry(self)
+        self.blob_reg = BlobRegistry(self)
+
         self.templates = initialize_templates(self)
-        spec_line.SpectralLine.initialize_spectral_lines(self, [line.dict() for line in self.cfg.user_lines])
+        self.line_list = SpectralLine.initialize_spectral_lines(self, [line.dict() for line in self.cfg.user_lines])
 
         # TODO: make separate, easily accessible function
         max_flux = np.nanmax(self.fit_spec)*1.5
@@ -201,11 +197,11 @@ class BadassRunContext:
             'min_wave':np.min(self.fit_wave), 'max_wave':np.max(self.fit_wave),
         }
 
-        self.param_reg.dump_parameters()
+        # self.param_reg.dump_parameters()
         self.param_reg.init_values(component_args)
-        self.param_reg.dump_parameters()
+        # self.param_reg.dump_parameters()
+        self.param_reg.validate_constraints()
 
-        self.blob_reg = BlobRegistry(self)
         self.blob_reg.dump_blobs()
 
         # TODO: input from past line test or user config
@@ -214,123 +210,7 @@ class BadassRunContext:
         if not np.isfinite(self.force_thresh):
             self.force_thresh = np.inf
 
-        self.target.log.output_cfg()
-
-
-    def check_hard_cons(self, param_keys, remove_lines=False):
-        valid_keys = ['amp','disp','voff', 'shape'] + ['h%d'%m for m in range(3,11)]
-        param_dict = {par:0 for par in param_keys}
-        for line_name, line_dict in self.line_list.items():
-            for hpar, value in line_dict.items():
-                if (hpar not in valid_keys) or (value == 'free'):
-                    continue
-
-                if isinstance(value, Number):
-                    line_dict[hpar] = float(value)
-                    continue
-
-                # hpar value is an expression, make sure it's valid
-                if ne.validate(value, local_dict=param_dict) is not None:
-                    if remove_lines:
-                        self.target.log.warn('WARNING: Hard-constraint %s not found in parameter list or could not be parsed; removing %s line from line list' % (value,line_name))
-                        self.line_list.pop(line, None)
-                    else:
-                        self.target.log.info('Hard-constraint %s not found in parameter list or could not be parsed; converting to free parameter' % value)
-                        line_dict[hpar] = 'free'
-
-
-    def check_soft_cons(self):
-        out_cons = []
-        soft_cons = self.cfg.user_constraints if self.cfg.user_constraints else []
-        expr_dict = {k:v['init'] for k,v in self.param_dict.items()}
-
-        # Check that soft cons can be parsed; if not, convert to free parameter
-        for con in soft_cons:
-            # validate returns None if successful
-            if any([ne.validate(c,local_dict=expr_dict) for c in con]):
-                self.target.log.info('- %s soft constraint removed because one or more free parameters is not available' % str(con))
-            else:
-                out_cons.append(con)
-
-        # Now check to see that initial values are obeyed; if not, throw exception and warning message
-        for con in out_cons:
-            val1 = ne.evaluate(con[0],local_dict=expr_dict).item()
-            val2 = ne.evaluate(con[1],local_dict=expr_dict).item()
-            if val1 < val2:
-                raise ValueError('The initial value for %s is less than the initial value for %s, but the constraint %s says otherwise.  Either remove the constraint or initialize the values appropriately' % (con[0],con[1],con))
-
-        self.soft_cons = out_cons
-
-
-    def generate_comb_line_list(self):
-        """
-        Generate a list of 'combined lines' for lines with multiple components, for which
-        velocity moments (integrated velocity and dispersion) and other quantities will
-        be calculated during the fit. This is done automatically for lines that have a valid
-        'parent' explicitly defined, for which the parent line is the 1st component
-        """
-        if len(self.line_list) == 0:
-            self.combined_line_list = {}
-            return
-
-        combined_line_list = {}
-
-        for line_name, line_dict in self.line_list.items():
-            if (line_dict.get('ncomp', 1) <= 1) or ('parent' not in line_dict) or (line_dict['parent'] not in self.line_list):
-                continue
-
-            parent = line_dict['parent']
-            comb_name = '%s_COMB' % parent
-            if comb_name not in combined_line_list:
-                combined_line_list[comb_name] = {'lines':[parent,]}
-            combined_line_list[comb_name]['lines'].append(line_name)
-            for attr in ['center', 'center_pix', 'disp_res_kms', 'line_profile']:
-                combined_line_list[comb_name][attr] = self.line_list[parent][attr]
-
-        for comb_name, comb_lines in self.cfg.combined_lines.items():
-            # Check to make sure lines are in line list; only add the lines that are valid
-            valid_lines = [line for line in comb_lines if line in self.line_list.keys()]
-            if len(valid_lines) < 2: # need at least two valid lines to add a combined line
-                continue
-
-            combined_line_list[comb_name] = {
-                'lines': valid_lines,
-                'center': self.line_list[valid_lines[0]]['center'],
-                'center_pix': self.line_list[valid_lines[0]]['center_pix'],
-                'disp_res_kms': self.line_list[valid_lines[0]]['disp_res_kms'],
-            }
-
-        self.combined_line_list = combined_line_list
-
-
-    def set_blob_pars(self):
-        """
-        The blob-parameter dictionary is a dictionary for any non-free 'blob' parameters for values that need
-        to be calculated during the fit. For MCMC, these equate to non-fitted parameters like fluxes, equivalent widths,
-        or continuum fluxes that aren't explicitly fit as free paramters, but need to be calculated as output /during the fitting process/
-        such that full chains can be constructed out of their values (as opposed to calculated after the fitting is over).
-        We mainly use blob-pars for the indices of the wavelength vector at which to calculate continuum luminosities, so we don't have to
-        interpolate during the fit, which is computationally expensive.
-        This needs to be passed throughout the fit_model() algorithm so it can be used.
-        """
-
-        blob_pars = {}
-
-        # Values of velocity scale corresponding to wavelengths; this is used to calculate
-        # integrated dispersions and velocity offsets for combined lines.
-        interp_ftn = interp1d(self.target.wave, np.arange(len(self.target.wave))*self.target.velscale, kind='linear', bounds_error=False)
-
-        for line_name, line_dict in self.combined_line_list.items():
-            blob_pars[line_name+'_LINE_VEL'] = interp_ftn(line_dict['center'])
-
-        # Indices for continuum wavelengths
-        # TODO: config file
-        # TODO: unit agnostic
-        for wave in [1350, 3000, 4000, 5100, 7000]:
-            if (self.target.wave[0] < wave) & (self.target.wave[-1] > wave):
-                blob_pars['INDEX_%d'%wave] = ba_utils.find_nearest(self.target.wave,float(wave))[1]
-
-        self.blob_pars = blob_pars
+        self.log.output_cfg()
 
 
     # TODO: move to separate testing file
@@ -359,7 +239,7 @@ class BadassRunContext:
         if not self.cfg.user_lines:
             raise ValueError('The input user line list is None or empty. There are no lines to test. You cannot use the default line list to test for lines, as they must be explicitly defined by user lines. See examples for details...')
 
-        self.target.log.debug('Performing line testing for %s' % (test_cfg.lines))
+        self.log.debug('Performing line testing for %s' % (test_cfg.lines))
 
         # TODO: validate lines to test are in line list and within the fitting region
 
@@ -442,7 +322,7 @@ class BadassRunContext:
             if not np.all([True if line in self.line_list else False for line in config]):
                 raise ValueError('A line in a configuration is not defined in the input line list!')
 
-        self.target.log.debug('Performing configuration testing for %d configurations...' % len(test_cfg.lines))
+        self.log.debug('Performing configuration testing for %d configurations...' % len(test_cfg.lines))
 
         # test_set = [(label, [test_lines], {full_line_list}), ...]
         test_set = []
@@ -506,7 +386,7 @@ class BadassRunContext:
             # Calculate degrees of freedom of fit; nu = n - m (n number of observations minus m degrees of freedom (free fitted parameters))
             dof = len(self.fit_wave)-len(self.param_dict)
             if dof <= 0:
-                self.target.log.warn('WARNING: Degrees-of-Freedom in fit is <= 0.  One should increase the test range and/or decrease the number of free parameters of the model appropriately')
+                self.log.warning('WARNING: Degrees-of-Freedom in fit is <= 0.  One should increase the test range and/or decrease the number of free parameters of the model appropriately')
                 dof = 1
 
             if self.cfg.fit.reweighting:
@@ -535,11 +415,11 @@ class BadassRunContext:
             ptbl = PrettyTable()
             ptbl.field_names = ['TEST A', 'TEST B'] + list(metrics.keys()) + ['AON', 'PASS']
             ptbl.add_row([prev_label, test_label] + ['%f'%v for v in metrics.values()] + ['%f'%aon, test_pass])
-            self.target.log.debug(ptbl)
+            self.log.debug(ptbl)
 
-            self.target.log.debug('(Test %s)' % 'Passed' if test_pass else 'Failed')
+            self.log.debug('(Test %s)' % 'Passed' if test_pass else 'Failed')
             if test_pass and self.target.cfg.test.auto_stop:
-                self.target.log.debug('metric thresholds met, stopping')
+                self.log.debug('metric thresholds met, stopping')
                 break
 
             prev_label, prev_results = test_label, fit_results
@@ -548,20 +428,24 @@ class BadassRunContext:
         ptbl.field_names = ['TEST A', 'TEST B'] + list(test_metrics[0][2].keys()) + ['AON', 'PASS']
         for label_A, label_B, metrics in test_metrics:
             ptbl.add_row([label_A, label_B] + ['%f'%v for v in metrics.values()] + ['%f'%test_fit_results[label_B]['aon'], test_fit_results[label_B]['pass']])
-        self.target.log.info(f'Test Results for {test_lines}:\n'+str(ptbl))
+        self.log.info(f'Test Results for {test_lines}:\n'+str(ptbl))
 
         return test_fit_results, test_metrics
 
 
     skip_comps = ['DATA','WAVE','MODEL','NOISE','RESID','POWER','HOST_GALAXY','BALMER_CONT','APOLY','MPOLY',]
-    cont_comps = ['POWER', 'HOST_GALAXY', 'BALMER_CONT', 'APOLY', 'MPOLY',]
     tied_target_pars = ['amp', 'disp', 'voff', 'shape', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9', 'h10',]
+
+    def lnprob_wrapper(self, fit_vals):
+            self.param_reg.update_vals(fit_vals)
+            return -(self.lnprob()[0]) # only care about the first returned value
+
 
     def max_likelihood(self, line_test=False):
 
-        self.target.log.debug('Performing max likelihood fitting')
+        self.log.debug('Performing max likelihood fitting')
         if len(self.param_reg.get_free_parameters()) == 0:
-            self.target.log.warn('No parameters to fit!')
+            self.log.warn('No parameters to fit!')
 
             # TODO: handle differently
             if line_test:
@@ -572,19 +456,8 @@ class BadassRunContext:
 
             return
 
-        self.global_optimize()
-        breakpoint()
-        self.local_optimize()
-        self.compile_results()
 
-
-    def lnprob_wrapper(self, fit_vals):
-            self.param_reg.update_vals(fit_vals)
-            return -(self.lnprob()[0]) # only care about the first returned value
-
-
-    def global_optimize(self):
-
+        # TODO: move to ParameterRegistry
         def eval_con(x, ctx, expr1, expr2):
             ctx.param_reg.update_vals(x)
             local_dict = ctx.param_reg.get_param_dict()
@@ -593,12 +466,19 @@ class BadassRunContext:
             return r1 - r2
         cons = [{'type':'ineq', 'fun':eval_con, 'args':(self, con[0], con[1])} for con in self.cfg.user_constraints]
 
+        lo, hi = self.param_reg.get_fit_bounds()
+        param_bounds = op.Bounds(lo, hi, keep_feasible=True)
+
+
+        # GLOBAL OPTIMIZER
+
+        self.store = stores.BasinhopStore(ctx=self)
 
         n_basinhop = self.cfg.fit.n_basinhop
         lowest_rmse = badass_test_suite.root_mean_squared_error(self.fit_spec, np.zeros(len(self.fit_spec)))
         callback_ftn = None
         if np.isfinite(self.force_thresh):
-            self.target.log.debug('Required Maximum Likelihood RMSE threshold: %0.4f' % (self.force_thresh))
+            self.log.debug('Required Maximum Likelihood RMSE threshold: %0.4f' % (self.force_thresh))
             force_basinhop = n_basinhop
             # TODO: config
             n_basinhop = 250 # Set to arbitrarily high threshold
@@ -623,59 +503,54 @@ class BadassRunContext:
                     accepted_count += 1
 
                 self.fit_model()
-                rmse = badass_test_suite.root_mean_squared_error(self.comp_dict['DATA'], self.comp_dict['MODEL'])
+                rmse = badass_test_suite.root_mean_squared_error(self.store.meta_comps.data, self.store.meta_comps.model)
                 lowest_rmse = min(lowest_rmse, rmse)
 
                 accept_thresh = 0.001 # Define an acceptance threshold
                 if (basinhop_count > n_basinhop) and (accepted_count >=1) and ((lowest_rmse-accept_thresh > self.force_thresh) or (lowest_rmse > self.force_thresh)):
-                    self.target.log.warn('Warning: basinhopping has exceeded %d attemps to find a new global maximum. Terminating fit...'%n_basinhop)
+                    self.log.warn('Warning: basinhopping has exceeded %d attemps to find a new global maximum. Terminating fit...'%n_basinhop)
                     return True
 
                 terminate = False
                 if (accepted_count > 1) and (basinhop_count >= force_basinhop) and (((lowest_rmse-accept_thresh) <= self.force_thresh) or (lowest_rmse <= self.force_thresh)):
                     terminate = True
 
-                # self.target.log.debug('\tFit Status: %s\n\tForce threshold: %0.4f\n\tLowest RMSE: %0.4f\n\tCurrent RMSE: %0.4f\n\tAccepted Count: %d\n\tBasinhop Count: %d'%(terminate,self.force_thresh,lowest_rmse,rmse,accepted_count,basinhop_count))
+                # self.log.debug('\tFit Status: %s\n\tForce threshold: %0.4f\n\tLowest RMSE: %0.4f\n\tCurrent RMSE: %0.4f\n\tAccepted Count: %d\n\tBasinhop Count: %d'%(terminate,self.force_thresh,lowest_rmse,rmse,accepted_count,basinhop_count))
                 return terminate
 
-        self.param_reg.init_store(1)
-        self.blob_reg.init_store(1)
-
-        lo, hi = self.param_reg.get_fit_bounds()
-        param_bounds = op.Bounds(lo, hi, keep_feasible=True)
 
         minimizer_args = {'method':'SLSQP', 'bounds':param_bounds,'constraints':cons,'options':{'disp':False,}}
         result = op.basinhopping(func=self.lnprob_wrapper, x0=self.param_reg.fit_vector(), stepsize=1.0, interval=1, niter=2500, minimizer_kwargs=minimizer_args,
                                  disp=False, niter_success=n_basinhop, callback=callback_ftn)
 
         self.param_reg.update_vals(result['x'])
-        self.param_reg.do_store()
-        self.blob_reg.do_store()
+        self.store.params = self.param_reg.get_param_dict()
+        self.store.blobs = self.blob_reg.compute_all()
 
         self.param_reg.dump_parameters()
-        log_like = result['fun']
+        self.blob_reg.dump_blobs()
+
         self.fit_model()
         self.reweight()
+        self.store.metrics['LOG_LIKE'] = result['fun']
 
-        return log_like
+        self.store.output()
 
-
-    def local_optimize(self):
+        # LOCAL OPTIMIZER
 
         max_like_niter = self.cfg.fit.max_like_niter
         if max_like_niter == 0:
             return
 
-        self.target.log.info('Performing Monte Carlo bootstrapping')
+        self.log.info('Performing Monte Carlo bootstrapping')
 
-        self.param_reg.init_store(max_like_niter)
-        self.blob_reg.init_store(max_like_niter)
+        self.store = stores.MCStore(ctx=self, niters=max_like_niter)
+        self.store.params = self.param_reg.get_param_dict()
+        self.fit_model()
+        self.store.blobs = self.blob_reg.compute_all()
+        self.store.metrics['LOG_LIKE'] = result['fun']
+        self.store.save_iter()
 
-        self.param_reg.do_store()
-        self.blob_reg.do_store()
-
-        # self.init_mc_store(max_like_niter+1)
-        # self.update_mc_store(0, fun_result)
 
         orig_fit_spec = self.fit_spec.copy()
 
@@ -693,12 +568,15 @@ class BadassRunContext:
             self.fit_spec = orig_fit_spec
 
             self.param_reg.update_vals(result['x'])
+            self.store.params = self.param_reg.get_param_dict()
+            self.store.blobs = self.blob_reg.compute_all()
             self.fit_model()
-            self.param_reg.do_store()
-            self.blob_reg.do_store()
+            self.store.metrics['LOG_LIKE'] = result['fun']
+            self.store.save_iter()
 
-            fun_result = result['fun']
-            # self.update_mc_store(n, fun_result) # TODO: each component handles it's own stuff
+        self.store.output()
+
+        breakpoint()
 
 
     def compile_results(self):
@@ -939,7 +817,7 @@ class BadassRunContext:
 
         sigma_noise = np.nanmedian(comp_dict['NOISE'][self.target.fit_mask])
         sigma_resid = np.nanstd(comp_dict['DATA'][self.target.fit_mask]-comp_dict['MODEL'][self.target.fit_mask])
-        self.target.log.log_max_like_fit(result_dict, sigma_noise, sigma_resid)
+        self.log.log_max_like_fit(result_dict, sigma_noise, sigma_resid)
 
         # Write best-fit parameters
         col1 = fits.Column(name='parameter', format='30A', array=list(result_dict.keys()))
@@ -973,18 +851,18 @@ class BadassRunContext:
         hdu.writeto(self.target.outdir.joinpath('log', 'best_model_components.fits'), overwrite=True)
 
         plotting.plot_ml_results(self)
-        self.target.log.info('Done ML fitting %s!' % self.target.cfg.io.output_dir)
+        self.log.info('Done ML fitting %s!' % self.target.cfg.io.output_dir)
 
 
     def reweight(self):
         if not self.cfg.fit.reweighting:
             return
-        self.target.log.debug('Reweighting noise to achieve a reduced chi-squared ~ 1')
-        cur_rchi2 = badass_test_suite.r_chi_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'], self.fit_noise, self.param_reg.free_count)
-        self.target.log.debug('\tCurrent reduced chi-squared = %0.5f' % cur_rchi2)
+        self.log.debug('Reweighting noise to achieve a reduced chi-squared ~ 1')
+        cur_rchi2 = badass_test_suite.r_chi_squared(self.store.meta_comps.data, self.store.meta_comps.model, self.fit_noise, self.param_reg.free_count)
+        self.log.debug('\tCurrent reduced chi-squared = %0.5f' % cur_rchi2)
         self.fit_noise = self.fit_noise*np.sqrt(cur_rchi2)
-        new_rchi2 = badass_test_suite.r_chi_squared(self.comp_dict['DATA'], self.comp_dict['MODEL'], self.fit_noise, self.param_reg.free_count)
-        self.target.log.debug('\tNew reduced chi-squared = %0.5f' % new_rchi2)
+        new_rchi2 = badass_test_suite.r_chi_squared(self.store.meta_comps.data, self.store.meta_comps.model, self.fit_noise, self.param_reg.free_count)
+        self.log.debug('\tNew reduced chi-squared = %0.5f' % new_rchi2)
 
 
     def lnprob(self):
@@ -1012,7 +890,7 @@ class BadassRunContext:
         fit_stat = self.cfg.fit.fit_stat
 
         data = self.fit_spec[fit_mask]
-        model = self.model[fit_mask]
+        model = self.store.meta_comps.model[fit_mask]
         noise = self.fit_noise[fit_mask]
 
         if fit_stat == 'ML':
@@ -1046,38 +924,20 @@ class BadassRunContext:
         return np.sum(lp_arr)
 
 
-    # The fit_model function controls the model for both the initial and MCMC fits
     def fit_model(self):
-        # Constructs galaxy model
         host_model = np.copy(self.fit_spec)
-        self.comp_dict = {}
 
-        host_model = spec_line.SpectralLine.add_line_components(self.comp_dict, host_model)
+        for line in self.line_list:
+            host_model = line.add_components(self.store.comps, host_model)
 
         for template in self.templates.values():
-            host_model = template.add_components(self.comp_dict, host_model)
+            host_model = template.add_components(self.store.comps, host_model)
 
         # The final model
-        self.model = np.sum((self.comp_dict[d] for d in self.comp_dict), axis=0)
+        model = np.sum(list(self.store.comps.values()), axis=0)
 
-        # Add combined lines to comp_dict
-        # TODO in SpectralLine
-        # for comb_line, line_dict in self.combined_line_list.items():
-        #     self.comp_dict[comb_line] = np.zeros(len(self.fit_wave))
-        #     for line_name in line_dict['lines']:
-        #         if not self.cfg.comp['fit_'+ba_consts.LINE_TYPE_TO_NAME[self.line_list[line_name]['line_type']]]:
-        #             continue # TODO: also check if there's only one component left in the combined line
-        #         self.comp_dict[comb_line] += self.comp_dict[line_name]
-
-        # Add last components to comp_dict for plotting purposes
-        # Add galaxy, sigma, model, and residuals to comp_dict
         # TODO: does this need to be done every fit_model call?
-        # TODO: make a separate container for these
-        self.comp_dict['DATA']  = self.fit_spec
-        self.comp_dict['WAVE']  = self.fit_wave
-        self.comp_dict['NOISE'] = self.fit_noise
-        self.comp_dict['MODEL'] = self.model
-        self.comp_dict['RESID'] = self.fit_spec-self.model
+        self.store.meta_comps = stores.MetaComps(data=self.fit_spec,wave=self.fit_wave,noise=self.fit_noise,model=model,resid=self.fit_spec-model)
 
 
     # TODO: in utils
@@ -1094,12 +954,12 @@ class BadassRunContext:
         self.reweight()
 
         # TODO: need to re-initalize parameters here?
-        self.target.log.output_free_pars(self.line_list, self.param_dict, self.soft_cons)
+        self.log.output_free_pars(self.line_list, self.param_dict, self.soft_cons)
         self.cur_params = dict(sorted(self.cur_params.items()))
 
         nwalkers = self.cfg.mcmc.nwalkers
         if nwalkers < 2*len(self.cur_params):
-            self.target.log.info('Number of walkers < 2 x (# of parameters)! Setting nwalkers = %d' % (2*len(self.cur_params)))
+            self.log.info('Number of walkers < 2 x (# of parameters)! Setting nwalkers = %d' % (2*len(self.cur_params)))
             nwalkers = 2*len(self.cur_params)
 
         pos = self.initialize_walkers(nwalkers)
@@ -1225,7 +1085,7 @@ class BadassRunContext:
         # self.add_chain(sampler=sampler)
 
         # while sampler.iteration < max_iter:
-        #     self.target.log.info('MCMC iteration: %d' % sampler.iteration)
+        #     self.log.info('MCMC iteration: %d' % sampler.iteration)
         #     sampler.run_mcmc(pos, min(write_iter, max_iter-sampler.iteration))
         #     self.add_chain(sampler=sampler)
             # TODO: verbose -> print current parameter values
@@ -1235,7 +1095,7 @@ class BadassRunContext:
         for result in sampler.sample(pos, iterations=max_iter):
             it = sampler.iteration
             if (it >= write_thresh) and (it % write_iter == 0):
-                self.target.log.info('MCMC iteration: %d' % it)
+                self.log.info('MCMC iteration: %d' % it)
                 self.add_chain(sampler=sampler)
                 # TODO: log current parameter values
 
@@ -1247,7 +1107,7 @@ class BadassRunContext:
 
         elap_time = (time.time() - start_time)
         run_time = ba_utils.time_convert(elap_time)
-        self.target.log.debug('emcee Runtime = %s' % (run_time))
+        self.log.debug('emcee Runtime = %s' % (run_time))
 
         # TODO
         # write_log(run_time,'emcee_time',run_dir)
@@ -1272,7 +1132,7 @@ class BadassRunContext:
             ptbl.field_names = ['Parameter', 'Autocorr. Time', 'Target Autocorr. Time', 'Tolerance', 'Converged?']
             for i, pname in enumerate(self.cur_params.keys()):
                 ptbl.add_row([pname, tau[i], autocorr.max_tol, tol[i], autocorr.ncor_times])
-            self.target.log.debug(ptbl)
+            self.log.debug(ptbl)
 
         # TODO: output files
         self.collect_mcmc_results(sampler, autocorr)
@@ -1291,12 +1151,12 @@ class BadassRunContext:
         plotting.plot_best_model(self, 'best_fit_model.pdf')
 
         elap_time = (time.time() - start_time)
-        self.target.log.debug('Total Runtime = %s' % (ba_utils.time_convert(elap_time)))
+        self.log.debug('Total Runtime = %s' % (ba_utils.time_convert(elap_time)))
 
         # TODO:
         # write_log(elap_time,'total_time',run_dir)
 
-        self.target.log.info('Done MCMC fitting %s!' % self.target.cfg.io.output_dir)
+        self.log.info('Done MCMC fitting %s!' % self.target.cfg.io.output_dir)
 
 
     def initialize_walkers(self, nwalkers):
