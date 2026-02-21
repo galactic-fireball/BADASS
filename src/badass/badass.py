@@ -186,6 +186,7 @@ class BadassRunContext:
 
         self.templates = initialize_templates(self)
         self.line_list = SpectralLine.initialize_spectral_lines(self, [line.dict() for line in self.cfg.user_lines])
+        SpectralLine.dump_lines()
 
         # TODO: make separate, easily accessible function
         max_flux = np.nanmax(self.fit_spec)*1.5
@@ -595,44 +596,6 @@ class BadassRunContext:
         return self.target.cfg.mcmc.mcmc_fit
 
 
-    def init_mc_store(self, iters):
-        for key in self.cur_params.keys():
-            self.mc_attr_store[key] = np.zeros(iters)
-
-        # TODO: make dict for 'name'-> calc_func
-        comp_attrs = ['FLUX', 'LUM', 'EW',]
-        for key, val in self.comp_dict.items():
-            self.mc_attr_store[key] = np.zeros((iters, len(val)))
-            if not key in self.skip_comps:
-                for attr in comp_attrs:
-                    self.mc_attr_store[key+'_'+attr] = np.zeros(iters)
-
-        cll_attrs = ['DISP', 'VOFF',]
-        for key in self.combined_line_list.keys():
-            for attr in cll_attrs:
-                self.mc_attr_store[key+'_'+attr] = np.zeros(iters)
-
-        all_attrs = ['FWHM', 'W80', 'NPIX', 'SNR',]
-        for key in (list(self.combined_line_list.keys())+list(self.line_list.keys())):
-            for attr in all_attrs:
-                self.mc_attr_store[key+'_'+attr] = np.zeros(iters)
-
-        self.mc_attr_store['LOG_LIKE'] = np.zeros(iters)
-        self.mc_attr_store['R_SQUARED'] = np.zeros(iters)
-        self.mc_attr_store['RCHI_SQUARED'] = np.zeros(iters)
-
-        # TODO: store elsewhere; unit agnostic
-        cont_lum_attrs = {
-            1350.0: ['L_CONT_AGN_1350', 'L_CONT_HOST_1350', 'L_CONT_TOT_1350'],
-            3000.0: ['L_CONT_AGN_3000', 'L_CONT_HOST_3000', 'L_CONT_TOT_3000'],
-            4000.0: ['HOST_FRAC_4000', 'AGN_FRAC_4000'],
-            5100.0: ['L_CONT_AGN_5100', 'L_CONT_HOST_5100', 'L_CONT_TOT_5100'],
-            7000.0: ['HOST_FRAC_7000', 'AGN_FRAC_7000'],
-        }
-        for wave, attrs in cont_lum_attrs.items():
-            if (self.fit_wave[self.target.fit_mask][0] < wave) and (self.fit_wave[self.target.fit_mask][-1] > wave):
-                for key in attrs:
-                    self.mc_attr_store[key] = np.zeros(iters)
 
 
     def update_mc_store(self, n, fun_result):

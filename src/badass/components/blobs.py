@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field, InitVar
 import numpy as np
+from scipy.integrate import simpson
 from scipy.interpolate import interp1d
 from tabulate import tabulate
 from typing import Callable, ClassVar, Dict, List
@@ -69,7 +70,7 @@ class BlobRegistry:
     def compute_all(self):
 
         kwargs = {
-            'continuum': self.calc_cont()
+            'continuum': self.calc_cont(),
         }
 
         res = {}
@@ -354,7 +355,8 @@ class CombinedLineComponentBlob(LineComponentBlob):
     def compute(self, ctx, kwargs):
         super().compute(ctx, kwargs)
 
-        line_vel = reg.get_blob(self.name+'_LINE_VEL')
+        # get the LineVel blob associated with this line
+        line_vel = ctx.blob_reg.get_blob(self.name+'_LINE_VEL').cur_val
         vel = np.arange(len(ctx.fit_wave))*ctx.target.velscale - line_vel
         full_profile = np.abs(self.comp_spec)
         norm_profile = full_profile/np.sum(full_profile)

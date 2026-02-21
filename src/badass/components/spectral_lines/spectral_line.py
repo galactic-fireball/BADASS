@@ -20,6 +20,12 @@ short_type_to_type = {
     'ABS': 'ABSORP',
 }
 
+type_to_feat_type = {
+    'NARROW': 'peaks',
+    'BROAD': 'peaks',
+    'ABSORP': 'troughs',
+}
+
 def prefix(t):
     for pre, name in short_type_to_type.items():
         if name == t: return pre
@@ -49,6 +55,7 @@ class SpectralLine(BadassComponent):
     line_list = []
     common_params = {}
     param_reg = None
+    spec_features = None
 
     @staticmethod
     def initialize_spectral_lines(_ctx, _line_list):
@@ -59,28 +66,37 @@ class SpectralLine(BadassComponent):
 
     @staticmethod
     def dump_lines():
-        for line in SpectralLine.line_list:
-            print(line) # TODO: logger
+        if SpectralLine.ctx is None:
+            return
+
+        for line in SpectralLine.ctx.line_list:
+            SpectralLine.ctx.log.info(line)
 
 
     @classmethod
     def from_dict(cls, line_dict, parent):
+        # 'CENTER' is a required argument
         if (not 'CENTER' in line_dict) or (line_dict['CENTER'] is None):
             if parent is None:
+                # TODO: remove from line list instead?
                 raise Exception('Line center needed for: %s'%line_dict['NAME'])
             line_dict['CENTER'] = parent.center
 
+        # make sure line is in the fitting region
         if (line_dict['CENTER'] <= SpectralLine.ctx.target.wave[0]+EDGE_PAD) or (line_dict['CENTER'] >= SpectralLine.ctx.target.wave[-1]-EDGE_PAD):
             SpectralLine.ctx.log.warning('Not fitting %s line (out of fit region): %s'%(line_type,line_dict['NAME']))
             return None
 
+        # if you do not have a name, one will be provided for you
         if (not 'NAME' in line_dict) or (line_dict['NAME'] is None) or (line_dict['NAME'] == ''):
             line_dict['NAME'] = 'FEAT_.5%f'%line_dict['CENTER']
 
+        # make sure types are all consistent to long names
         line_type = line_dict['TYPE'].upper()
         if len(line_type) < 4: line_type = short_type_to_type[line_type]
         line_dict['TYPE'] = line_type
 
+        # check that user wants to fit this line type
         if (line_type != 'COMBINED') and (not SpectralLine.ctx.cfg.comp.fit(line_type.lower())):
             SpectralLine.ctx.log.warning('Not fitting %s line (unfit type): %s'%(line_type,line_dict['NAME']))
             return None
@@ -96,6 +112,8 @@ class SpectralLine(BadassComponent):
         self.is_combined = self.line_type == 'COMBINED'
         self.prefix = prefix(self.line_type)
         self.center = self.line_dict['CENTER'] # TODO: center is unit-configurable
+        # initialize children array, will update later
+        self.children = self.line_dict.get('CHILDREN', [])
 
         if self.is_combined:
             self.type_options = {}
@@ -107,11 +125,13 @@ class SpectralLine(BadassComponent):
             if self.line_profile is None:
                 raise Exception('Invalid line profile (%s) for line: %s'%(profile,self.name))
 
-        self.children = [SpectralLine.from_dict(child_dict, self) for child_dict in self.line_dict.get('CHILDREN', [])]
         self.add_disp_res()
 
-        SpectralLine.ctx.log.debug('Added line: %s'%str(self))
         super().__init__(SpectralLine.ctx)
+        SpectralLine.ctx.log.debug('Added line: %s'%str(self.name))
+
+        # setup children once the parent line is ready
+        self.children = [SpectralLine.from_dict(child_dict, self) for child_dict in self.line_dict.get('CHILDREN', [])]
 
 
     def initialize_parameters(self):
@@ -121,12 +141,19 @@ class SpectralLine(BadassComponent):
         for param in primary_pars:
             val = self.line_dict.get(param.upper())
 
-            # TODO
-            # if (param == 'amp') and (self.line_dict['amp_adjust']) and (isinstance(val,dict)):
-            #     val = self.get_amp_hyperpar()
+            # if the user wants BADASS to determine a good voff init guess, and voff is a free parameter
+            if (param == 'VOFF') and (self.line_dict['VOFF_ADJUST']) and (isinstance(val,dict)):
+                init = self.get_voff_init()
+                if (val['plim'][0] <= init) and (init <= val['plim'][1]):
+                    self.ctx.log.info('Adjusting %s voff to %0.04f'%(self.name,init))
+                    val['init'] = init
 
-            # if (param == 'voff') and (self.line_dict['voff_adjust']) and (isinstance(val,dict)):
-            #     val = self.get_voff_hyperpar()
+            # if the user wants BADASS to determine a good amp init guess, and amp is a free parameter
+            if (param == 'AMP') and (self.line_dict['AMP_ADJUST']) and (isinstance(val,dict)):
+                init = self.get_amp_init()
+                if (val['plim'][0] <= init) and (init <= val['plim'][1]):
+                    self.ctx.log.info('Adjusting %s amp to %0.04f'%(self.name,init))
+                    val['init'] = init
 
             param_name = self.name + '_' + param.upper()
             self.pr.add_param(name=param_name, expr=val, source=self.name)
@@ -134,6 +161,28 @@ class SpectralLine(BadassComponent):
 
         # add profile-unique parameters
         # self.line_profile.initialize_parameters()
+
+
+    def get_voff_init(self):
+        # derive the voff_init value based on the actual peak (or trough) wavelengths vs the provided line center
+        feat_waves = SpectralLine.get_spec_features()[type_to_feat_type[self.line_type]]
+
+        if feat_waves is None:
+            return 0.0
+
+        closest_feat = feat_waves[np.argmin(np.abs(feat_waves-self.center))]
+        return (closest_feat-self.center)/self.center*consts.c # to km/s
+
+
+    def get_amp_init(self):
+        # derive the amp_init value based on the flux close to the line center
+        init = float(self.ctx.fit_spec[ba_utils.find_nearest(self.ctx.fit_wave,self.center)[1]])
+
+        # apply a factor based on the number of components
+        amp_factor = len(self.parent.children) if self.parent else 1 # number of siblings (including self)
+        init /= amp_factor
+
+        return init
 
 
     def register_blobs(self):
@@ -329,26 +378,33 @@ class SpectralLine(BadassComponent):
                 params[param.name]['prior'] = param.prior
 
 
-def get_spec_features(wave, spec, noise, line_list=None):
-    galaxy_csub = ba_utils.continuum_subtract(wave,spec,noise,sigma_clip=2.0,plot=False,verbose=False)
+    @classmethod
+    def get_spec_features(cls):
+        if not cls.spec_features is None:
+            return cls.spec_features
 
-    try:
-        # normalize by noise
-        norm_csub = galaxy_csub/noise
+        galaxy_csub = ba_utils.continuum_subtract(cls.ctx.fit_wave,cls.ctx.fit_spec,cls.ctx.fit_noise,sigma_clip=2.0,plot=False,verbose=False)
 
-        peaks,_ = signal.find_peaks(norm_csub, height=2.0, width=3.0, prominence=1)
-        troughs,_ = signal.find_peaks(-norm_csub, height=2.0, width=3.0, prominence=1)
-        peak_wave = wave[peaks]
-        trough_wave = wave[troughs]
-    except:
-        if line_list:
-            SpectralLine.ctx.log.warn('Warning! Peak finding algorithm used for initial guesses of amplitude and velocity failed! Defaulting to user-defined locations...')
-            peak_wave = np.array([line.center for line in line_list if line.line_type in ['NARROW','BROAD']])
-            trough_wave = np.array([line.center for line in line_list if line.line_type in ['ABSORP']])
+        try:
+            # normalize by noise
+            norm_csub = galaxy_csub/cls.ctx.fit_noise
 
-    if len(peak_wave) == 0:
-        peak_wave = np.array([0])
-    if len(trough_wave) == 0:
-        trough_wave = np.array([0])
+            peaks,_ = signal.find_peaks(norm_csub, height=2.0, width=3.0, prominence=1)
+            troughs,_ = signal.find_peaks(-norm_csub, height=2.0, width=3.0, prominence=1)
+            peak_wave = cls.ctx.fit_wave[peaks]
+            trough_wave = cls.ctx.fit_wave[troughs]
+        except:
+            peak_wave = np.array()
+            trough_wave = np.array()
 
-    return peak_wave, trough_wave
+        if len(peak_wave) == 0:
+            peak_wave = np.array()
+        if len(trough_wave) == 0:
+            trough_wave = np.array()
+
+        cls.spec_features = {
+            'peaks': peak_wave,
+            'trough': trough_wave,
+        }
+
+        return cls.spec_features
