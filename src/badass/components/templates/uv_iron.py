@@ -17,7 +17,8 @@ class UVIronTemplate(BadassTemplate):
 
     OPTION_NAME = 'uv_iron'
     PARAM_PREFIX = 'UV_IRON_'
-    TEMPLATE_PARAMS = ['amp', 'disp', 'voff']
+    TEMPLATE_PARAMS = ['amp', 'disp', 'voff',]
+    TEMPLATE_COMPS = ['UV_IRON_TEMPLATE',]
 
     @classmethod
     def initialize_component(cls, ctx):

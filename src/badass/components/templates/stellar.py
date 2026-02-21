@@ -129,9 +129,6 @@ class StellarTemplate(BadassTemplate):
         # Pre-compute FFT of templates, since they do not change (only the LOSVD and convolution changes)
         self.temp_fft, self.npad = template_rfft(templates)
 
-        # only if disp and vel are constant, can we pre_convolve before the fit
-        self.pre_convolve = not any([self.pr.is_free(param) for param in self.comp_params])
-
         if self.pre_convolve:
             self.conv_temp = convolve_gauss_hermite(self.temp_fft, self.npad, float(self.ctx.target.velscale),
                            [self.get_param('vel'), self.get_param('disp')], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)

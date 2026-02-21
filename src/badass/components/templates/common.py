@@ -6,6 +6,7 @@ import pandas as pd
 from scipy import fftpack, optimize
 
 from badass.components.components import BadassComponent
+from badass.components.blobs import ComponentBlob
 import badass.utils.constants as consts
 from badass.utils.utils import log_rebin, rebin
 
@@ -150,6 +151,7 @@ class BadassTemplate(BadassComponent):
     OPTION_NAME = None
     PARAM_PREFIX = ''
     TEMPLATE_PARAMS = []
+    TEMPLATE_COMPS = []
 
 
     def initialize_parameters(self):
@@ -163,6 +165,13 @@ class BadassTemplate(BadassComponent):
             param_name = self.PARAM_PREFIX + param.upper()
             self.pr.add_param(name=param_name, expr=val, source=self.__class__.__name__)
             self.comp_params.append(param_name)
+
+        # if all params are constant, we can pre_convolve before the fit
+        self.pre_convolve = not any([self.pr.is_free(param) for param in self.comp_params])
+
+
+    def register_blobs(self):
+        ComponentBlob.register_comp_blobs(self.br, self.TEMPLATE_COMPS)
 
 
     def get_param(self, param_name):

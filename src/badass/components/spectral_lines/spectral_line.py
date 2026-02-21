@@ -8,10 +8,9 @@ from typing import Dict, Optional
 
 import badass.utils.constants as consts
 import badass.utils.utils as ba_utils
-from badass.components.blobs import ComponentBlob, LineVelBlob
+from badass.components.blobs import CombinedLineComponentBlob, LineComponentBlob, LineVelBlob
 from badass.components.components import BadassComponent
 from badass.components.params import ParameterRegistry
-from badass.components.spectral_lines.default_hyperpars import type_default_hyperpars, profile_default_hyperpars
 
 EDGE_PAD = 10
 
@@ -140,7 +139,10 @@ class SpectralLine(BadassComponent):
     def register_blobs(self):
         if self.is_combined:
             self.br.register_blob(LineVelBlob(name=self.name.upper(), center=self.center, ctx=SpectralLine.ctx))
-        self.br.register_blob(ComponentBlob(component=self.name))
+            self.br.register_blob(CombinedLineComponentBlob(name=self.name, center=self.center))
+            return
+
+        self.br.register_blob(LineComponentBlob(name=self.name, center=self.center))
 
 
     def get_param(self, param_name):

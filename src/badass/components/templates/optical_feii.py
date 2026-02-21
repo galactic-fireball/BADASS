@@ -52,6 +52,7 @@ class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
     """
 
     TEMPLATE_PARAMS = ['%s_%s'%(lt,attr) for lt in ['na','br'] for attr in ['amp','disp','voff']]
+    TEMPLATE_COMPS = ['NA_OPT_FEII_TEMPLATE', 'BR_OPT_FEII_TEMPLATE']
     TEMP_LAM_RANGE = [3400.0, 7200.0] # Angstrom
 
     vc04_data_dir = consts.BADASS_DATA_DIR.joinpath('feii_templates', 'veron-cetty_2004')
@@ -107,9 +108,6 @@ class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
         # shift the spectrum to match that of the input galaxy.
         self.vsyst = np.log(lam_feii[0]/self.ctx.fit_wave[0]) * consts.c
 
-        # if all params are constant, we can pre_convolve before the fit
-        self.pre_convolve = not any([self.pr.is_free(param) for param in self.comp_params])
-
         if self.pre_convolve:
             self.br_conv_temp = self.convolve(self.br_opt_feii_fft, self.get_param('br_voff'), self.get_param('br_disp'))
             self.na_conv_temp = self.convolve(self.na_opt_feii_fft, self.get_param('na_voff'), self.get_param('na_disp'))
@@ -150,6 +148,7 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
     """
 
     TEMPLATE_PARAMS = ['f_amp', 'g_amp', 's_amp', 'z_amp', 'disp', 'voff', 'temp']
+    TEMPLATE_COMPS = ['F_OPT_FEII_TEMPLATE', 'G_OPT_FEII_TEMPLATE', 'S_OPT_FEII_TEMPLATE', 'Z_OPT_FEII_TEMPLATE']
     TEMP_LAM_RANGE = [4400.0, 5500.0]
     k10_data_dir = consts.BADASS_DATA_DIR.joinpath('feii_templates', 'kovacevic_2010')
 
@@ -282,9 +281,6 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
 
         self.npad = self.transitions['F'].npad
         self.vsyst = np.log(lam_feii[0]/self.ctx.fit_wave[0]) * consts.c
-
-        # only if disp and voff are constant, can we pre_convolve before the fit
-        self.pre_convolve = all([not self.pr.is_free(param) for param in self.comp_params])
 
         if self.pre_convolve:
             for trans in self.transitions.values():

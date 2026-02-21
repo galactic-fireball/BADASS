@@ -5,6 +5,7 @@ from tabulate import tabulate
 from typing import Callable, ClassVar, Dict, List
 
 import badass.utils.utils as ba_utils
+from badass.components.spectral_lines.utils import calculate_fwhm, calculate_w80
 
 
 # components that make up the continuum
@@ -18,6 +19,8 @@ class BlobRegistry:
         self.blobs = []
 
         IndexBlob.register_index_blobs(self, self.ctx.target.wave[0], self.ctx.target.wave[-1])
+        ContinuumBlob.register_cont_blobs(self)
+        ContFracBlob.register_contfrac_blobs(self)
 
         # compute the values for all the constant blobs
         for blob in self.blobs:
@@ -44,6 +47,13 @@ class BlobRegistry:
 
     def get_blob_names(self):
         return [blob.name for blob in self.blobs]
+
+
+    def get_blob(self, blob_name):
+        for blob in self.blobs:
+            if blob.name == blob_name:
+                return blob
+        return None
 
 
     def calc_cont(self):
@@ -114,10 +124,11 @@ class Blob:
     func: Callable | None = None
     cur_val: float | Dict[str,float] = 0.0
     is_const: bool = False
+    data: Dict = field(default_factory=dict)
 
 
     def compute(self, ctx, kwargs):
-        self.cur_val = self.func(ctx, self.kwargs)
+        self.cur_val = self.func(ctx, self.kwargs, self.data)
         return self.cur_val
 
 
@@ -146,6 +157,7 @@ class LineVelBlob(Blob):
         return self.cur_val
 
 
+# TODO: get rid of IndexBlob and store the needed index in the ContinuumBlob instance
 @dataclass
 class IndexBlob(Blob):
 
@@ -160,11 +172,7 @@ class IndexBlob(Blob):
             if (wave < wave_min) or (wave > wave_max):
                 continue
 
-            reg.register_blob(cls(wave=wave))
-
-
-    def __post_init__(self):
-        self.name = 'INDEX_%d'%self.wave
+            reg.register_blob(cls(name='INDEX_%d'%wave, wave=wave))
 
 
     def compute(self, ctx, kwargs):
@@ -173,14 +181,95 @@ class IndexBlob(Blob):
 
 
 @dataclass
-class ComponentBlob(Blob):
+class ContinuumBlob(Blob):
 
-    component: str = ''
+    wave: int = 0
+    idx: int = 0
+
+    WAVES: ClassVar[List] = [1350, 3000, 5100]
 
     def __post_init__(self):
-        self.component = self.component.upper()
-        self.name = self.component
+        self.idx = int(self.idx)
 
+        self.cur_val = {
+            'TOTAL': 0.0,
+            'AGN': 0.0,
+            'HOST': 0.0,
+        }
+
+
+    @classmethod
+    def register_cont_blobs(cls, reg):
+        for wave in ContinuumBlob.WAVES:
+            idx = reg.get_blob('INDEX_%d'%wave)
+            if idx is None:
+                continue
+
+            reg.register_blob(cls(name='L_CONT_%d'%wave, wave=wave, idx=idx.cur_val))
+
+
+    @staticmethod
+    def get_conts_at_idx(ctx, idx):
+        cont_comps = {
+            'TOTAL': ['POWER', 'HOST_GALAXY', 'BALMER_CONT', 'APOLY', 'MPOLY',],
+            'AGN': ['POWER', 'BALMER_CONT', 'APOLY', 'MPOLY',],
+            'HOST': ['HOST_GALAXY', 'APOLY', 'MPOLY',],
+        }
+
+        res = {}
+        for type, comps in cont_comps.items():
+            cont_at_idx = 0.0
+            for key in comps:
+                if not key in ctx.store.comps:
+                    continue
+                cont_at_idx += ctx.store.comps[key][idx]
+            res[type] = cont_at_idx
+        return res
+
+
+    def compute(self, ctx, kwargs):
+        self.cur_val.update(ContinuumBlob.get_conts_at_idx(ctx, self.idx))
+        return self.cur_val
+
+
+@dataclass
+class ContFracBlob(ContinuumBlob):
+    WAVES: ClassVar[List] = [4000, 7000]
+
+    def __post_init__(self):
+        self.idx = int(self.idx)
+
+        self.cur_val = {
+            'AGN_FRAC': 0.0,
+            'HOST_FRAC': 0.0,
+        }
+
+
+    @classmethod
+    def register_contfrac_blobs(cls, reg):
+        for wave in ContFracBlob.WAVES:
+            idx = reg.get_blob('INDEX_%d'%wave)
+            if idx is None:
+                continue
+
+            reg.reg(cls(name='CONT_FRAC_%d'%wave, wave=wave, idx=idx.cur_val))
+
+
+    def compute(self, ctx, kwargs):
+        conts = ContinuumBlob.get_conts_at_idx(ctx, self.idx)
+        for type in ['AGN', 'HOST']:
+            self.cur_val[type+'_FRAC'] = conts[type] / conts['TOTAL']
+        return self.cur_val
+
+
+@dataclass
+class ComponentBlob(Blob):
+
+    comp_spec: np.ndarray = None
+
+    obs_wave: ClassVar[np.ndarray] = None
+
+    def __post_init__(self):
         self.cur_val = {
             'FLUX': 0.0,
             'LUM': 0.0,
@@ -191,28 +280,87 @@ class ComponentBlob(Blob):
     @classmethod
     def register_comp_blobs(cls, reg, comps):
         for comp in comps:
-            reg.register_blob(cls(component=comp))
+            reg.register_blob(cls(name=comp.upper()))
 
 
     def compute(self, ctx, kwargs):
-        obs_wave = ba_utils.redden(ctx.fit_wave, z=ctx.target.z)
-        spec = BlobRegistry.get_component(ctx, self.component)
+        if ComponentBlob.obs_wave is None:
+            ComponentBlob.obs_wave = ba_utils.redden(ctx.fit_wave, z=ctx.target.z)
 
-        if np.all([spec == 0.0]):
+        self.comp_spec = BlobRegistry.get_component(ctx, self.name)
+
+        if np.all([self.comp_spec == 0.0]):
             self.cur_val['FLUX'] = 0.0
             self.cur_val['LUM'] = 0.0
-            self.cur_val['FLUX'] = 0.0
+            self.cur_val['EW'] = 0.0
             return self.cur_val
 
-        flux = np.trapz(spec, obs_wave)
+        flux = np.trapz(self.comp_spec, ComponentBlob.obs_wave)
         flux = np.abs(flux)*ctx.target.flux_norm*ctx.target.fit_norm
         self.cur_val['FLUX'] = np.log10(flux) if flux != 0.0 else flux
 
         self.cur_val['LUM'] = np.log10(ctx.flux_to_lum(flux)) if flux != 0.0 else 0.0
 
         cont = kwargs['continuum']
-        ew = np.trapz(spec/cont, obs_wave)
+        ew = np.trapz(self.comp_spec/cont, ComponentBlob.obs_wave)
         self.cur_val['EW'] = ew if np.isfinite(ew) else 0.0
 
         return self.cur_val
+
+
+@dataclass
+class LineComponentBlob(ComponentBlob):
+
+    center: float = 0.0
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.cur_val.update({
+            'FWHM': 0.0,
+            'W80': 0.0,
+            'NPIX': 0.0,
+            'SNR': 0.0,
+        })
+
+
+    def compute(self, ctx, kwargs):
+        super().compute(ctx, kwargs)
+
+        self.cur_val['FWHM'] = calculate_fwhm(ctx.fit_wave, self.comp_spec, ctx.target.velscale)
+        self.cur_val['W80'] = calculate_w80(ctx.fit_wave, self.comp_spec, self.center)
+
+        # compute number of pixels (NPIX)
+        # - the number of pixels of the line model that are above the raw noise
+        self.cur_val['NPIX'] = len(np.where(np.abs(self.comp_spec) > ctx.fit_noise)[0])
+
+        # compute the signal-to-noise ratio (SNR)
+        # - the maximum value of the line model above the MEAN value of the noise within the channels
+        self.cur_val['SNR'] = np.nanmax(np.abs(self.comp_spec)) / np.nanmean(ctx.fit_noise)
+
+        # TODO: add line window metrics
+
+
+@dataclass
+class CombinedLineComponentBlob(LineComponentBlob):
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.cur_val.update({
+            'VOFF': 0.0,
+            'DISP': 0.0,
+        })
+
+
+    def compute(self, ctx, kwargs):
+        super().compute(ctx, kwargs)
+
+        line_vel = reg.get_blob(self.name+'_LINE_VEL')
+        vel = np.arange(len(ctx.fit_wave))*ctx.target.velscale - line_vel
+        full_profile = np.abs(self.comp_spec)
+        norm_profile = full_profile/np.sum(full_profile)
+        voff = np.trapz(vel*norm_profile,vel)/simpson(norm_profile,vel)
+        self.cur_val['VOFF'] = voff if np.isfinite(voff) else 0.0
+
+        disp = np.sqrt(np.trapz(vel**2*norm_profile,vel)/np.trapz(norm_profile,vel) - (voff**2))
+        self.cur_val['DISP'] = disp if np.isfinite(disp) else 0.0
 
