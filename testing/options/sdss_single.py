@@ -29,19 +29,21 @@ mcmc = {
 'max_iter'    : 10, # max number of MCMC iterations
 }
 
-# comp = {
+comp = {
     # 'fit_losvd': False,
     # 'fit_host': True,
     # 'fit_poly': True,
-# }
+    'tie_line_voff': True,
+    'tie_line_disp': True,
+}
 
 
 from badass.components.spectral_lines.line_lists import type1agn_default1
-# user_lines = type1agn_default1.user_lines
+user_lines = type1agn_default1.user_lines
 
-from badass.components.spectral_lines.line_lists import common_lines
+# from badass.components.spectral_lines.line_lists import common_lines
 
-hbeta = common_lines.NA_H_BETA.copy()
-hbeta.pop('disp')
+# hbeta = common_lines.NA_H_BETA.copy()
+# hbeta.pop('disp')
 
-user_lines = [hbeta, common_lines.BR_H_BETA]
+# user_lines = [hbeta, common_lines.BR_H_BETA]

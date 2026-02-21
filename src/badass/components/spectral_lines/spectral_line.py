@@ -138,25 +138,53 @@ class SpectralLine(BadassComponent):
         if self.is_combined:
             return
 
-        for param in primary_pars:
-            val = self.line_dict.get(param.upper())
+        param_vals = {}
 
-            # if the user wants BADASS to determine a good voff init guess, and voff is a free parameter
-            if (param == 'VOFF') and (self.line_dict['VOFF_ADJUST']) and (isinstance(val,dict)):
-                init = self.get_voff_init()
-                if (val['plim'][0] <= init) and (init <= val['plim'][1]):
-                    self.ctx.log.info('Adjusting %s voff to %0.04f'%(self.name,init))
-                    val['init'] = init
 
-            # if the user wants BADASS to determine a good amp init guess, and amp is a free parameter
-            if (param == 'AMP') and (self.line_dict['AMP_ADJUST']) and (isinstance(val,dict)):
-                init = self.get_amp_init()
-                if (val['plim'][0] <= init) and (init <= val['plim'][1]):
-                    self.ctx.log.info('Adjusting %s amp to %0.04f'%(self.name,init))
-                    val['init'] = init
+        # AMP
+        amp_val = self.line_dict.get('AMP')
+        # if the user wants BADASS to determine a good amp init guess, and amp is a free parameter
+        if (self.line_dict['AMP_ADJUST']) and (isinstance(amp_val,dict)):
+            init = self.get_amp_init()
+            if (amp_val['plim'][0] <= init) and (init <= amp_val['plim'][1]):
+                self.ctx.log.info('Adjusting %s amp to %0.04f'%(self.name,init))
+                amp_val['init'] = init
 
+        param_vals['AMP'] = amp_val
+
+
+        # VOFF
+        voff_val = self.line_dict.get('VOFF')
+        if SpectralLine.ctx.cfg.comp.tie('voff'):
+            # add a parameter for the voff of this line type and set the expr for the line voff to that parameter
+            voff_val = self.prefix + '_VOFF'
+            tied_voff_val = SpectralLine.ctx.cfg[self.line_type.lower()].voff
+            self.pr.add_param(name=voff_val, expr=tied_voff_val, source=self.name)
+
+        # if the user wants BADASS to determine a good voff init guess, and voff is a free parameter
+        elif (self.line_dict['VOFF_ADJUST']) and (isinstance(voff_val,dict)):
+            init = self.get_voff_init()
+            if (voff_val['plim'][0] <= init) and (init <= voff_val['plim'][1]):
+                self.ctx.log.info('Adjusting %s voff to %0.04f'%(self.name,init))
+                voff_val['init'] = init
+
+        param_vals['VOFF'] = voff_val
+
+
+        # DISP
+        disp_val = self.line_dict.get('DISP')
+        if SpectralLine.ctx.cfg.comp.tie('disp'):
+            # add a parameter for the disp of this line type and set the expr for the line disp to that parameter
+            disp_val = self.prefix + '_DISP'
+            tied_disp_val = SpectralLine.ctx.cfg[self.line_type.lower()].disp
+            self.pr.add_param(name=disp_val, expr=tied_disp_val, source=self.name)
+
+        param_vals['DISP'] = disp_val
+
+        # register primary parameters
+        for param, param_val in param_vals.items():
             param_name = self.name + '_' + param.upper()
-            self.pr.add_param(name=param_name, expr=val, source=self.name)
+            self.pr.add_param(name=param_name, expr=param_val, source=self.name)
             self.comp_params.append(param_name)
 
         # add profile-unique parameters
