@@ -7,7 +7,7 @@ from pydantic import AfterValidator, AliasChoices, BeforeValidator, BaseModel, C
 from typing import Annotated, Any, ClassVar, List, Literal, types, Union
 
 import badass.utils.constants as consts
-
+from badass.components.spectral_lines.line_profiles import line_profiles
 
 PositiveNum = PositiveInt | PositiveFloat
 NonNegativeNum = NonNegativeInt | NonNegativeFloat
@@ -267,9 +267,10 @@ class BaseLine(SpectralLine):
     h: Param = {'init':0.0, 'plim':(-0.5,0.5)}
 
     # Shape of the Voigt profile
-    shape: Param = {'init', 'plim'}
+    shape: Param = {'init':0.0, 'plim':(0.0,1.0)}
 
     profile: Literal[*(consts.LINE_PROFILES)] = 'gaussian'
+    # profile: Literal[[prof.lower() for prof in line_profiles.keys()]] = 'gaussian'
 
 
 class NarrowLine(BaseLine):

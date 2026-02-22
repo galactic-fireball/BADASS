@@ -33,17 +33,22 @@ comp = {
     # 'fit_losvd': False,
     # 'fit_host': True,
     # 'fit_poly': True,
-    'tie_line_voff': True,
-    'tie_line_disp': True,
+    # 'tie_line_voff': True,
+    # 'tie_line_disp': True,
 }
 
 
-from badass.components.spectral_lines.line_lists import type1agn_default1
-user_lines = type1agn_default1.user_lines
+# from badass.components.spectral_lines.line_lists import type1agn_default1
+# user_lines = type1agn_default1.user_lines
 
-# from badass.components.spectral_lines.line_lists import common_lines
+from badass.components.spectral_lines.line_lists import common_lines
 
-# hbeta = common_lines.NA_H_BETA.copy()
-# hbeta.pop('disp')
+br_hbeta = common_lines.BR_H_BETA.copy()
+# br_hbeta['profile'] = 'gauss-hermite'
+br_hbeta['profile'] = 'uniform'
+# br_hbeta['n_moments'] = 5
 
-# user_lines = [hbeta, common_lines.BR_H_BETA]
+na_hbeta = common_lines.NA_H_BETA.copy()
+na_hbeta.pop('disp')
+
+user_lines = [na_hbeta, br_hbeta]

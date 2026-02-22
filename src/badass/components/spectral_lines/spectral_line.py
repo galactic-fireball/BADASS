@@ -188,7 +188,7 @@ class SpectralLine(BadassComponent):
             self.comp_params.append(param_name)
 
         # add profile-unique parameters
-        # self.line_profile.initialize_parameters()
+        self.line_profile.initialize_parameters(self)
 
 
     def get_voff_init(self):
@@ -259,153 +259,6 @@ class SpectralLine(BadassComponent):
         self.disp_res_kms = (self.disp_res_ang/self.center)*c # instrumental FWHM resolution in km/s
 
 
-
-
-
-
-
-    @staticmethod
-    def get_hyperpar_val(par, hparam, line_type='', line_profile=''):
-        profile_default = profile_default_hyperpars.get(line_profile, {}).get(par, {}).get(hparam, None)
-        if not profile_default is None:
-            return profile_default
-
-        hparam_name = par + '_' + hparam
-        type_cfg = SpectralLine.ctx.cfg[line_type.lower()]
-        # check in order: type_cfg, default type options, common options
-        type_default = type_cfg.get(hparam_name, type_default_hyperpars.get(line_type, {}).get(par, {}).get(hparam, type_default_hyperpars['COMMON'].get(par, {}).get(hparam, None)))
-        return type_default
-
-
-    @staticmethod
-    def add_tied_param(line_type, par):
-        # TODO: instead of add to params, return class parameters
-        pre = prefix(line_type)
-        param_name = pre + '_' + par
-        if param_name in SpectralLine.common_params:
-            return
-
-        type_cfg = SpectralLine.ctx.cfg[line_type]
-        fp = SpectralLine.param_reg.new_param(name=param_name, expr=type_cfg.get(par, 'FREE'))
-        SpectralLine.common_params[param_name] = fp
-        if not fp.is_free:
-            return
-
-        for hparam in hyperpars:
-            # check each in order: type_cfg, default hyperpar dict
-            hparam_val = SpectralLine.get_hyperpar_val(line_type, par, hparam)
-
-            if (hparam != 'PRIOR') and (hparam_val is None):
-                raise Exception('Could not find voff hyperpar [%s] for line type [%s]'%(hparam_name,line_type))
-
-            setattr(fp, hparam.lower(), hparam_val)
-
-
-    def set_hyperpars(self, par, args):
-        par_name = self.name + '_' + par
-
-        if ((par == 'VOFF') and (SpectralLine.ctx.cfg.comp.tie('voff'))) \
-            or ((par == 'DISP') and (SpectralLine.ctx.cfg.comp.tie('disp'))):
-            SpectralLine.add_tied_param(self.line_type, par)
-            return
-
-        # If not in line_dict or type_options => default to a free parameter
-        # TODO: get the expr from the line_dict (should already be filled with needed defaults by config validator)
-        fp = SpectralLine.param_reg.new_param(name=par_name, expr=self.line_dict.get(par, self.type_options.get(par, 'FREE')))
-        self.parameters[par_name] = fp
-
-        if not fp.is_free:
-            return
-
-        for hparam in hyperpars:
-            hparam_name = par + '_' + hparam
-            # check each in order: line_dict, type_options, default hyperpar dict
-            hparam_val = self.line_dict.get(hparam_name, SpectralLine.get_hyperpar_val(par, hparam, line_type=self.line_type, line_profile=self.line_profile.name))
-
-            # Special case if we found the amp_init value in a general source (ie. not the specific line dict), apply a factor based on the number of components
-            if (par == 'AMP') and (hparam == 'INIT') and (not hasattr(self.line_dict, hparam_name)) and (not hparam_val is None):
-                amp_factor = len(self.parent.children) if self.parent else 1 # number of siblings (including self)
-                hparam_val /= amp_factor
-
-            # par and hparam unique methods for finding hparam_val
-            if hparam_val is None:
-                if (par == 'VOFF') and (hparam == 'INIT'):
-                    # derive the voff_init value based on the actual peak (or trough) wavelengths vs the provided line center
-                    feat_waves = args.get(type_to_feat_type(self.line_type), None)
-                    if not feat_waves is None:
-                        closest_feat = feat_waves[np.argmin(np.abs(feat_waves-self.center))]
-                        hparam_val = (closest_feat-self.center)/self.center*consts.c # to km/s
-
-                if (par == 'AMP') and (hparam == 'INIT'):
-                    # derive the amp_init value based on the flux close to the line center
-                    hparam_val = float(self.ctx.fit_spec[ba_utils.find_nearest(self.ctx.fit_wave,self.center)[1]])
-                    # apply a factor based on the number of components
-                    amp_factor = len(self.parent.children) if self.parent else 1 # number of siblings (including self)
-                    hparam_val /= amp_factor
-
-                if (par == 'AMP') and (hparam == 'PLIM'):
-                    hparam_val = (0.0, float(2*np.nanmax(self.ctx.fit_spec)))
-
-            if (hparam != 'PRIOR') and (hparam_val is None):
-                raise Exception('Could not find voff hyperpar [%s] for line [%s]'%(hparam_name,self.name))
-
-            # negate the amp for absorption lines
-            if (self.line_type == 'ABSORP') and (par == 'AMP') and (hparam != 'PRIOR'):
-                hparam_val *= -1
-
-            setattr(fp, hparam.lower(), hparam_val)
-
-
-    def validate_hyperpars(self):
-        for pname, fp in self.parameters.items():
-            if not fp.is_free:
-                continue
-
-            if (fp.plim[0] > fp.init) or (fp.init > fp.plim[1]):
-                new_init = fp.plim[1] - (fp.plim[1]-fp.plim[0])
-                self.ctx.log.warn('init value for %s [%f] outside limits (%f,%f), resetting to %f'%(pname,fp.init,fp.plim[0],fp.plim[1],new_init))
-                fp.init = new_init
-
-
-    def __str__(self):
-        s = '%s (%s%s) @ %.04f'%(self.name, self.line_type, ' %s'%self.line_profile.name if self.line_profile else '', self.center)
-        if len(self.children):
-            s += '\n\tChildren:'
-            for c in self.children:
-                s += '\n\t'
-                s += str(c).replace('\t', '\t\t')
-            s += '\n'
-        # if self.parameters:
-        #     s += '\n\tParameters:'
-        #     for key, val in self.parameters.items():
-        #         s += '\n\t\t%s = %s' % (key, str(val))
-        return s
-
-
-    @staticmethod
-    def initialize_line_parameters(params, args):
-        ctx = SpectralLine.ctx
-        peaks, troughs = get_spec_features(ctx.fit_wave,ctx.fit_spec,ctx.fit_noise,line_list=SpectralLine.line_list)
-        args['peaks'] = peaks
-        args['troughs'] = troughs
-
-        for line in SpectralLine.line_list:
-            print('Initializing: %s' % line)
-            line.initialize_parameters(params, args)
-
-        # TODO: just add the common_params to total param list and return
-        for param in SpectralLine.common_params.values():
-            if not param.is_free:
-                continue
-
-            params[param.name] = {
-                'init': param.init,
-                'plim': param.plim
-            }
-            if param.prior:
-                params[param.name]['prior'] = param.prior
-
-
     @classmethod
     def get_spec_features(cls):
         if not cls.spec_features is None:
@@ -436,3 +289,19 @@ class SpectralLine(BadassComponent):
         }
 
         return cls.spec_features
+
+
+    def __str__(self):
+        s = '%s (%s%s) @ %.04f'%(self.name, self.line_type, ' %s'%self.line_profile.name if self.line_profile else '', self.center)
+        if len(self.children):
+            s += '\n\tChildren:'
+            for c in self.children:
+                s += '\n\t'
+                s += str(c).replace('\t', '\t\t')
+            s += '\n'
+        # if self.parameters:
+        #     s += '\n\tParameters:'
+        #     for key, val in self.parameters.items():
+        #         s += '\n\t\t%s = %s' % (key, str(val))
+        return s
+

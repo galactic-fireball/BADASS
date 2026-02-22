@@ -198,11 +198,9 @@ class BadassRunContext:
             'min_wave':np.min(self.fit_wave), 'max_wave':np.max(self.fit_wave),
         }
 
-        # self.param_reg.dump_parameters()
         self.param_reg.init_values(component_args)
-        # self.param_reg.dump_parameters()
         self.param_reg.validate_constraints()
-
+        self.param_reg.dump_parameters()
         self.blob_reg.dump_blobs()
 
         # TODO: input from past line test or user config
