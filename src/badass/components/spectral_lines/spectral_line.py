@@ -216,10 +216,10 @@ class SpectralLine(BadassComponent):
     def register_blobs(self):
         if self.is_combined:
             self.br.register_blob(LineVelBlob(name=self.name.upper(), center=self.center, ctx=SpectralLine.ctx))
-            self.br.register_blob(CombinedLineComponentBlob(name=self.name, center=self.center))
+            self.br.register_blob(CombinedLineComponentBlob(name=self.name, line=self))
             return
 
-        self.br.register_blob(LineComponentBlob(name=self.name, center=self.center))
+        self.br.register_blob(LineComponentBlob(name=self.name, line=self))
 
 
     def get_param(self, param_name):
