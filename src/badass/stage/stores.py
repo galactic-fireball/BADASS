@@ -1,4 +1,5 @@
-from dataclasses import dataclass, field
+from astropy.io import fits
+from dataclasses import asdict, dataclass, field
 import json
 import matplotlib.pyplot as plt
 import numpy as np
@@ -6,7 +7,7 @@ from tabulate import tabulate
 from typing import ClassVar, Dict
 
 from badass.badass_utils import badass_test_suite
-
+import badass.utils.plotting as plotting
 
 @dataclass
 class MetaComps:
@@ -15,6 +16,14 @@ class MetaComps:
     noise: np.ndarray
     model: np.ndarray
     resid: np.ndarray
+
+
+    def finalize(self, fit_norm):
+        self.data *= fit_norm
+        self.noise *= fit_norm
+        self.model *= fit_norm
+        self.resid *= fit_norm
+
 
 
 @dataclass
@@ -28,6 +37,7 @@ class StageStore:
     comps: Dict[str,np.ndarray] = field(default_factory=dict)
     meta_comps: MetaComps = None
     metrics: Dict[str,np.ndarray] = field(default_factory=dict)
+    # TODO: fit_results should be a dataframe or other data structure?
     fit_results: Dict = field(default_factory=dict)
 
 
@@ -60,9 +70,14 @@ class StageStore:
         self.ctx.log.info('Fit Results:\n'+tabulate(table, headers, tablefmt='grid'))
 
 
-    def output(self):
+    def get_outfile(self):
         outfile = self.ctx.target.outdir.joinpath('results', self.OUT_NAME)
         outfile.parent.mkdir(parents=True, exist_ok=True)
+        return outfile
+
+
+    def output(self):
+        outfile = self.get_outfile()
 
         with open(outfile.with_suffix('.json'), 'w') as f:
             json.dump(self.to_dict(), f, indent=4)
@@ -133,12 +148,17 @@ class MCStore(StageStore):
     def compile_results(self):
         super().compile_results()        
 
-        for key, vals in self.params_chain.items():
+        def add_fit_result(key, vals):
             med = np.nanmedian(vals)
             std = np.nanstd(vals)
             if not np.isfinite(med): med = 0.0
             if not np.isfinite(std): std = 0.0
             self.fit_results[key] = {'med':med, 'std':std}
+            return med, std
+
+
+        for key, vals in self.params_chain.items():
+            med, std = add_fit_result(key, vals)
 
             param = self.ctx.param_reg.get_param(key)
             if not param.is_free:
@@ -151,14 +171,69 @@ class MCStore(StageStore):
 
 
         for key, vals in self.blobs_chain.items():
-            med = np.nanmedian(vals)
-            std = np.nanstd(vals)
-            if not np.isfinite(med): med = 0.0
-            if not np.isfinite(std): std = 0.0
-            self.fit_results[key] = {'med':med, 'std':std}
-
+            add_fit_result(key, vals)
 
         self.fit_results.update(self.ctx.blob_reg.get_postfits(self.fit_results))
+
+        for key, vals in self.metrics_chain.items():
+            add_fit_result(key, vals)
+
+
+        # Rescale amplitudes
+        for pname, param_dict in self.fit_results.items():
+            if pname[-4:] != '_AMP':
+                continue
+            param_dict['med'] *= self.ctx.target.fit_norm
+            param_dict['std'] *= self.ctx.target.fit_norm
+
+        for comp in self.comps.values():
+            comp *= self.ctx.target.fit_norm
+
+        self.meta_comps.finalize(self.ctx.target.fit_norm)
+
+
+    def output(self):
+        super().output()
+
+        outdir = self.get_outfile()
+        outdir.mkdir(parents=True, exist_ok=True)
+
+        col1 = fits.Column(name='parameter', format='30A', array=list(self.fit_results.keys()))
+        col2 = fits.Column(name='best_fit', format='E', array=[v['med'] for v in self.fit_results.values()])
+        col3 = fits.Column(name='sigma', format='E', array=[v['std'] for v in self.fit_results.values()])
+        cols = fits.ColDefs([col1,col2,col3])
+        table_hdu = fits.BinTableHDU.from_columns(cols)
+
+        hdr = fits.Header()
+        hdr['z'] = self.ctx.target.z
+        hdr['med_noise'] = np.nanmedian(self.ctx.fit_noise)
+        hdr['velscale'] = self.ctx.target.velscale
+        hdr['fit_norm'] = self.ctx.target.fit_norm
+        hdr['flux_norm'] = self.ctx.target.flux_norm
+
+        primary = fits.PrimaryHDU(header=hdr)
+        hdu = fits.HDUList([primary, table_hdu])
+        hdu.writeto(outdir.joinpath('par_table.fits'), overwrite=True)
+
+        cols = []
+        for key, val in self.comps.items():
+            cols.append(fits.Column(name=key.upper(), format='E', array=val))
+
+        for key, val in asdict(self.meta_comps).items():
+            cols.append(fits.Column(name=key.upper(), format='E', array=val))
+
+        mask = np.zeros(len(self.meta_comps.wave), dtype=bool)
+        mask[self.ctx.target.fit_mask] = True
+        cols.append(fits.Column(name='MASK', format='E', array=mask))
+
+        cols = fits.ColDefs(cols)
+        hdu = fits.BinTableHDU.from_columns(cols)
+        hdu.writeto(outdir.joinpath('best_model_components.fits'), overwrite=True)
+
+        plotting.plot_ml_results(self)
+        self.ctx.log.info('Done ML fitting %s!' % self.ctx.target.cfg.io.output_dir)
+
+
 
 
 

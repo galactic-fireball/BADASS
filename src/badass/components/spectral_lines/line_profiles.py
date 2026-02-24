@@ -12,6 +12,8 @@ line_profiles = {}
 
 class LineProfile:
 
+    wave_pix = None
+
     @staticmethod
     def get_line_profile(profile_name):
         return line_profiles.get(profile_name, None)
@@ -25,6 +27,14 @@ class LineProfile:
     @staticmethod
     def construct_line(line):
         return None
+
+
+    @classmethod
+    def get_wave_pix(cls):
+        if cls.wave_pix is None:
+            x_pix = np.array(range(len(SpectralLine.ctx.fit_wave)), dtype=float)
+            cls.wave_pix = x_pix.reshape((len(x_pix), 1))
+        return cls.wave_pix
 
 
 class GaussianProfile(LineProfile):
@@ -43,9 +53,10 @@ class GaussianProfile(LineProfile):
         center_pix = line.center_pix + voff_pix
 
         # pixels vector
-        x_pix = np.array(range(len(SpectralLine.ctx.fit_wave)), dtype=float)
+        # x_pix = np.array(range(len(SpectralLine.ctx.fit_wave)), dtype=float)
         # reshape into row
-        x_pix = x_pix.reshape((len(x_pix), 1))
+        # x_pix = x_pix.reshape((len(x_pix), 1))
+        x_pix = LineProfile.get_wave_pix()
 
         # construct Gaussian
         g = line.get_param('amp') * np.exp(-0.5*(x_pix-center_pix)**2/sigma_pix**2)

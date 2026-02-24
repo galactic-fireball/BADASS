@@ -569,65 +569,6 @@ class BadassRunContext:
         self.store.output()
 
 
-    def write_max_like_results(self):
-        # Write maximum likelihood fit results to FITS table
-
-        # TODO: need to copy? just let them be rescaled
-        result_dict = copy.deepcopy(self.fit_results)
-        comp_dict = copy.deepcopy(self.comp_dict)
-
-        # Rescale amplitudes
-        for p in result_dict:
-            if p[-4:] == '_AMP':
-                result_dict[p]['med'] = result_dict[p]['med']*self.target.fit_norm
-                result_dict[p]['std'] = result_dict[p]['std']*self.target.fit_norm
-
-        # Rescale components
-        for key in comp_dict:
-            if not key in ['WAVE']:
-                comp_dict[key] *= self.target.fit_norm
-
-        result_dict = dict(sorted(result_dict.items()))
-
-        sigma_noise = np.nanmedian(comp_dict['NOISE'][self.target.fit_mask])
-        sigma_resid = np.nanstd(comp_dict['DATA'][self.target.fit_mask]-comp_dict['MODEL'][self.target.fit_mask])
-        self.log.log_max_like_fit(result_dict, sigma_noise, sigma_resid)
-
-        # Write best-fit parameters
-        col1 = fits.Column(name='parameter', format='30A', array=list(result_dict.keys()))
-        col2 = fits.Column(name='best_fit', format='E', array=[v['med'] for v in result_dict.values()])
-        col3 = fits.Column(name='sigma', format='E', array=[v['std'] for v in result_dict.values()])
-        cols = fits.ColDefs([col1,col2,col3])
-        table_hdu = fits.BinTableHDU.from_columns(cols)
-
-        hdr = fits.Header()
-        hdr['z'] = self.target.z
-        hdr['med_noise'] = np.nanmedian(self.target.noise)
-        hdr['velscale'] = self.target.velscale
-        hdr['fit_norm'] = self.target.fit_norm
-        hdr['flux_norm'] = self.target.flux_norm
-
-        primary = fits.PrimaryHDU(header=hdr)
-        hdu = fits.HDUList([primary, table_hdu])
-        hdu.writeto(self.target.outdir.joinpath('log', 'par_table.fits'), overwrite=True)
-
-        # Write best-fit components
-        cols = []
-        for key, val in comp_dict.items():
-            cols.append(fits.Column(name=key, format='E', array=val))
-
-        mask = np.zeros(len(comp_dict['WAVE']), dtype=bool)
-        mask[self.target.fit_mask] = True
-        cols.append(fits.Column(name='MASK', format='E', array=mask))
-
-        cols = fits.ColDefs(cols)
-        hdu = fits.BinTableHDU.from_columns(cols)
-        hdu.writeto(self.target.outdir.joinpath('log', 'best_model_components.fits'), overwrite=True)
-
-        plotting.plot_ml_results(self)
-        self.log.info('Done ML fitting %s!' % self.target.cfg.io.output_dir)
-
-
     def reweight(self):
         if not self.cfg.fit.reweighting:
             return

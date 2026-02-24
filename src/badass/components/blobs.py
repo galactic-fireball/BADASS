@@ -208,6 +208,9 @@ class ContinuumBlob(Blob):
             'F_CONT_TOT_%d'%self.wave: 0.0,
             'F_CONT_AGN_%d'%self.wave: 0.0,
             'F_CONT_HOST_%d'%self.wave: 0.0,
+            'L_CONT_TOT_%d'%self.wave: 0.0,
+            'L_CONT_AGN_%d'%self.wave: 0.0,
+            'L_CONT_HOST_%d'%self.wave: 0.0,
         }
 
 
@@ -243,9 +246,14 @@ class ContinuumBlob(Blob):
     def compute(self, ctx, kwargs):
         conts = ContinuumBlob.get_conts_at_idx(ctx, self.idx)
         self.cur_val.update({
-            'F_CONT_TOT_%d'%self.wave: conts['TOTAL'],
-            'F_CONT_AGN_%d'%self.wave: conts['AGN'],
-            'F_CONT_HOST_%d'%self.wave: conts['HOST']
+            'F_CONT_TOT_%d'%self.wave: conts['TOTAL']*ctx.target.flux_norm*ctx.target.fit_norm,
+            'F_CONT_AGN_%d'%self.wave: conts['AGN']*ctx.target.flux_norm*ctx.target.fit_norm,
+            'F_CONT_HOST_%d'%self.wave: conts['HOST']*ctx.target.flux_norm*ctx.target.fit_norm,
+        })
+        self.cur_val.update({
+            'L_CONT_TOT_%d'%self.wave: ctx.flux_to_lum(self.cur_val['F_CONT_TOT_%d'%self.wave]),
+            'L_CONT_AGN_%d'%self.wave: ctx.flux_to_lum(self.cur_val['F_CONT_AGN_%d'%self.wave]),
+            'L_CONT_HOST_%d'%self.wave: ctx.flux_to_lum(self.cur_val['F_CONT_HOST_%d'%self.wave]),
         })
         return self.cur_val
 
