@@ -1,0 +1,2 @@
+class BadassStage:
+	pass

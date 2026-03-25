@@ -91,6 +91,8 @@ class SimplePowerLawTemplate(PowerLawTemplate):
         slope = self.get_param('slope')
 
         power = simple_power_law(self.ctx.fit_wave, amp, slope)
+        if all(np.isnan(power)):
+            breakpoint()
         comp_dict['POWER'] = power
         return host_model - power
 

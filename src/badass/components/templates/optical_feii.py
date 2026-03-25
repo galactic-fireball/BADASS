@@ -314,7 +314,7 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
             trans.templates = np.sum(trans.conv_temp, axis=1)
 
             if trans.name == 'Z':
-                trans.templates * self.get_param('z_amp')
+                trans.templates *= self.get_param('z_amp')
 
             trans.templates[(self.ctx.fit_wave < trans.range_min) | (self.ctx.fit_wave > trans.range_max)] = 0
 

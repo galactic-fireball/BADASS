@@ -35,6 +35,8 @@ class FitParameter:
         self.is_shared = len(self.dependents) != 0
         if self.expr is None:
             self.expr = self.init
+        if (self.value is None) and (isinstance(self.expr, (int,float))):
+            self.value = self.expr
 
         if isinstance(self.plim, tuple):
             self.plim = list(self.plim) # mutability for expr -> numbers
@@ -78,6 +80,10 @@ class ParameterRegistry:
         return [p for p in self.params.values() if p.is_free]
 
 
+    def free_param_count(self):
+        return len(self.get_free_parameters())
+
+
     def get_prior_parameters(self) -> list[FitParameter]:
         return [p for p in self.params.values() if p.has_prior]
 
@@ -103,7 +109,7 @@ class ParameterRegistry:
             if isinstance(param.expr, (int,float)): # const parameter
                 param.value = param.expr
                 expr_dict[param.name] = param.value
-                param.expr = None # no longer need to evaluate
+                # param.expr = None # no longer need to evaluate
                 continue
 
             elif isinstance(param.expr, dict): # free parameter

@@ -119,7 +119,7 @@ class BlobRegistry:
                 child.append('\t'+ckey)
                 child.append('----')
                 child.append('YES' if blob.is_const else 'NO')
-                child.append(cval)
+                child.append('%0.04f'%cval)
                 table.append(child)
 
 
@@ -227,7 +227,7 @@ class ContinuumBlob(Blob):
     @staticmethod
     def get_conts_at_idx(ctx, idx):
         cont_comps = {
-            'TOTAL': ['POWER', 'HOST_GALAXY', 'BALMER_CONT', 'APOLY', 'MPOLY',],
+            'TOT': ['POWER', 'HOST_GALAXY', 'BALMER_CONT', 'APOLY', 'MPOLY',],
             'AGN': ['POWER', 'BALMER_CONT', 'APOLY', 'MPOLY',],
             'HOST': ['HOST_GALAXY', 'APOLY', 'MPOLY',],
         }
@@ -245,16 +245,16 @@ class ContinuumBlob(Blob):
 
     def compute(self, ctx, kwargs):
         conts = ContinuumBlob.get_conts_at_idx(ctx, self.idx)
-        self.cur_val.update({
-            'F_CONT_TOT_%d'%self.wave: conts['TOTAL']*ctx.target.flux_norm*ctx.target.fit_norm,
-            'F_CONT_AGN_%d'%self.wave: conts['AGN']*ctx.target.flux_norm*ctx.target.fit_norm,
-            'F_CONT_HOST_%d'%self.wave: conts['HOST']*ctx.target.flux_norm*ctx.target.fit_norm,
-        })
-        self.cur_val.update({
-            'L_CONT_TOT_%d'%self.wave: ctx.flux_to_lum(self.cur_val['F_CONT_TOT_%d'%self.wave]),
-            'L_CONT_AGN_%d'%self.wave: ctx.flux_to_lum(self.cur_val['F_CONT_AGN_%d'%self.wave]),
-            'L_CONT_HOST_%d'%self.wave: ctx.flux_to_lum(self.cur_val['F_CONT_HOST_%d'%self.wave]),
-        })
+
+        for segment in ['TOT', 'AGN', 'HOST']:
+            flux = conts[segment]*ctx.target.flux_norm*ctx.target.fit_norm
+            lum = 0.0
+            if flux != 0.0:
+                lum = np.log10(ctx.flux_to_lum(flux))
+                flux = np.log10(flux)
+            self.cur_val['F_CONT_%s_%d'%(segment, self.wave)] = flux
+            self.cur_val['L_CONT_%s_%d'%(segment, self.wave)] = lum
+
         return self.cur_val
 
 
@@ -284,7 +284,7 @@ class ContFracBlob(ContinuumBlob):
     def compute(self, ctx, kwargs):
         conts = ContinuumBlob.get_conts_at_idx(ctx, self.idx)
         for type in ['AGN', 'HOST']:
-            self.cur_val[type+'_FRAC_%d'%self.wave] = conts[type] / conts['TOTAL']
+            self.cur_val[type+'_FRAC_%d'%self.wave] = conts[type] / conts['TOT']
         return self.cur_val
 
 
@@ -305,13 +305,12 @@ class ComponentBlob(Blob):
 
     @classmethod
     def register_comp_blobs(cls, reg, comps):
+        ComponentBlob.obs_wave = ba_utils.redden(reg.ctx.fit_wave, z=reg.ctx.target.z)
         for comp in comps:
             reg.register_blob(cls(name=comp.upper()))
 
 
     def compute(self, ctx, kwargs):
-        if ComponentBlob.obs_wave is None:
-            ComponentBlob.obs_wave = ba_utils.redden(ctx.fit_wave, z=ctx.target.z)
 
         self.comp_spec = BlobRegistry.get_component(ctx, self.name)
 

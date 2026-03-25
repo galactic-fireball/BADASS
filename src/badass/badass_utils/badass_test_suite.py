@@ -88,6 +88,7 @@ def anova_test(resid_A, resid_B, k_A, k_B):
     rss2 = np.sum(resid_B**2)
 
     n = float(len(resid_B))
+    # TODO: should be abs(dfn)? f.cdf is nan when dfn < 0
     dfn = k_B - k_A # deg. of freedom numerator
     dfd = n - k_B  # deg. of freedom denominator
 
@@ -102,13 +103,13 @@ def f_ratio(resid_A, resid_B):
     return np.nanstd(resid_A)/np.nanstd(resid_B)
 
 
-def chi2_metric(eval_ind, mccomps_A, mccomps_B):
-    f_obs = mccomps_B['DATA'][0,:][eval_ind]/np.sum(mccomps_B['DATA'][0,:][eval_ind])
-    f_exp = mccomps_B['MODEL'][0,:][eval_ind]/np.sum(mccomps_B['MODEL'][0,:][eval_ind])
+def chi2_metric(meta_comps_A, meta_comps_B, eval_ind):
+    f_obs = meta_comps_B.data[eval_ind]/np.sum(meta_comps_B.data[eval_ind])
+    f_exp = meta_comps_B.model[eval_ind]/np.sum(meta_comps_B.model[eval_ind])
     chi2_B, pval_B = chisquare(f_obs=f_obs,f_exp=f_exp)
 
-    f_obs = mccomps_A['DATA'][0,:][eval_ind]/np.sum(mccomps_A['DATA'][0,:][eval_ind])
-    f_exp = mccomps_A['MODEL'][0,:][eval_ind]/np.sum(mccomps_A['MODEL'][0,:][eval_ind])
+    f_obs = meta_comps_A.data[eval_ind]/np.sum(meta_comps_A.data[eval_ind])
+    f_exp = meta_comps_A.model[eval_ind]/np.sum(meta_comps_A.model[eval_ind])
     chi2_A, pval_A = chisquare(f_obs=f_obs,f_exp=f_exp)
 
     # The ratio of chi-squared values is defined as the improvement of model B over model A,
@@ -122,30 +123,26 @@ def normal_log_likelihood(data, model, sigma):
     return -0.5*np.sum((data-model)**2/sigma**2 + np.log(2*np.pi*sigma**2))
 
 
-def calculate_BIC(mccomps_A, mccomps_B, k_A, k_B):
+def calculate_BIC(meta_comps_A, meta_comps_B, k_A, k_B):
     # Calculates the Bayesian information criterion (BIC) for two models
 
-    # Unpack the likelihood parameters
-    data_A, model_A, noise_A = mccomps_A['DATA'], mccomps_A['MODEL'], mccomps_A['NOISE'] 
-    data_B, model_B, noise_B = mccomps_B['DATA'], mccomps_B['MODEL'], mccomps_B['NOISE'] 
-    ll_A = normal_log_likelihood(data_A, model_A, noise_A)
-    ll_B = normal_log_likelihood(data_B, model_B, noise_B)
+    # TODO: should use fit_mask?
+    ll_A = normal_log_likelihood(meta_comps_A.data, meta_comps_A.model, meta_comps_A.noise)
+    ll_B = normal_log_likelihood(meta_comps_B.data, meta_comps_B.model, meta_comps_B.noise)
 
-    bic_A = -2*ll_A+k_A*np.log(len(data_A))
-    bic_B = -2*ll_B+k_B*np.log(len(data_B))
+    bic_A = -2*ll_A+k_A*np.log(len(meta_comps_A.data))
+    bic_B = -2*ll_B+k_B*np.log(len(meta_comps_B.data))
     bic_ratio = bic_B/bic_A
 
     return bic_A, bic_B, bic_ratio
 
 
-def calculate_AIC(mccomps_A, mccomps_B, k_A, k_B):
+def calculate_AIC(meta_comps_A, meta_comps_B, k_A, k_B):
     # Calculates the Akaike information criterion (AIC) for two models
 
-    # Unpack the likelihood parameters
-    data_A, model_A, noise_A = mccomps_A['DATA'], mccomps_A['MODEL'], mccomps_A['NOISE'] 
-    data_B, model_B, noise_B = mccomps_B['DATA'], mccomps_B['MODEL'], mccomps_B['NOISE'] 
-    ll_A = normal_log_likelihood(data_A, model_A, noise_A)
-    ll_B = normal_log_likelihood(data_B, model_B, noise_B)
+    # TODO: should use fit_mask?
+    ll_A = normal_log_likelihood(meta_comps_A.data, meta_comps_A.model, meta_comps_A.noise)
+    ll_B = normal_log_likelihood(meta_comps_B.data, meta_comps_B.model, meta_comps_B.noise)
 
     aic_A = -2*ll_A+2*(k_A)
     aic_B = -2*ll_B+2*(k_B)
@@ -154,31 +151,31 @@ def calculate_AIC(mccomps_A, mccomps_B, k_A, k_B):
     return aic_A, aic_B, aic_ratio
 
 
-def calculate_rsquared_ratio(mccomps_A, mccomps_B, eval_ind):
+def calculate_rsquared_ratio(meta_comps_A, meta_comps_B, eval_ind):
 
-    data_A, model_A = mccomps_A['DATA'][0][eval_ind].copy(), mccomps_A['MODEL'][0][eval_ind].copy()
-    data_B, model_B = mccomps_B['DATA'][0][eval_ind].copy(), mccomps_B['MODEL'][0][eval_ind].copy()
+    data_A, model_A = meta_comps_A.data[eval_ind].copy(), meta_comps_A.model[eval_ind].copy()
+    data_B, model_B = meta_comps_B.data[eval_ind].copy(), meta_comps_B.model[eval_ind].copy()
 
     # Since R-squared takes into account lines+continuum, we only want 
     # to be sensitive to flux that comes from lines, so we subtract
     # any contribution to the continuum from both before the calculation.
     # NOTE: this assumes that the continuum subtraction is generally good for both models
-    cont_comps = [
-        'HOST_GALAXY','POWER','APOLY','PPOLY','MPOLY',
-        'NA_OPT_FEII_TEMPLATE','BR_OPT_FEII_TEMPLATE','F_OPT_FEII_TEMPLATE',
-        'S_OPT_FEII_TEMPLATE','G_OPT_FEII_TEMPLATE','Z_OPT_FEII_TEMPLATE',
-        'UV_IRON_TEMPLATE','BALMER_CONT',
-    ]
+    # cont_comps = [
+    #     'HOST_GALAXY','POWER','APOLY','PPOLY','MPOLY',
+    #     'NA_OPT_FEII_TEMPLATE','BR_OPT_FEII_TEMPLATE','F_OPT_FEII_TEMPLATE',
+    #     'S_OPT_FEII_TEMPLATE','G_OPT_FEII_TEMPLATE','Z_OPT_FEII_TEMPLATE',
+    #     'UV_IRON_TEMPLATE','BALMER_CONT',
+    # ]
 
-    for comp in cont_comps:
-        if comp in mccomps_A:
-            comp_A = mccomps_A[comp][0][eval_ind]
-            data_A -= comp_A
-            model_A -= comp_A
-        if comp in mccomps_B:
-            comp_B = mccomps_B[comp][0][eval_ind]
-            data_B -= comp_B
-            model_B -= comp_B
+    # for comp in cont_comps:
+    #     if comp in mccomps_A:
+    #         comp_A = mccomps_A[comp][0][eval_ind]
+    #         data_A -= comp_A
+    #         model_A -= comp_A
+    #     if comp in mccomps_B:
+    #         comp_B = mccomps_B[comp][0][eval_ind]
+    #         data_B -= comp_B
+    #         model_B -= comp_B
 
     # R-squared calculations
     rsquared_A = 1 - np.sum((data_A - model_A)**2) / np.sum(data_A**2)
@@ -315,26 +312,29 @@ def calculate_aon(test, line_list, mccomps, noise):
     return aon
 
 
+def get_dof(ctx):
+    return len(ctx.fit_wave) - ctx.param_reg.free_param_count()
 
-def collect_test_metrics(ctx, fit_results_A, fit_results_B, line_name):
-    fit_mask = ctx.target.fit_mask
-    mccomps_A = fit_results_A['mccomps']
-    resid_A = mccomps_A['RESID'][0][fit_mask]
-    mccomps_B = fit_results_B['mccomps']
-    resid_B = mccomps_B['RESID'][0][fit_mask]
+
+def collect_test_metrics(fit_ctx_A, fit_ctx_B):
+    fit_mask = fit_ctx_B.target.fit_mask
+    meta_comps_A = fit_ctx_A.store.meta_comps
+    resid_A = meta_comps_A.resid[fit_mask]
+    meta_comps_B = fit_ctx_B.store.meta_comps
+    resid_B = meta_comps_B.resid[fit_mask]
 
     metrics = {}
 
     # BADASS Bayesian test
-    ddof = np.abs(fit_results_A['dof'] - fit_results_B['dof'])
+    ddof = np.abs(get_dof(fit_ctx_A) - get_dof(fit_ctx_B))
     _, _, _, conf, _, _, _, _, _, _ = bayesian_AB_test(
         resid_A, resid_B,
-        ctx.fit_wave[fit_mask],
-        ctx.fit_noise[fit_mask],
-        ctx.fit_spec[fit_mask],
+        fit_ctx_B.fit_wave[fit_mask],
+        fit_ctx_B.fit_noise[fit_mask],
+        fit_ctx_B.fit_spec[fit_mask],
         np.arange(len(resid_A)),
         ddof,
-        ctx.target.cfg.io.output_dir,
+        fit_ctx_B.target.cfg.io.output_dir,
         plot=False
     )
     metrics['BADASS'] = conf
@@ -344,14 +344,14 @@ def collect_test_metrics(ctx, fit_results_A, fit_results_B, line_name):
     metrics['SSR_RATIO'] = ssr_ratio
 
     # ANOVA
-    k_A, k_B = fit_results_A['npar'], fit_results_B['npar']
+    k_A, k_B = fit_ctx_A.param_reg.free_param_count(), fit_ctx_B.param_reg.free_param_count()
     f_stat, f_pval, f_conf = anova_test(resid_A, resid_B, k_A, k_B)
     metrics['ANOVA'] = f_conf
 
     # AIC / BIC
-    aic_A, aic_B, aic = calculate_AIC(mccomps_A, mccomps_B, k_A, k_B)
+    aic_A, aic_B, aic = calculate_AIC(meta_comps_A, meta_comps_B, k_A, k_B)
     metrics['AIC'] = aic
-    bic_A, bic_B, bic = calculate_BIC(mccomps_A, mccomps_B, k_A, k_B)
+    bic_A, bic_B, bic = calculate_BIC(meta_comps_A, meta_comps_B, k_A, k_B)
     metrics['BIC'] = bic
 
     # F-ratio
@@ -359,11 +359,11 @@ def collect_test_metrics(ctx, fit_results_A, fit_results_B, line_name):
 
     # chi2
     eval_ind = np.arange(len(resid_A))  # Standard evaluation region
-    chi2_B, chi2_A, chi2_ratio = chi2_metric(eval_ind, mccomps_A, mccomps_B)
+    chi2_B, chi2_A, chi2_ratio = chi2_metric(meta_comps_A, meta_comps_B, eval_ind)
     metrics['CHI2_RATIO'] = chi2_ratio
 
     # R-squared ratio
-    rsquared_A, rsquared_B, rsquared_ratio = calculate_rsquared_ratio(mccomps_A, mccomps_B, eval_ind)
+    rsquared_A, rsquared_B, rsquared_ratio = calculate_rsquared_ratio(meta_comps_A, meta_comps_B, eval_ind)
     metrics['RCHI2_RATIO'] = rsquared_ratio
 
     return metrics

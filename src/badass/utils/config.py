@@ -3,7 +3,7 @@ import importlib.util
 import json
 import pathlib
 import prodict
-from pydantic import AfterValidator, AliasChoices, BeforeValidator, BaseModel, ConfigDict, DirectoryPath, Field, FiniteFloat, NonNegativeInt, NonNegativeFloat, PositiveInt, PositiveFloat
+from pydantic import AfterValidator, AliasChoices, BeforeValidator, BaseModel, ConfigDict, DirectoryPath, Field, FiniteFloat, model_validator, NonNegativeInt, NonNegativeFloat, PositiveInt, PositiveFloat, TypeAdapter
 from typing import Annotated, Any, ClassVar, List, Literal, types, Union
 
 import badass.utils.constants as consts
@@ -23,6 +23,24 @@ class CustomBaseModel(BaseModel):
     is_component: ClassVar[bool] = False
     alt_doc_name: ClassVar[str] = None
     description: ClassVar[str] = None
+
+    @model_validator(mode='after')
+    def inject_param_defaults(self):
+        for name, value in self.dict().items():
+            if not isinstance(value, dict):
+                continue
+
+            field_default = self.model_fields[name].default
+            if not isinstance(field_default, dict):
+                continue
+
+            for k,v in field_default.items():
+                if not k in value:
+                    value[k] = v
+            self[name] = value
+
+        return self
+
 
     def __getitem__(self, key:str) -> Any:
         return getattr(self, key)
@@ -62,7 +80,7 @@ class IOOptions(CustomBaseModel):
     infmt: Literal[*consts.SUPPORTED_INSTRUMENTS] = Field(None, json_schema_extra={'required':True}, description='The format of the input file. Currently supported options: `[\'sdss\', \'muse\', \'nirspec\', \'miri\']`')
     output_dir: Annotated[DirectoryPath, BeforeValidator(to_path)] = Field(None, description='The output directory of the BADASS results, logs, plots, etc.')
     overwrite: bool = Field(False, description='If `True`, overwrite the `output_dir` if it already exists.')
-    multiprocess: bool = Field(False, description='For runs of multiple spectra or IFU cubes, run in multiprocess mode')
+    multiprocess: int = Field(1, description='For runs of multiple spectra or IFU cubes, run in multiprocess mode')
     log_level: str = Field('info', description='The output log level. Options: `[\'debug\', \'info\', \'warning\', \'error\', \'critical\']`')
     filter: str = Field(None, description='The filter of the provided NIRSpec data cube.')
     disperser: str = Field(None, description='The disperser of the provided NIRSpec data cube.')
@@ -81,17 +99,29 @@ def dict_to_prodict(v:dict|prodict.Prodict) -> prodict.Prodict:
     return prodict.Prodict(v)
 
 
+class Cosmology(CustomBaseModel):
+    H0: float = 70.0
+    Om0: float = 0.30
+
+
+class FitArea(CustomBaseModel):
+    # TODO: after validator to change spaxel to spaxels for consistency
+    type: Literal['spaxel', 'spaxels', 'bins', 'aperture'] = None
+    args: dict | list = None
+    plot_input: bool = False
+
+
 class FitOptions(CustomBaseModel):
     fit_reg: Annotated[list[NonNegativeNum] | str, AfterValidator(validate_fitreg)] = Field('auto', description='The minimum and maximum desired fitting wavelength in angstroms.', examples=[(4400,5500), '\'auto\''])
     redshift: NonNegativeNum = Field(-1.0, description='Redshift of the fitting target')
     n_basinhop: NonNegativeInt = Field(25, description='Number of successive `niter_success` times the basinhopping algorithm needs to achieve a solution. The fit becomes much better with more success times, however this can increase the time to a solution significantly.')
     max_like_niter: NonNegativeInt = Field(10, description='Number of bootstrapping iterations to perform after the initial basinhopping fit. This is a means to obtain uncertainties on parameters without performing MCMC fitting, however, do not produce as robust uncertainties as MCMC.')
     # TODO: fit_area specific definition
-    fit_area: Annotated[dict[str, list | dict | bool] | prodict.Prodict, AfterValidator(dict_to_prodict)] = Field({}, description='Defines the area to be fit for data cubes. See `examples/muse_examples.py` for usage.')
+    fit_area: FitArea = Field(default=FitArea(), description='Defines the area to be fit for data cubes. See `examples/muse_examples.py` for usage.')
     reweighting: bool = Field(True, description='If `True`, BADASS will reweight the noise vector to achieve a reduced chi-squared ~ 1. This is done after the initial basinhopping fit, and applied to any bootstrapped uncertainties and MCMC fitting performed afterward. This does not affect the chi-squared ratio metric used in line and configuration testing, but does effect the amplitude-over-noise and SNR calculations in BADASS.')
     fit_stat: str = Field('ML', description='The fit statistic used for the likelihood. Options:\n\n* `\'ML\'` for standard maximum likelihood (pixels weighted by noise with no noise scaling).\n* `\'OLS\'` for ordinary least-squares fitting (all pixels weighted by same amount).')
-    cosmology: Annotated[dict[str,NonNegativeNum] | prodict.Prodict, AfterValidator(dict_to_prodict)] = Field(prodict.Prodict({'H0':70.0, 'Om0': 0.30}), description='The flat Lambda-CDM cosmology assumed for calculating luminosities from fluxes.')
-    test_lines: bool = Field(False, description='Performs tests for lines. Options are specified in `test_options`.')
+    cosmology: Cosmology = Field(default=Cosmology(), description='The flat Lambda-CDM cosmology assumed for calculating luminosities from fluxes.')
+    test_models: bool = Field(False, description='Performs tests for lines. Options are specified in `test_options`.')
     mask_emline: bool = Field(False, description='Mask any significant absorption and emission features relative to the continuum. This uses an automated iterative moving median filter of various sizes to detect significant flux differences between window sizes. Good for continuum fitting but tends to over mask lots of features near the edges of the spectrum.')
     mask_bad_pix: bool = Field(False, description='Mask pixels which the specified instrument has flagged as bad due to sky line subtraction or cosmic rays.')
     mask_metal: bool = Field(False, description='Performs the same moving median filter algorithm as `mask_emline` but only to absorption features. Works well for metal absorption features seen typically in high-redshift spectra.')
@@ -248,11 +278,6 @@ class SpectralLine(CustomBaseModel):
     center: float | int | None = None
 
 
-class CombinedLine(SpectralLine):
-    type: Literal['combined'] = 'combined'
-    children: list[Union['CombinedLine', 'NarrowLine', 'BroadLine', 'AbsorpLine']] = []
-
-
 class BaseLine(SpectralLine):
 
     # General hyperpars; child classes can override
@@ -287,16 +312,25 @@ class AbsorpLine(BaseLine):
     type: Literal['absorp'] = 'absorp'
 
 
+class CombinedLine(SpectralLine):
+    type: Literal['combined'] = 'combined'
+    children: list[Union['CombinedLine', 'NarrowLine', 'BroadLine', 'AbsorpLine']]
+
+
+SpecLine = Annotated[NarrowLine | BroadLine | AbsorpLine | CombinedLine, Field()]
+
+
 # TODO: add descriptions
 class TestOptions(CustomBaseModel):
-    test_mode: Literal['line', 'config'] = 'line'
-    lines: list[str | list[str]] = []
-    metrics: dict[str,Number] = {}
+    mode: Literal['line', 'config'] = 'line'
+    test_sets: list[list[dict] | dict] = Field(default_factory=list) # TODO: list[list[SpectralLine]]
+    metrics: dict[str,Number] = Field(default_factory=dict)
     conv_mode: Literal['all', 'any'] = 'all'
     auto_stop: bool = False
     force_best: bool = True
     continue_fit: bool = True
     plot_tests: bool = True
+
 
 
 class BadassConfig(CustomBaseModel):
@@ -320,9 +354,20 @@ class BadassConfig(CustomBaseModel):
 
     test: TestOptions = Field(default=TestOptions(), alias=AliasChoices('test', 'test_options'))
 
-    user_lines: list[CombinedLine | NarrowLine | BroadLine | AbsorpLine] = [] # TODO: | SpectralLine
-    user_constraints: list[list[str | Number]] = []
-    user_mask: list[list[NonNegativeNum]] = []
+    user_lines: list[SpecLine] = Field(default_factory=list) # TODO: | SpectralLine
+    user_constraints: list[list[str | Number]] = Field(default_factory=list)
+    user_mask: list[list[NonNegativeNum]] = Field(default_factory=list)
+
+    _line_adapter = TypeAdapter(SpecLine)
+
+
+    def add_line(self, line):
+        self.user_lines.append(self._line_adapter.validate_python(line))
+
+
+    def extend_lines(self, lines):
+        self.user_lines.extend([self._line_adapter.validate_python(line) for line in lines])
+
 
     @classmethod
     def from_dict(cls, input_dict):

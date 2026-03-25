@@ -22,7 +22,7 @@ class BadassInput():
         if not hasattr(self, 'valid'):
             self.valid = True
         if not hasattr(self, 'err_log'):
-            self.err_log = ''
+            self.err_log = None
 
         if (not hasattr(self, 'wave')) or (not hasattr(self, 'spec')):
             self.valid = False
@@ -61,7 +61,7 @@ class BadassInput():
             self.outdir = pathlib.Path(os.getcwd()).resolve().joinpath(self.outdir)
 
         # TODO: check for fit completed
-        if self.outdir.exists():
+        if self.outdir.joinpath('max_likelihood_fit.pdf').exists():
             if self.cfg.io.get('overwrite', False):
                 print('Removing old output directory: [%s]'%str(self.outdir))
                 shutil.rmtree(str(self.outdir))
@@ -215,7 +215,7 @@ class BadassInput():
 
         readers = module.Reader.parse(input_data, cfg)
         readers = readers if isinstance(readers, list) else [readers]
-        # valid_readers = []
+        valid_readers = [reader for reader in readers if reader.valid]
         # for reader in readers:
         #     if not reader.valid:
         #         continue
@@ -225,7 +225,7 @@ class BadassInput():
         #     # TODO: log invalid readers
         # return valid_readers
 
-        return readers
+        return valid_readers
 
 
     @classmethod

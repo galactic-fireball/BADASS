@@ -186,8 +186,8 @@ class MCStore(StageStore):
             param_dict['med'] *= self.ctx.target.fit_norm
             param_dict['std'] *= self.ctx.target.fit_norm
 
-        for comp in self.comps.values():
-            comp *= self.ctx.target.fit_norm
+        for key, comp in self.comps.items():
+            self.comps[key] = comp * self.ctx.target.fit_norm
 
         self.meta_comps.finalize(self.ctx.target.fit_norm)
 

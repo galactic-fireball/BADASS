@@ -34,21 +34,16 @@ class CubeReader(BadassInput):
         }
 
         fit_area = cfg.fit.fit_area
-        fit_area_func = None
-        for key in fit_area.keys():
-            if key in area_parsers:
-                fit_area_func = area_parsers[key]
-                break
-
-        if fit_area_func is None:
+        if not fit_area.type in area_parsers:
             raise Exception('Fit area type unsupported: %s'%fit_area_type)
+        fit_area_func = area_parsers[fit_area.type]
 
         return fit_area_func(cube_dict, input_data, cfg)
 
 
     @classmethod
     def spaxel_parse(cls, cube_dict, input_data, cfg):
-        spaxels = cfg.fit.fit_area.get('spaxels', cfg.fit.fit_area.get('spaxel', None))
+        spaxels = cfg.fit.fit_area.args
         nx = cube_dict.get('nx', cube_dict['spec'].shape[0])
         ny = cube_dict.get('ny', cube_dict['spec'].shape[1])
 
@@ -72,7 +67,7 @@ class CubeReader(BadassInput):
         else:
             raise Exception('spaxel list invalid')
 
-        if cfg.fit.fit_area.get('plot_input', False):
+        if cfg.fit.fit_area.plot_input:
             medcube = np.nanmedian(cube_dict['spec'], axis=2)
             medcube[np.isnan(medcube)] = 0.0
 
@@ -89,7 +84,7 @@ class CubeReader(BadassInput):
         inputs = []
         for x,y in fit_spaxels:
             spax_dict = copy.deepcopy(cube_dict)
-            spax_dict['cfg'].fit.fit_area.spaxels = (x,y)
+            spax_dict['cfg'].fit.fit_area.args = [(x,y),]
             spax_dict['cfg'].io.output_dir = '%s/spaxel_%d_%d' % (spax_dict['cfg'].io.output_dir,x,y)
             spax_dict['name'] = 'spaxel_%d_%d'%(x,y)
 
@@ -175,6 +170,7 @@ class CubeReader(BadassInput):
         aperture_options = options.fit_options.fit_area.aperture
         # TODO: RectangularAperture
         # TODO: other methods (mean, etc.)
+        # TODO: batch run multiple apertures
 
         def get_aperture_spec(aperture):
             if options.fit_options.fit_area.get('plot_input', False):

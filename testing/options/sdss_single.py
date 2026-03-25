@@ -6,7 +6,7 @@ io = {
 }
 
 fit = {
-    'fit_reg': (4400,5500),
+    'fit_reg': (3800,5500),
     'n_basinhop': 15,
 }
 
@@ -38,17 +38,17 @@ comp = {
 }
 
 
-# from badass.components.spectral_lines.line_lists import type1agn_default1
-# user_lines = type1agn_default1.user_lines
+from badass.components.spectral_lines.line_lists import type1agn_default1
+user_lines = type1agn_default1.user_lines
 
 from badass.components.spectral_lines.line_lists import common_lines
 
 br_hbeta = common_lines.BR_H_BETA.copy()
 # br_hbeta['profile'] = 'gauss-hermite'
-br_hbeta['profile'] = 'uniform'
+# br_hbeta['profile'] = 'uniform'
 # br_hbeta['n_moments'] = 5
 
 na_hbeta = common_lines.NA_H_BETA.copy()
 na_hbeta.pop('disp')
 
-user_lines = [na_hbeta, br_hbeta]
+# user_lines = [na_hbeta, br_hbeta]

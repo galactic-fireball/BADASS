@@ -88,45 +88,6 @@ class FitStage:
     MCMC = 3
 
 
-def run_BADASS(inputs, **kwargs):
-    nprocesses = kwargs.get('nprocesses', 1)
-    multiprocess = kwargs.get('multiprocess', nprocesses > 1)
-
-    cfg = BadassConfig.get_config_from_args(kwargs)
-    targets = BadassInput.get_inputs(inputs, cfg)
-
-    # TODO: handle multiple option dicts
-    if isinstance(cfg, list): cfg = cfg[0]
-    result_writer = ResultWriter(cfg)
-
-    if multiprocess:
-        with mp.Pool(processes=nprocesses, maxtasksperchild=1) as pool:
-            pool.map(run_context, targets)
-            pool.close()
-            pool.join()
-    else:
-        for target in targets:
-            run_context(target)
-
-    result_writer.compile_results()
-
-
-def run_context(target):
-    if not target.valid:
-        return
-
-    # create a new logger for this process
-    target.set_new_logger()
-    target.postinit()
-
-    if not target.valid:
-        return
-
-    ctx = BadassRunContext(target)
-    ctx.run()
-    # result_writer.add_fit_ctx(ctx)
-
-
 class BadassRunContext:
 
     def __init__(self, target):
@@ -160,11 +121,6 @@ class BadassRunContext:
         #       - specify inputs and output of each (maybe separate classes?)
 
         self.initialize_fit()
-
-        # Line testing is performed first for a better line list
-        # determination and number of components
-        if not self.run_tests():
-            return
 
         self.fit_stage = FitStage.BOOTSTRAP
         if not self.max_likelihood():
@@ -212,226 +168,6 @@ class BadassRunContext:
         self.log.output_cfg()
 
 
-    # TODO: move to separate testing file
-    def run_tests(self):
-        test_mode_dict = {
-            'line': self.line_test,
-            'config': self.config_test,
-        }
-
-        if not self.cfg.fit.test_lines:
-            return True # continue fit
-
-        test_mode = self.cfg.test.test_mode
-        if test_mode not in test_mode_dict:
-            raise Exception('Unimplemented test mode: %s'%test_mode)
-
-        # TODO: log test results
-        return test_mode_dict[test_mode]()
-
-
-    def line_test(self):
-        # TODO: update once new line list specifications are in place
-        test_cfg = self.cfg.test
-        if isinstance(test_cfg.lines[0], str): test_cfg.lines = [line for line in test_cfg.lines]
-
-        if not self.cfg.user_lines:
-            raise ValueError('The input user line list is None or empty. There are no lines to test. You cannot use the default line list to test for lines, as they must be explicitly defined by user lines. See examples for details...')
-
-        self.log.debug('Performing line testing for %s' % (test_cfg.lines))
-
-        # TODO: validate lines to test are in line list and within the fitting region
-
-        all_test_fits = []
-        all_test_metrics = []
-
-        # TODO: deepcopy's needed?
-        for i, test_lines in enumerate(test_cfg.lines):
-            # TODO: make class or dict
-            # test_set = [(label, [test_lines], {full_line_list}), ...]
-            test_set = []
-            full_line_list = {}
-            max_ncomp = 0
-
-            for label, line_dict in self.line_list.items():
-                if (label not in test_lines) and (line_dict.get('parent') not in test_lines):
-                    # add any line that's not a test line or a test line child to line list
-                    full_line_list[label] = line_dict
-                else:
-                    # get the max ncomps for all test lines
-                    max_ncomp = max(max_ncomp, line_dict.get('ncomp', -1))
-
-            # first test contains none of the test lines
-            test_set.append(('NULL_TEST', [], copy.deepcopy(full_line_list)))
-
-            # add subsequent tests, adding a component to each test line as specified
-            for ncomp in range(1, max_ncomp+1):
-                for label, line_dict in self.line_list.items():
-                    if ((label in test_lines) or (line_dict.get('parent') in test_lines)) and line_dict.get('ncomp', 1) == ncomp:
-                        full_line_list[label] = line_dict
-                test_set.append(('NCOMP_%d'%ncomp, test_lines, copy.deepcopy(full_line_list)))
-
-            test_fit_results, test_metrics = self.run_test_set(test_set, test_title=str(i))
-            all_test_fits.append(test_fit_results)
-            all_test_metrics.append(test_metrics)
-
-        res_dir = self.target.outdir.joinpath('line_test_results')
-        res_dir.mkdir(parents=True, exist_ok=True)
-        with open(res_dir.joinpath('fit_results.pkl'), 'wb') as f: pickle.dump(all_test_fits, f)
-        with open(res_dir.joinpath('test_results.pkl'), 'wb') as f: pickle.dump(all_test_metrics, f)
-
-        # recreate line list based on results
-        force_thresh = np.inf
-        new_line_list = {}
-
-        all_test_lines = [line for line in test_lines for test_lines in test_cfg.lines]
-        for label, line_dict in self.line_list.items():
-            if (label not in all_test_lines) and (line_dict.get('parent') not in all_test_lines):
-                new_line_list[label] = line_dict
-
-        for test_fit, test_metrics in zip(all_test_fits,all_test_metrics):
-            # look in reverse to find test with most ncomps that passed
-            for label_A, label_B, metrics in test_metrics[::-1]:
-                if label_B in test_fit and test_fit[label_B]['pass']:
-                    force_thresh = min(force_thresh, test_fit[label_B]['rmse'])
-                    new_line_list.update(test_fit[label_B]['line_list'])
-                    break
-
-        self.line_list = new_line_list
-        self.force_thresh = force_thresh if np.isfinite(force_thresh) else np.inf
-
-        # TODO: fix to limit number of times initialize_pars needs to be called
-        # TODO: instead of user_lines, use whatever line_list is set in the context
-        self.initialize_pars(user_lines=self.line_list)
-
-        return test_cfg.continue_fit
-
-
-    def config_test(self):
-        test_cfg = self.cfg.test
-
-        if not self.cfg.user_lines:
-            raise ValueError('The input user line list is None or empty.  There are no lines to test.  You cannot use the default line list to test for lines, as they must be explicitly defined by user lines.  See examples for details...')
-
-        if len(test_cfg.lines) < 2:
-            raise ValueError('The number of configurations to test must be more than 1!')
-
-        # Check to see that each line in each configuration is in the line list
-        for config in test_cfg.lines:
-            if not np.all([True if line in self.line_list else False for line in config]):
-                raise ValueError('A line in a configuration is not defined in the input line list!')
-
-        self.log.debug('Performing configuration testing for %d configurations...' % len(test_cfg.lines))
-
-        # test_set = [(label, [test_lines], {full_line_list}), ...]
-        test_set = []
-
-        for i, test_config in enumerate(test_cfg.lines):
-            # For each config, we want *only* the lines specified
-            test_line_list = {line_name:line_dict for line_name,line_dict in self.line_list.items() if line_name in test_config}
-            test_set.append(('CONFIG_%d'%(i+1), test_config, test_line_list))
-
-        test_fit_results, test_metrics = self.run_test_set(test_set)
-
-        res_dir = self.target.outdir.joinpath('config_test_results')
-        res_dir.mkdir(parents=True, exist_ok=True)
-        with open(res_dir.joinpath('fit_results.pkl'), 'wb') as f: pickle.dump(test_fit_results, f)
-        with open(res_dir.joinpath('test_results.pkl'), 'wb') as f: pickle.dump(test_metrics, f)
-
-        self.force_thresh = np.inf
-        self.line_list = test_set[0][2] # default line_list to first config
-        # look in reverse to find last test config that passed
-        for label_A, label_B, metrics in test_metrics[::-1]:
-            if test_fit_results[label_B]['pass']:
-                self.line_list = test_fit_results[label_B]['line_list']
-                self.force_thresh = test_fit_results[label_B]['rmse']
-                break
-
-        if not test_cfg.continue_fit:
-            return
-
-        # TODO: fix to limit number of times initialize_pars needs to be called
-        self.initialize_pars(user_lines=self.line_list)
-
-        return test_cfg.continue_fit
-
-
-    # TODO: do something with:
-    # Calculate R-Squared statistic of best fit
-    # r2 = badass_test_suite.r_squared(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
-    # Calculate rCHI2 statistic of best fit
-    # rchi2 = badass_test_suite.r_chi_squared(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]),copy.deepcopy(mccomps["NOISE"][0]),len(_param_dict))
-    # Calculate RMSE statistic of best fit
-    # rmse = lowest_rmse#badass_test_suite.root_mean_squared_error(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
-    # Calculate MAE statistic of best fit
-    # mae = badass_test_suite.mean_abs_error(copy.deepcopy(mccomps["DATA"][0]),copy.deepcopy(mccomps["MODEL"][0]))
-
-    def run_test_set(self, test_set, test_title=None):
-
-        # test_set = [(label, [test_lines], {full_line_list}), ...]
-
-        # TODO: all test_labels are unique
-        # {label: {fit_results}), ...}
-        test_fit_results = {}
-
-        # [(label1, label2, {metrics}), ...]
-        test_metrics = []
-
-        for test_label, test_lines, full_line_list in test_set:
-
-            self.initialize_pars(user_lines=full_line_list)
-            mcpars, mccomps, mcLL, lowest_rmse = self.max_likelihood(line_test=True)
-
-            # Calculate degrees of freedom of fit; nu = n - m (n number of observations minus m degrees of freedom (free fitted parameters))
-            dof = len(self.fit_wave)-len(self.param_dict)
-            if dof <= 0:
-                self.log.warning('WARNING: Degrees-of-Freedom in fit is <= 0.  One should increase the test range and/or decrease the number of free parameters of the model appropriately')
-                dof = 1
-
-            if self.cfg.fit.reweighting:
-                rchi2 = badass_test_suite.r_chi_squared(mccomps['DATA'][0], mccomps['MODEL'][0], mccomps['NOISE'][0], len(self.param_dict))
-                aon = badass_test_suite.calculate_aon(test_lines, full_line_list, mccomps, self.fit_noise[self.target.fit_mask]*np.sqrt(rchi2))
-            else:
-                aon = badass_test_suite.calculate_aon(test_lines, full_line_list, mccomps, self.fit_noise[self.target.fit_mask])
-
-            fit_results = {'mcpars':copy.deepcopy(mcpars),'mccomps':copy.deepcopy(mccomps),'mcLL':copy.deepcopy(mcLL),'line_list':full_line_list,'dof':dof,'npar':len(self.param_dict),'rmse':lowest_rmse, 'aon':aon}
-            test_fit_results[test_label] = fit_results
-
-            if len(test_fit_results.keys()) == 1: # first run
-                prev_label, prev_results = test_label, fit_results
-                continue
-
-            metrics = badass_test_suite.collect_test_metrics(self, prev_results, fit_results, test_lines[0])
-
-            if self.target.cfg.test.plot_tests:
-                plotting.create_test_plot(self.target, test_fit_results, prev_label, test_label, test_title=test_title)
-
-            test_pass = badass_test_suite.thresholds_met(self.target.cfg.test, metrics, fit_results)
-            # test_pass = False
-            fit_results['pass'] = test_pass
-
-            test_metrics.append((prev_label, test_label, metrics))
-            ptbl = PrettyTable()
-            ptbl.field_names = ['TEST A', 'TEST B'] + list(metrics.keys()) + ['AON', 'PASS']
-            ptbl.add_row([prev_label, test_label] + ['%f'%v for v in metrics.values()] + ['%f'%aon, test_pass])
-            self.log.debug(ptbl)
-
-            self.log.debug('(Test %s)' % 'Passed' if test_pass else 'Failed')
-            if test_pass and self.target.cfg.test.auto_stop:
-                self.log.debug('metric thresholds met, stopping')
-                break
-
-            prev_label, prev_results = test_label, fit_results
-
-        ptbl = PrettyTable()
-        ptbl.field_names = ['TEST A', 'TEST B'] + list(test_metrics[0][2].keys()) + ['AON', 'PASS']
-        for label_A, label_B, metrics in test_metrics:
-            ptbl.add_row([label_A, label_B] + ['%f'%v for v in metrics.values()] + ['%f'%test_fit_results[label_B]['aon'], test_fit_results[label_B]['pass']])
-        self.log.info(f'Test Results for {test_lines}:\n'+str(ptbl))
-
-        return test_fit_results, test_metrics
-
-
     skip_comps = ['DATA','WAVE','MODEL','NOISE','RESID','POWER','HOST_GALAXY','BALMER_CONT','APOLY','MPOLY',]
     tied_target_pars = ['amp', 'disp', 'voff', 'shape', 'h3', 'h4', 'h5', 'h6', 'h7', 'h8', 'h9', 'h10',]
 
@@ -440,19 +176,19 @@ class BadassRunContext:
             return -(self.lnprob()[0]) # only care about the first returned value
 
 
-    def max_likelihood(self, line_test=False):
+    def max_likelihood(self):
 
         self.log.debug('Performing max likelihood fitting')
         if len(self.param_reg.get_free_parameters()) == 0:
             self.log.warn('No parameters to fit!')
 
-            # TODO: handle differently
-            if line_test:
-                log_like = -(self.lnprob()[0]) # runs the model with any const lines/templates
-                comps = {k:np.array([v,]) for k,v in self.comp_dict.items()}
-                lowest_rmse = badass_test_suite.root_mean_squared_error(self.fit_spec, np.zeros(len(self.fit_spec)))
-                return {}, comps, np.array([log_like,]), lowest_rmse
-
+            self.store = stores.MCStore(ctx=self, niters=1)
+            self.store.save_iter({'x':[],'fun':0.0})
+            self.fit_model()
+            self.reweight()
+            self.store.compile_results()
+            self.store.dump_results()
+            self.store.output()
             return
 
 
@@ -650,6 +386,14 @@ class BadassRunContext:
 
         # The final model
         model = np.sum(list(self.store.comps.values()), axis=0)
+
+        if all(np.isnan(model)):
+
+            for key, comp in self.store.comps.items():
+                if all(np.isnan(comp)):
+                    print(key)
+
+            breakpoint()
 
         # TODO: does this need to be done every fit_model call?
         self.store.meta_comps = stores.MetaComps(data=self.fit_spec,wave=self.fit_wave,noise=self.fit_noise,model=model,resid=self.fit_spec-model)

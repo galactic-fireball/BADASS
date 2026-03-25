@@ -9,10 +9,12 @@ fit_options = {
     'fit_reg': (4800,5200),
     'redshift': 0.00348372,
     'fit_area': {
+        'type': 'spaxels',
+        'args': [(20,30),(24,33),(30,39)],
         # 'bins': {'side_length':3},
         # 'bins': {'side_length':3, 'x': (10,40), 'y':(10,35), 'method': 'mean'},
         # 'spaxels': {'x': (20,30), 'y': (15,30)},
-        'spaxels': [(20,30),(24,33),(30,39)],
+        # 'spaxels': [(20,30),(24,33),(30,39)],
         # 'spaxels': 'all',
         # 'plot_input': True,
     },
