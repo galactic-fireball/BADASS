@@ -61,8 +61,7 @@ class SpectralLine(BadassComponent):
     def initialize_spectral_lines(_ctx, _line_list):
         SpectralLine.ctx = _ctx
         SpectralLine.param_reg = SpectralLine.ctx.param_reg
-        lines = [SpectralLine.from_dict(line_dict, None) for line_dict in capitalize(_line_list)]
-        return [line for line in lines if line]
+        return [line for line in [SpectralLine.from_dict(line_dict, None) for line_dict in capitalize(_line_list)] if not line is None]
 
 
     @staticmethod
@@ -85,7 +84,7 @@ class SpectralLine(BadassComponent):
 
         # make sure line is in the fitting region
         if (line_dict['CENTER'] <= SpectralLine.ctx.target.wave[0]+EDGE_PAD) or (line_dict['CENTER'] >= SpectralLine.ctx.target.wave[-1]-EDGE_PAD):
-            SpectralLine.ctx.log.warn('Not fitting line %s (out of fit region)'%line_dict['NAME'])
+            SpectralLine.ctx.log.warn('Not fitting line %s (out of fit region)'%(line_dict['NAME']))
             return None
 
         # if you do not have a name, one will be provided for you
@@ -99,7 +98,7 @@ class SpectralLine(BadassComponent):
 
         # check that user wants to fit this line type
         if (line_type != 'COMBINED') and (not SpectralLine.ctx.cfg.comp.fit(line_type.lower())):
-            SpectralLine.ctx.log.warning('Not fitting %s line (unfit type): %s'%(line_type,line_dict['NAME']))
+            SpectralLine.ctx.log.warn('Not fitting %s line (unfit type): %s'%(line_type,line_dict['NAME']))
             return None
 
         return cls(line_dict, parent)
@@ -145,11 +144,11 @@ class SpectralLine(BadassComponent):
         # AMP
         amp_val = self.line_dict.get('AMP')
         # if the user wants BADASS to determine a good amp init guess, and amp is a free parameter
-        # if (self.line_dict['AMP_ADJUST']) and (isinstance(amp_val,dict)):
-        #     init = self.get_amp_init()
-        #     if (amp_val['plim'][0] <= init) and (init <= amp_val['plim'][1]):
-        #         self.ctx.log.info('Adjusting %s amp to %0.04f'%(self.name,init))
-        #         amp_val['init'] = init
+        if (self.line_dict['AMP_ADJUST']) and (isinstance(amp_val,dict)):
+            init = self.get_amp_init()
+            if (amp_val['plim'][0] <= init) and (init <= amp_val['plim'][1]):
+                self.ctx.log.info('Adjusting %s amp to %0.04f'%(self.name,init))
+                amp_val['init'] = init
 
         param_vals['AMP'] = amp_val
 
@@ -163,11 +162,11 @@ class SpectralLine(BadassComponent):
             self.pr.add_param(name=voff_val, expr=tied_voff_val, source=self.name)
 
         # if the user wants BADASS to determine a good voff init guess, and voff is a free parameter
-        # elif (self.line_dict['VOFF_ADJUST']) and (isinstance(voff_val,dict)):
-        #     init = self.get_voff_init()
-        #     if (voff_val['plim'][0] <= init) and (init <= voff_val['plim'][1]):
-        #         self.ctx.log.info('Adjusting %s voff to %0.04f'%(self.name,init))
-        #         voff_val['init'] = init
+        elif (self.line_dict['VOFF_ADJUST']) and (isinstance(voff_val,dict)):
+            init = self.get_voff_init()
+            if (voff_val['plim'][0] <= init) and (init <= voff_val['plim'][1]):
+                self.ctx.log.info('Adjusting %s voff to %0.04f'%(self.name,init))
+                voff_val['init'] = init
 
         param_vals['VOFF'] = voff_val
 
@@ -238,7 +237,6 @@ class SpectralLine(BadassComponent):
 
         line_comp = self.line_profile.construct_line(self)
         line_comp.resize(len(host_model), refcheck=False) # pad with zeros if needed
-
         comp_dict[self.name] = line_comp
         host_model -= line_comp
 

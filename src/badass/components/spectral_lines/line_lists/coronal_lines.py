@@ -1,0 +1,10 @@
+NEV_3346 = {'name': 'NEV_3346', 'center': 3346.783}
+NEV_3426 = {'name': 'NEV_3426', 'center': 3426.863, 'disp': 'NEV_3346_DISP', 'voff': 'NEV_3346_VOFF'}
+NEIII_3869 = {'name': 'NEIII_3869', 'center': 3869.857}
+NEIII_3968 = {'name': 'NEIII_3968', 'center': 3968.593, 'disp': 'NEIII_3869_DISP', 'voff': 'NEIII_3869_VOFF'}
+FEVI_5638 = {'name': 'FEVI_5638', 'center': 5637.6, 'disp': 'FEVI_5677_DISP', 'voff': 'FEVI_5677_VOFF'}
+FEVI_5677 = {'name': 'FEVI_5677', 'center': 5677.0}
+FEVII_5720 = {'name': 'FEVII_5720', 'center': 5720.7, 'disp': 'FEVII_6087_DISP', 'voff': 'FEVII_6087_VOFF'}
+FEVII_6087 = {'name': 'FEVII_6087', 'center': 6087.0}
+FEX_6374 = {'name': 'FEX_6374', 'center': 6374.51, 'disp': 'NII_6585_DISP'}
+FEXI_7892 = {'name': 'FEXI_7892', 'center': 7891.8}

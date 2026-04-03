@@ -121,12 +121,9 @@ class HostTemplate(BadassTemplate):
         self.vsyst = np.log(lam_temp[0]/self.ctx.fit_wave[0]) * consts.c
         self.ssp_fft, self.npad = template_rfft(templates)
 
-        # only if disp and vel are constant, can we pre_convolve before the fit
-        self.pre_convolve = ('disp' in self.const_params) and ('vel' in self.const_params)
-
         if self.pre_convolve:
             self.conv_host = convolve_gauss_hermite(self.ssp_fft, self.npad, float(self.ctx.target.velscale),
-                           [self.const_params['vel'], self.const_params['disp']], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
+                           [self.get_param('vel'), self.get_param('disp')], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
 
 
     def add_components(self, comp_dict, host_model):

@@ -246,28 +246,16 @@ def plot_best_model(mlstore, plot_name):
 
     # (label, color, linewidth, linestyle)
     line_params = {
-        'co': ('Combined Line', '#ECFF16', linewidth_default, linestyle_default),
         'na': ('Narrow/Core Comp.', 'xkcd:cerulean', linewidth_default, linestyle_default),
         'br': ('Broad Comp.', 'xkcd:bright teal', linewidth_default, linestyle_default),
         'abs': ('Absorption Comp.', 'xkcd:pastel red', linewidth_default, linestyle_default),
     }
 
-
-    def plot_line(line):
-        if not line.name in mlstore.comps:
-            return
-
-        if line.is_combined:
-            label, color, linewidth, linestyle = line_params['co']
-        else:
-            label, color, linewidth, linestyle = line_params[line.prefix.lower()]
-        ax1.plot(wave, mlstore.comps[line.name], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
-
     for line in mlstore.ctx.line_list:
-        plot_line(line)
-        if line.is_combined:
-            for child in line.children:
-                plot_line(child)
+        if (line.is_combined) or (line.prefix == '') or (not line.name in mlstore.comps):
+            continue
+        label, color, linewidth, linestyle = line_params[line.prefix.lower()]
+        ax1.plot(wave, mlstore.comps[line.name], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
 
 
     ibad = [i for i in range(len(mlstore.ctx.fit_wave)) if i not in fit_mask]
@@ -368,27 +356,24 @@ def plotly_best_fit(mlstore):
 
     # (legendgroup, color, legendrank)
     line_params = {
-        'co': ('combined lines', '#ECFF16', 12),
-        'na': ('narrow lines', '#00B5F7', 12),
+        'na': ('narrow lines', '#00B5F7', 11),
         'br': ('broad lines', '#22FFA7', 13),
-        'abs': ('absorption lines', '#DA16FF', 14),
+        'abs': ('absorption lines', '#DA16FF', 15),
     }
 
-    def plot_line(line):
-        if not line.name in mlstore.comps:
+    def add_line(line):
+        if line.is_combined:
+            for child in line.children:
+                add_line(child)
+            return
+        if (line.prefix == '') or (not line.name in mlstore.comps):
             return
 
-        if line.is_combined:
-            legendgroup, color, legendrank = line_params['co']
-        else:
-            legendgroup, color, legendrank = line_params[line.prefix.lower()]
+        legendgroup, color, legendrank = line_params[line.prefix.lower()]
         fig.add_trace(go.Scatter(x=wave, y=mlstore.comps[line.name], mode='lines', line=go.scatter.Line(color=color, width=1), name=line.name, legendgroup=legendgroup, legendgrouptitle_text=legendgroup, legendrank=legendrank), row=1, col=1)
 
     for line in mlstore.ctx.line_list:
-        plot_line(line)
-        if line.is_combined:
-            for child in line.children:
-                plot_line(child)
+        add_line(line)
 
     fig.add_hline(y=0.0, line=dict(color='gray', width=2), row=1, col=1)
 
