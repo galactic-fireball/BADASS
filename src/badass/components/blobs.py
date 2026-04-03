@@ -310,8 +310,8 @@ class ComponentBlob(Blob):
 
 
     def compute(self, ctx, kwargs):
-        if ComponentBlob.obs_wave is None:
-            ComponentBlob.obs_wave = ba_utils.redden(ctx.fit_wave, z=ctx.target.z)
+        # if ComponentBlob.obs_wave is None:
+        ComponentBlob.obs_wave = ba_utils.redden(ctx.fit_wave, z=ctx.target.z)
 
         self.comp_spec = BlobRegistry.get_component(ctx, self.name)
 

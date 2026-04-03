@@ -61,7 +61,7 @@ class BadassInput():
             self.outdir = pathlib.Path(os.getcwd()).resolve().joinpath(self.outdir)
 
         # TODO: check for fit completed
-        if self.outdir.exists():
+        if self.outdir.joinpath('results', 'mc_result', 'par_table.fits').exists():
             if self.cfg.io.get('overwrite', False):
                 print('Removing old output directory: [%s]'%str(self.outdir))
                 shutil.rmtree(str(self.outdir))

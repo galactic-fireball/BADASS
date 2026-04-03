@@ -96,3 +96,56 @@ def optical_qso_default():
 
     line_list = {**narrow_lines, **broad_lines, **absorp_lines}
     return line_list
+
+
+def to_new_fmt():
+    import json
+    old = optical_qso_default()
+
+    new = []
+    for line_name, line_dict in old.items():
+        new_line_dict = {
+            'name': line_name,
+            'center': line_dict['center'],
+        }
+
+        for attr, val in line_dict.items():
+            if attr in ['center', 'label']:
+                continue
+            if val == 'free':
+                continue
+
+            if attr == 'line_type':
+                if val == 'na':
+                    continue
+                if val == 'br':
+                    new_line_dict['type'] = 'broad'
+                    continue
+                if val == 'abs':
+                    new_line_dict['type'] = 'absorp'
+                    continue
+
+            if attr == 'line_profile':
+                if val == 'gaussian':
+                    continue
+
+            if attr in ['amp', 'disp', 'voff', 'h3', 'h4']:
+                new_line_dict[attr] = val
+                continue
+
+            print('unhandled')
+            breakpoint()
+
+        new.append(new_line_dict)
+
+    out_file = open('line_out.py', 'w')
+    for line in new:
+        out_file.write('%s = %s\n' % (line['name'], json.dumps(line).replace('"','\'')))
+    out_file.close()
+
+
+
+if __name__ == '__main__':
+    to_new_fmt()
+
+

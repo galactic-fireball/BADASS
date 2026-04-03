@@ -254,7 +254,7 @@ def plot_best_model(mlstore, plot_name):
     for line in mlstore.ctx.line_list:
         if (line.is_combined) or (line.prefix == '') or (not line.name in mlstore.comps):
             continue
-        label, color, linewidth, linestyle = line_params[line.prefix]
+        label, color, linewidth, linestyle = line_params[line.prefix.lower()]
         ax1.plot(wave, mlstore.comps[line.name], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
 
 
@@ -361,12 +361,19 @@ def plotly_best_fit(mlstore):
         'abs': ('absorption lines', '#DA16FF', 15),
     }
 
-    for line in mlstore.ctx.line_list:
-        if (line.is_combined) or (line.prefix == '') or (not line.name in mlstore.comps):
-            continue
+    def add_line(line):
+        if line.is_combined:
+            for child in line.children:
+                add_line(child)
+            return
+        if (line.prefix == '') or (not line.name in mlstore.comps):
+            return
 
-        legendgroup, color, legendrank = line_params[line.prefix]
+        legendgroup, color, legendrank = line_params[line.prefix.lower()]
         fig.add_trace(go.Scatter(x=wave, y=mlstore.comps[line.name], mode='lines', line=go.scatter.Line(color=color, width=1), name=line.name, legendgroup=legendgroup, legendgrouptitle_text=legendgroup, legendrank=legendrank), row=1, col=1)
+
+    for line in mlstore.ctx.line_list:
+        add_line(line)
 
     fig.add_hline(y=0.0, line=dict(color='gray', width=2), row=1, col=1)
 
