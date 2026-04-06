@@ -1,4 +1,5 @@
 from astropy import coordinates
+from astropy.cosmology import FlatLambdaCDM
 import astropy.units as u
 import matplotlib.pyplot as plt
 import numexpr as ne
@@ -15,6 +16,15 @@ def dered(wave, z=0.0):
 
 def redden(wave, z=0.0):
     return wave * (1 + z)
+
+
+def flux_to_lum(flux, cosmology, z):
+    # TODO: calc and store elsewhere
+    cosmo = FlatLambdaCDM(cosmology.H0, cosmology.Om0)
+    d_mpc = cosmo.luminosity_distance(z).value
+    # TODO: use astropy units
+    d_cm = d_mpc * 3.086E+24 # 1 Mpc = 3.086e+24 cm
+    return 4*np.pi*(d_cm**2)*flux
 
 
 def valid_expression(expr, local_dict):

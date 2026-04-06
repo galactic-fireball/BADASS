@@ -32,10 +32,7 @@ class BlobRegistry:
 
     @staticmethod
     def get_component(ctx, comp):
-        comp_store = ctx.store.comps
-        if not comp in comp_store:
-            return None
-        return comp_store[comp]
+        return ctx.comps.get(comp, None)
 
 
     def register_blob(self, blob):
@@ -236,9 +233,9 @@ class ContinuumBlob(Blob):
         for type, comps in cont_comps.items():
             cont_at_idx = 0.0
             for key in comps:
-                if not key in ctx.store.comps:
+                if not key in ctx.comps:
                     continue
-                cont_at_idx += ctx.store.comps[key][idx]
+                cont_at_idx += ctx.comps[key][idx]
             res[type] = cont_at_idx
         return res
 
@@ -251,9 +248,9 @@ class ContinuumBlob(Blob):
             'F_CONT_HOST_%d'%self.wave: conts['HOST']*ctx.target.flux_norm*ctx.target.fit_norm,
         })
         self.cur_val.update({
-            'L_CONT_TOT_%d'%self.wave: ctx.flux_to_lum(self.cur_val['F_CONT_TOT_%d'%self.wave]),
-            'L_CONT_AGN_%d'%self.wave: ctx.flux_to_lum(self.cur_val['F_CONT_AGN_%d'%self.wave]),
-            'L_CONT_HOST_%d'%self.wave: ctx.flux_to_lum(self.cur_val['F_CONT_HOST_%d'%self.wave]),
+            'L_CONT_TOT_%d'%self.wave: ba_utils.flux_to_lum(self.cur_val['F_CONT_TOT_%d'%self.wave], ctx.cfg.fit.cosmology, ctx.target.z),
+            'L_CONT_AGN_%d'%self.wave: ba_utils.flux_to_lum(self.cur_val['F_CONT_AGN_%d'%self.wave], ctx.cfg.fit.cosmology, ctx.target.z),
+            'L_CONT_HOST_%d'%self.wave: ba_utils.flux_to_lum(self.cur_val['F_CONT_HOST_%d'%self.wave], ctx.cfg.fit.cosmology, ctx.target.z),
         })
         return self.cur_val
 
@@ -325,7 +322,7 @@ class ComponentBlob(Blob):
         flux = np.abs(flux)*ctx.target.flux_norm*ctx.target.fit_norm
         self.cur_val[self.name+'_FLUX'] = np.log10(flux) if flux != 0.0 else flux
 
-        self.cur_val[self.name+'_LUM'] = np.log10(ctx.flux_to_lum(flux)) if flux != 0.0 else 0.0
+        self.cur_val[self.name+'_LUM'] = np.log10(ba_utils.flux_to_lum(flux, ctx.cfg.fit.cosmology, ctx.target.z)) if flux != 0.0 else 0.0
 
         cont = kwargs['continuum']
         ew = np.trapz(self.comp_spec/cont, ComponentBlob.obs_wave)

@@ -9,13 +9,19 @@ from typing import ClassVar, Dict
 from badass.badass_utils import badass_test_suite
 import badass.utils.plotting as plotting
 
+
 @dataclass
-class MetaComps:
+class FitInfo:
     data: np.ndarray
     wave: np.ndarray
     noise: np.ndarray
     model: np.ndarray
     resid: np.ndarray
+    comps: dict[str, np.ndarray]
+
+    @classmethod
+    def init(cls, ctx):
+
 
 
     def finalize(self, fit_norm):
@@ -23,7 +29,6 @@ class MetaComps:
         self.noise *= fit_norm
         self.model *= fit_norm
         self.resid *= fit_norm
-
 
 
 @dataclass
@@ -115,34 +120,7 @@ class MCStore(StageStore):
 
 
     def save_iter(self, result):
-
-        self.ctx.param_reg.update_vals(result['x'])
-        self.params = self.ctx.param_reg.get_param_dict()
-        self.ctx.fit_model()
-        self.blobs = self.ctx.blob_reg.compute_all()
-        self.metrics['LOG_LIKE'] = result['fun']
-        self.update_metrics()
-
-
-        chain_pairs = [
-            (self.params, self.params_chain),
-            (self.blobs, self.blobs_chain),
-            (self.metrics, self.metrics_chain),
-        ]
-
-        if not self.init_done:
-            for container, chain in chain_pairs:
-                for item in container.keys():
-                    chain[item] = np.zeros(self.niters+1)
-
-            self.init_done = True
-
-        # TODO: better way to do this?
-        for container, chain in chain_pairs:
-            for item_name, item_val in container.items():
-                chain[item_name][self.cur_iter] = item_val
-
-        self.cur_iter += 1
+        pass
 
 
     def compile_results(self):
@@ -198,39 +176,6 @@ class MCStore(StageStore):
         outdir = self.get_outfile()
         outdir.mkdir(parents=True, exist_ok=True)
 
-        col1 = fits.Column(name='parameter', format='30A', array=list(self.fit_results.keys()))
-        col2 = fits.Column(name='best_fit', format='E', array=[v['med'] for v in self.fit_results.values()])
-        col3 = fits.Column(name='sigma', format='E', array=[v['std'] for v in self.fit_results.values()])
-        cols = fits.ColDefs([col1,col2,col3])
-        table_hdu = fits.BinTableHDU.from_columns(cols)
-
-        hdr = fits.Header()
-        hdr['z'] = self.ctx.target.z
-        hdr['med_noise'] = np.nanmedian(self.ctx.fit_noise)
-        hdr['velscale'] = self.ctx.target.velscale
-        hdr['fit_norm'] = self.ctx.target.fit_norm
-        hdr['flux_norm'] = self.ctx.target.flux_norm
-
-        primary = fits.PrimaryHDU(header=hdr)
-        hdu = fits.HDUList([primary, table_hdu])
-        hdu.writeto(outdir.joinpath('par_table.fits'), overwrite=True)
-
-        cols = []
-        for key, val in self.comps.items():
-            cols.append(fits.Column(name=key.upper(), format='E', array=val))
-
-        for key, val in asdict(self.meta_comps).items():
-            cols.append(fits.Column(name=key.upper(), format='E', array=val))
-
-        mask = np.zeros(len(self.meta_comps.wave), dtype=bool)
-        mask[self.ctx.target.fit_mask] = True
-        cols.append(fits.Column(name='MASK', format='E', array=mask))
-
-        cols = fits.ColDefs(cols)
-        hdu = fits.BinTableHDU.from_columns(cols)
-        hdu.writeto(outdir.joinpath('best_model_components.fits'), overwrite=True)
-
-        plotting.plot_ml_results(self)
         self.ctx.log.info('Done ML fitting %s!' % self.ctx.target.cfg.io.output_dir)
 
 

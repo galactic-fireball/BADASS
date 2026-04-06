@@ -80,7 +80,9 @@ class IOOptions(CustomBaseModel):
     infmt: Literal[*consts.SUPPORTED_INSTRUMENTS] = Field(None, json_schema_extra={'required':True}, description='The format of the input file. Currently supported options: `[\'sdss\', \'muse\', \'nirspec\', \'miri\']`')
     output_dir: Annotated[DirectoryPath, BeforeValidator(to_path)] = Field(None, description='The output directory of the BADASS results, logs, plots, etc.')
     overwrite: bool = Field(False, description='If `True`, overwrite the `output_dir` if it already exists.')
-    multiprocess: int = Field(1, description='For runs of multiple spectra or IFU cubes, run in multiprocess mode')
+    nprocesses: int = Field(1, description='For runs of multiple spectra or IFU cubes, run in multiprocess mode.')
+    out_fmt: Literal['fits', 'json', 'csv'] = Field('fits', description='The output format.')
+    verbose_out: bool = Field(False, description='Return full available output.')
     log_level: str = Field('info', description='The output log level. Options: `[\'debug\', \'info\', \'warning\', \'error\', \'critical\']`')
     filter: str = Field(None, description='The filter of the provided NIRSpec data cube.')
     disperser: str = Field(None, description='The disperser of the provided NIRSpec data cube.')
@@ -114,6 +116,7 @@ class FitArea(CustomBaseModel):
 class FitOptions(CustomBaseModel):
     fit_reg: Annotated[list[NonNegativeNum] | str, AfterValidator(validate_fitreg)] = Field('auto', description='The minimum and maximum desired fitting wavelength in angstroms.', examples=[(4400,5500), '\'auto\''])
     redshift: NonNegativeNum = Field(-1.0, description='Redshift of the fitting target')
+    skip_bootstrap: bool = Field(False, description='Option to skip max likelihood bootstrapping')
     n_basinhop: NonNegativeInt = Field(25, description='Number of successive `niter_success` times the basinhopping algorithm needs to achieve a solution. The fit becomes much better with more success times, however this can increase the time to a solution significantly.')
     max_like_niter: NonNegativeInt = Field(10, description='Number of bootstrapping iterations to perform after the initial basinhopping fit. This is a means to obtain uncertainties on parameters without performing MCMC fitting, however, do not produce as robust uncertainties as MCMC.')
     # TODO: fit_area specific definition

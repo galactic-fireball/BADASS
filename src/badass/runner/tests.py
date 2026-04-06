@@ -5,30 +5,22 @@ from tabulate import tabulate
 
 
 from badass.badass_utils.badass_test_suite import collect_test_metrics
-from badass.runners.runner import BatchRunner
-from badass.utils.config import SpecLine
+from badass.stage.pipeline import BadassRunContext, BadassResult, BadassRunContext
+# from badass.utils.config import SpecLine
 
 
-# test_sets = []
+class TestResult(BadassResult):
 
-# oiii_5007 = OIII_5007.copy()
-# oiii_5007['children'] = [NA_OIII_5007,]
-# test_sets.append([oiii_5007,])
-
-# oiii_5007 = OIII_5007.copy()
-# oiii_5007['children'] = [NA_OIII_5007, NA_OIII_5007_BLUE]
-# test_sets.append([oiii_5007,])
+    def __init__(self):
+        self.metrics = {}
 
 
-# test = {
-#     'mode': 'line',
-#     'test_sets': test_sets,
-#     'continue_fit': False,
-# }
+class TestRunner(BadassRunContext):
 
+    result_cls = TestResult
 
-class ModelRunner(BatchRunner):
     def run(self):
+
         if isinstance(self.inputs, list):
             if len(self.inputs) == 1:
                 self.inputs = self.inputs[0]
@@ -115,3 +107,19 @@ class ModelRunner(BatchRunner):
 
 
 
+# test_sets = []
+
+# oiii_5007 = OIII_5007.copy()
+# oiii_5007['children'] = [NA_OIII_5007,]
+# test_sets.append([oiii_5007,])
+
+# oiii_5007 = OIII_5007.copy()
+# oiii_5007['children'] = [NA_OIII_5007, NA_OIII_5007_BLUE]
+# test_sets.append([oiii_5007,])
+
+
+# test = {
+#     'mode': 'line',
+#     'test_sets': test_sets,
+#     'continue_fit': False,
+# }
