@@ -5,6 +5,7 @@ from tabulate import tabulate
 
 from badass.badass_utils import badass_test_suite
 from badass.runner import BadassResult, BadassRunContext
+from badass.utils import plotting
 
 
 class BasinhopResult(BadassResult):
@@ -122,6 +123,8 @@ class MLResult(BadassResult):
 
         # update params for final model fit
         ctx.param_reg.update_vals([v['med'] for v in self.params.values()])
+        med_values = [v['med'] for p,v in self.params.items() if ctx.param_reg.is_free(p)]
+        ctx.param_reg.update_vals(med_values)
         ctx.fit_model()
 
         for key, vals in self.blobs_chain.items():
@@ -143,7 +146,8 @@ class MLResult(BadassResult):
         for key, comp in ctx.comps.items():
             self.components[key] = comp * ctx.target.fit_norm
 
-        meta_comps_dict = {'wave':ctx.fit_wave.copy(),'data':ctx.fit_spec.copy(),'noise':ctx.fit_noise.copy(),'model':ctx.model.copy()}
+        self.meta_components['wave'] = ctx.fit_wave.copy()
+        meta_comps_dict = {'data':ctx.fit_spec.copy(),'noise':ctx.fit_noise.copy(),'model':ctx.model.copy()}
         for comp, comp_arr in meta_comps_dict.items():
             self.meta_components[comp] = comp_arr * ctx.target.fit_norm
         self.meta_components['resid'] = (ctx.fit_spec-ctx.model) * ctx.target.fit_norm
@@ -192,9 +196,8 @@ class MLResult(BadassResult):
         hdu = fits.BinTableHDU.from_columns(cols)
         hdu.writeto(self.out_dir.joinpath('best_model_components.fits'), overwrite=True)
 
-        # plotting.plot_ml_results(self)
-
-
+        plot_out = self.out_dir
+        plotting.plot_ml_results(self, ctx, plot_out)
 
 
 class MLRunner(BadassRunContext):
@@ -318,11 +321,6 @@ class MLRunner(BadassRunContext):
 
             result = op.minimize(fun=self.lnprob_wrapper, x0=self.param_reg.fit_vector(), method='SLSQP',
                                    bounds=param_bounds, constraints=param_constraints, options={'maxiter':1000,'disp': False})
-            # if result.success:
-            #     self.result.save_iter(self, n, result)
-            # else:
-            #     print('niter %d minimize failed'%n)
-
             self.result.save_iter(self, n, result)
 
             # return original spectrum

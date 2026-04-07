@@ -45,6 +45,7 @@ class BadassPipeline:
             runner = MLRunner(self.target)
             runner.run()
             runner.finalize()
+            return runner.result
 
         # run mcmc
 

@@ -4,6 +4,7 @@ import copy
 import corner
 import importlib
 import matplotlib.gridspec as gridspec
+from matplotlib.patches import Patch
 import matplotlib.pyplot as plt
 import numexpr as ne
 import numpy as np
@@ -195,13 +196,13 @@ def create_test_plot(target, fit_results, label_A, label_B, test_title=None):
     plt.close()
 
 
-def plot_ml_results(mlstore):
-    plot_best_model(mlstore, 'max_likelihood_fit.pdf')
-    if (not mlstore.ctx.cfg.mcmc.mcmc_fit) and (mlstore.ctx.cfg.plot.html):
-        plotly_best_fit(mlstore)
+def plot_ml_results(mlresult, ctx, out_dir):
+    plot_best_model(mlresult, ctx, out_dir.joinpath('max_likelihood_fit.pdf'))
+    # if (not mlstore.ctx.cfg.mcmc.mcmc_fit) and (mlstore.ctx.cfg.plot.html):
+    #     plotly_best_fit(mlstore)
 
 
-def plot_best_model(mlstore, plot_name):
+def plot_best_model(mlresult, ctx, plot_out):
     plt.style.use('dark_background')
 
     fig = plt.figure(figsize=(14,6))
@@ -214,11 +215,11 @@ def plot_best_model(mlstore, plot_name):
     linestyle_default = '-'
 
     ordinal = lambda n: '%d%s' % (n, 'tsnrhtdd'[(n//10%10!=1)*(n%10<4)*n%10::4])
-    apoly_label = ordinal(len([p for p in mlstore.fit_results.keys() if p.startswith('APOLY_')])-1)
-    mpoly_label = ordinal(len([p for p in mlstore.fit_results.keys() if p.startswith('MPOLY_')])-1)
+    apoly_label = ordinal(len([p for p in mlresult.params.keys() if p.startswith('APOLY_')])-1)
+    mpoly_label = ordinal(len([p for p in mlresult.params.keys() if p.startswith('MPOLY_')])-1)
 
-    wave = mlstore.meta_comps.wave
-    fit_mask = mlstore.ctx.target.fit_mask
+    wave = mlresult.meta_components['wave']
+    fit_mask = ctx.target.fit_mask
 
     # (label, key, color, linewidth, linestyle)
     plot_vals = [
@@ -236,13 +237,13 @@ def plot_best_model(mlstore, plot_name):
        ('Balmer Continuum', 'BALMER_CONT', 'xkcd:bright green', linewidth_default, '--'),
     ]
 
-    ax1.plot(wave, mlstore.meta_comps.data, color='white', linewidth=linewidth_default, linestyle=linestyle_default, label='Data')
-    ax1.plot(wave, mlstore.meta_comps.model, color='xkcd:bright red', linewidth=1.0, linestyle=linestyle_default, label='Model')
+    ax1.plot(wave, mlresult.meta_components['data'], color='white', linewidth=linewidth_default, linestyle=linestyle_default, label='Data')
+    ax1.plot(wave, mlresult.meta_components['model'], color='xkcd:bright red', linewidth=1.0, linestyle=linestyle_default, label='Model')
 
     for label, key, color, linewidth, linestyle in plot_vals:
-        if not key in mlstore.comps:
+        if not key in mlresult.components:
             continue
-        ax1.plot(wave, mlstore.comps[key], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
+        ax1.plot(wave, mlresult.components[key], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
 
     # (label, color, linewidth, linestyle)
     line_params = {
@@ -251,42 +252,50 @@ def plot_best_model(mlstore, plot_name):
         'abs': ('Absorption Comp.', 'xkcd:pastel red', linewidth_default, linestyle_default),
     }
 
-    for line in mlstore.ctx.line_list:
-        if (line.is_combined) or (line.prefix == '') or (not line.name in mlstore.comps):
-            continue
+
+    def add_line(line):
+        if line.is_combined:
+            for child in line.children:
+                add_line(child)
+            return
+        if (line.prefix == '') or (not line.name in mlresult.components):
+            return
+
         label, color, linewidth, linestyle = line_params[line.prefix.lower()]
-        ax1.plot(wave, mlstore.comps[line.name], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
+        ax1.plot(wave, mlresult.components[line.name], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
 
+    for line in ctx.line_list:
+        add_line(line)
 
-    ibad = [i for i in range(len(mlstore.ctx.fit_wave)) if i not in fit_mask]
+    ibad = [i for i in range(len(ctx.fit_wave)) if i not in fit_mask]
     for m in ibad:
-        ax1.axvspan(mlstore.ctx.fit_wave[m], mlstore.ctx.fit_wave[m], alpha=0.25, color='xkcd:lime green')
-    ax1.axvspan(0, 0, alpha=0.25, color='xkcd:lime green', label='bad pixels')
+        ax1.axvspan(ctx.fit_wave[m], ctx.fit_wave[m], alpha=0.25, color='xkcd:lime green')
+    Patch(facecolor='xkcd:lime green', alpha=0.25, label='Bad pixels')
 
     # Residuals
-    sigma_resid = np.nanstd(mlstore.meta_comps.data[fit_mask]-mlstore.meta_comps.model[fit_mask])
-    sigma_noise = np.nanmedian(mlstore.meta_comps.noise[fit_mask])
-    ax2.plot(mlstore.ctx.fit_wave, mlstore.meta_comps.noise*3.0, linewidth=0.5,color='xkcd:bright orange', label=r'$\sigma_{\mathrm{noise}}=%0.4f$' % sigma_noise)
-    ax2.plot(mlstore.ctx.fit_wave, mlstore.meta_comps.resid*3.0, linewidth=0.5,color='white', label=r'$\sigma_{\mathrm{resid}}=%0.4f$' % sigma_resid)
+    sigma_resid = np.nanstd(mlresult.meta_components['data'][fit_mask]-mlresult.meta_components['model'][fit_mask])
+    sigma_noise = np.nanmedian(mlresult.meta_components['noise'][fit_mask])
+    ax2.plot(ctx.fit_wave, mlresult.meta_components['noise']*3.0, linewidth=0.5,color='xkcd:bright orange', label=r'$\sigma_{\mathrm{noise}}=%0.4f$' % sigma_noise)
+    ax2.plot(ctx.fit_wave, mlresult.meta_components['resid']*3.0, linewidth=0.5,color='white', label=r'$\sigma_{\mathrm{resid}}=%0.4f$' % sigma_resid)
     ax1.axhline(0.0, linewidth=1.0, color='white', linestyle='--')
     ax2.axhline(0.0, linewidth=1.0, color='white', linestyle='--')
 
     # Axes limits
     ax_low = np.nanmin([ax1.get_ylim()[0], ax2.get_ylim()[0]])
-    ax_upp = np.nanmax(mlstore.meta_comps.data[fit_mask])+(3.0 * np.nanmedian(mlstore.meta_comps.noise[fit_mask]))
+    ax_upp = np.nanmax(mlresult.meta_components['data'][fit_mask])+(3.0 * np.nanmedian(mlresult.meta_components['noise'][fit_mask]))
 
-    minimum = [np.nanmin(val[np.where(np.isfinite(val))[0]]) for val in mlstore.comps.values() if val[np.isfinite(val)[0]].size > 0]
+    minimum = [np.nanmin(val[np.where(np.isfinite(val))[0]]) for val in mlresult.components.values() if val[np.isfinite(val)[0]].size > 0]
     minimum = np.nanmin(minimum) if len(minimum) > 0 else 0.0
     ax1.set_ylim(np.nanmin([0.0,minimum]), ax_upp)
-    ax1.set_xlim(np.min(mlstore.ctx.fit_wave), np.max(mlstore.ctx.fit_wave))
+    ax1.set_xlim(np.min(ctx.fit_wave), np.max(ctx.fit_wave))
 
     ax2.set_ylim(ax_low, ax_upp)
-    ax2.set_xlim(np.min(mlstore.ctx.fit_wave), np.max(mlstore.ctx.fit_wave))
+    ax2.set_xlim(np.min(ctx.fit_wave), np.max(ctx.fit_wave))
 
     # Axes labels
     ax1.set_xticklabels([])
     # TODO: label should represent actual flux_norm
-    ax1.set_ylabel(r'$f_\lambda$ ($10^{-17}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)', fontsize=10)
+    ax1.set_ylabel(r'$f_\lambda$ ($10^{%d}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)'%int(np.log10(ctx.target.flux_norm)), fontsize=10)
     ax2.set_yticklabels(np.round(np.array(ax2.get_yticks()/3.0)))
     ax2.set_ylabel(r'$\Delta f_\lambda$', fontsize=12)
     ax2.set_xlabel(r'Wavelength, $\lambda\;(\mathrm{\AA})$', fontsize=12)
@@ -318,8 +327,8 @@ def plot_best_model(mlstore, plot_name):
     #     ax1.annotate(label, xy=(xloc, yloc), xycoords='data', xytext=(xloc, yloc), textcoords='data',
     #                  horizontalalignment='center', verticalalignment='bottom', color='xkcd:white', fontsize=6)
 
-    ax1.set_title(r'%s'%mlstore.ctx.target.name.replace('_', '\\_'), fontsize=12)
-    plt.savefig(mlstore.ctx.target.outdir.joinpath(plot_name))
+    ax1.set_title(r'%s'%ctx.target.name.replace('_', '\\_'), fontsize=12)
+    plt.savefig(plot_out)
     plt.close()
 
 
