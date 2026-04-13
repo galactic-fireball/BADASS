@@ -5,13 +5,12 @@ from tabulate import tabulate
 
 from badass.badass_utils import badass_test_suite
 from badass.runner import BadassResult, BadassRunContext
-from badass.utils import plotting
 
 
 class BasinhopResult(BadassResult):
     OUT_NAME = 'basinhop_result'
 
-    def __init__(self, ctx):
+    def __init__(self, ctx, name):
         self.params = {}
         self.blobs = {}
         self.metrics = {}
@@ -21,12 +20,12 @@ class MLResult(BadassResult):
 
     OUT_NAME = 'mc_result'
 
-    def __init__(self, ctx):
-        super().__init__(ctx)
+    def __init__(self, ctx, name):
+        super().__init__(ctx, name)
         self.out_dir = self.out_dir.joinpath(self.OUT_NAME)
         self.out_dir.mkdir(parents=True, exist_ok=True)
 
-        self.bh_result = BasinhopResult(ctx)
+        self.bh_result = BasinhopResult(ctx, name)
         self.bh_result.out_dir = self.out_dir.joinpath(BasinhopResult.OUT_NAME)
         self.bh_result.out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -50,6 +49,8 @@ class MLResult(BadassResult):
         self.params = {}
         self.components = {}
         self.meta_components = {}
+        self.line_list = []
+        self.figures = {}
 
 
     def init_chains(self, ctx, niter):
@@ -122,7 +123,6 @@ class MLResult(BadassResult):
             self.params[key]['flag'] = flag
 
         # update params for final model fit
-        ctx.param_reg.update_vals([v['med'] for v in self.params.values()])
         med_values = [v['med'] for p,v in self.params.items() if ctx.param_reg.is_free(p)]
         ctx.param_reg.update_vals(med_values)
         ctx.fit_model()
@@ -147,10 +147,13 @@ class MLResult(BadassResult):
             self.components[key] = comp * ctx.target.fit_norm
 
         self.meta_components['wave'] = ctx.fit_wave.copy()
-        meta_comps_dict = {'data':ctx.fit_spec.copy(),'noise':ctx.fit_noise.copy(),'model':ctx.model.copy()}
+        meta_comps_dict = {'data':ctx.fit_spec.copy(),'noise':ctx.fit_noise.copy(),'model':ctx.model.copy(),}
         for comp, comp_arr in meta_comps_dict.items():
             self.meta_components[comp] = comp_arr * ctx.target.fit_norm
         self.meta_components['resid'] = (ctx.fit_spec-ctx.model) * ctx.target.fit_norm
+        self.meta_components['mask'] = ctx.target.fit_mask.copy()
+
+        self.line_list = ctx.line_list
 
 
     def dump_results(self, ctx):
@@ -188,24 +191,17 @@ class MLResult(BadassResult):
         for key, val in self.meta_components.items():
             cols.append(fits.Column(name=key.upper(), format='E', array=val))
 
-        mask = np.zeros(len(self.meta_components['wave']), dtype=bool)
-        mask[ctx.target.fit_mask] = True
-        cols.append(fits.Column(name='MASK', format='E', array=mask))
-
         cols = fits.ColDefs(cols)
         hdu = fits.BinTableHDU.from_columns(cols)
         hdu.writeto(self.out_dir.joinpath('best_model_components.fits'), overwrite=True)
-
-        plot_out = self.out_dir
-        plotting.plot_ml_results(self, ctx, plot_out)
 
 
 class MLRunner(BadassRunContext):
 
     result_cls = MLResult
 
-    def __init__(self, target, **kwargs):
-        super().__init__(target, **kwargs)
+    def __init__(self, target, cfg, **kwargs):
+        super().__init__(target, cfg, **kwargs)
 
         if not hasattr(self, 'force_thresh'):
             self.force_thresh = badass_test_suite.root_mean_squared_error(self.target.spec, np.full_like(self.target.spec,np.nanmedian(self.target.spec)))

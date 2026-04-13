@@ -7,6 +7,7 @@ import prodict
 import time
 import shutil
 
+from badass.utils.config import BadassConfig
 import badass.utils.constants as constants
 from badass.utils.logger import BadassLogger
 from badass.utils.pca import pca_reconstruction
@@ -260,14 +261,13 @@ class BadassInput():
             if isinstance(cfg, list) and (len(cfg) != 1 and len(cfg) != len(input_data)):
                 raise Exception('Options list must be same length as input data')
 
-            if isinstance(cfg, dict):
+            if isinstance(cfg, BadassConfig):
                 cfg = [cfg] * len(input_data)
             elif len(cfg) == 1:
                 cfg = [cfg[0]] * len(input_data)
 
             inputs = []
             for ind, opt in zip(input_data, cfg):
-                opt.io.multi = True
                 inputs.extend(cls.get_inputs(ind, opt))
             return inputs
 

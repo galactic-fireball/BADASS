@@ -3,31 +3,16 @@ io = {
     'output_dir': 'sdss_test', # same directory as input file
     'overwrite': True,
     'log_level': 'debug',
+    'nprocesses': 2,
 }
 
 fit = {
     'fit_reg': (3800,5500),
-    'n_basinhop': 15,
+    'n_basinhop': 2,
+    'max_like_niter': 5,
 }
 
-mcmc = {
-'mcmc_fit'    : False, # Perform robust fitting using emcee
-'nwalkers'    : 100,  # Number of emcee walkers; min = 2 x N_parameters
-'auto_stop'   : True, # Automatic stop using autocorrelation analysis
-'conv_type'   : ('NA_OIII_5007_AMP','NA_OIII_5007_DISP'), # 'median', 'mean', 'all', or (tuple) of parameters
-'min_samp'    : 1000,  # min number of iterations for sampling post-convergence
-'ncor_times'  : 10,  # number of autocorrelation times for convergence
-'autocorr_tol': 10.0,  # percent tolerance between checking autocorr. times
-'burn_in'     : 250, # burn-in if max_iter is reached
-# 'write_iter'  : 100,   # write/check autocorrelation times interval
-# 'write_thresh': 100,   # iteration to start writing/checking parameters
-# 'min_iter'    : 1500, # min number of iterations before stopping
-# 'max_iter'    : 5000, # max number of MCMC iterations
-'write_iter'  : 3,   # write/check autocorrelation times interval
-'write_thresh': 3,   # iteration to start writing/checking parameters
-'min_iter'    : 3, # min number of iterations before stopping
-'max_iter'    : 10, # max number of MCMC iterations
-}
+
 
 comp = {
     # 'fit_losvd': False,
@@ -51,4 +36,25 @@ br_hbeta = common_lines.BR_H_BETA.copy()
 na_hbeta = common_lines.NA_H_BETA.copy()
 na_hbeta.pop('disp')
 
-# user_lines = [na_hbeta, br_hbeta]
+user_lines = [na_hbeta, br_hbeta]
+
+
+
+mcmc = {
+'mcmc_fit'    : False, # Perform robust fitting using emcee
+'nwalkers'    : 100,  # Number of emcee walkers; min = 2 x N_parameters
+'auto_stop'   : True, # Automatic stop using autocorrelation analysis
+'conv_type'   : ('NA_OIII_5007_AMP','NA_OIII_5007_DISP'), # 'median', 'mean', 'all', or (tuple) of parameters
+'min_samp'    : 1000,  # min number of iterations for sampling post-convergence
+'ncor_times'  : 10,  # number of autocorrelation times for convergence
+'autocorr_tol': 10.0,  # percent tolerance between checking autocorr. times
+'burn_in'     : 250, # burn-in if max_iter is reached
+# 'write_iter'  : 100,   # write/check autocorrelation times interval
+# 'write_thresh': 100,   # iteration to start writing/checking parameters
+# 'min_iter'    : 1500, # min number of iterations before stopping
+# 'max_iter'    : 5000, # max number of MCMC iterations
+'write_iter'  : 3,   # write/check autocorrelation times interval
+'write_thresh': 3,   # iteration to start writing/checking parameters
+'min_iter'    : 3, # min number of iterations before stopping
+'max_iter'    : 10, # max number of MCMC iterations
+}

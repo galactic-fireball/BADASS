@@ -20,6 +20,7 @@ class BadassPipeline:
 
         # Multiple non-IFU targets
         if len(targets) > 1:
+            from badass.runner.survey import SurveyPipeline
             return SurveyPipeline(targets, cfg)
 
         # Single target fitting, no tests
@@ -27,9 +28,10 @@ class BadassPipeline:
         return BadassPipeline(targets[0], cfg)
 
 
-    def __init__(self, target, cfg):
+    def __init__(self, target, cfg, single=True):
         self.target = target
         self.cfg = cfg
+        self.single = single
 
 
     def run(self):
@@ -42,7 +44,7 @@ class BadassPipeline:
         #     runner.finalize()
 
         if not self.cfg.fit.skip_bootstrap:
-            runner = MLRunner(self.target)
+            runner = MLRunner(self.target, self.cfg)
             runner.run()
             runner.finalize()
             return runner.result
@@ -54,15 +56,8 @@ class BadassPipeline:
 
     def finalize(self):
         print('BadassPipeline finalize')
-
-
-class SurveyPipeline(BadassPipeline):
-
-    def run(self):
-        for target in targets:
-            BadassPipeline().run()
-
-        gather_data()
+        if self.single:
+            plotting.plot_best_model()
 
 
 class IFUPipeline(BadassPipeline):

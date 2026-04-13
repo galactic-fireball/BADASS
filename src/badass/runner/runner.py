@@ -9,17 +9,29 @@ from badass.components.templates.common import initialize_templates
 from badass.components.spectral_lines.spectral_line import SpectralLine
 
 
-def make_logger(name):
+def make_logger(name, log_file=None):
     log = logging.getLogger('badass.%s'%name)
     log.setLevel(logging.INFO)
-    log.addHandler(logging.StreamHandler())
+
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+    sh = logging.StreamHandler()
+    sh.setFormatter(formatter)
+    log.addHandler(sh)
+
+    if not log_file is None:
+        fh = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+        fh.setFormatter(formatter)
+        log.addHandler(fh)
+
     return log
 
 
 class BadassResult:
     OUT_NAME = 'badass_result'
 
-    def __init__(self, ctx):
+    def __init__(self, ctx, name):
+        self.name = name
         self.out_dir = ctx.cfg.io.output_dir.joinpath(BadassResult.OUT_NAME)
         self.out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -37,17 +49,15 @@ class BadassRunContext:
 
     result_cls = BadassResult
 
-    def __init__(self, target, **kwargs):
+    def __init__(self, target, cfg, single=True, **kwargs):
         self.start_time = time.time()
         self.target = target
-        self.log = make_logger(kwargs.get('name', self.target.name))
+        self.cfg = cfg
+        self.log = make_logger(kwargs.get('name', self.target.name), log_file=self.cfg.io.output_dir.joinpath('log.txt'))
         self.target.log = self.log
         self.target.postinit()
 
         self.__dict__.update(kwargs)
-
-        if not hasattr(self, 'cfg'):
-            self.cfg = target.cfg
 
         # The spectral data currently being fit
         if not hasattr(self, 'fit_wave'):
@@ -82,7 +92,7 @@ class BadassRunContext:
         self.comps = {}
         self.model = np.zeros_like(self.fit_spec)
 
-        self.result = self.result_cls(self)
+        self.result = self.result_cls(self, target.name)
 
 
     def lnprob_wrapper(self, fit_vals):

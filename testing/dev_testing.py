@@ -41,6 +41,22 @@ def test_single():
         badass.run_BADASS(test_file, options_file=options_file)
 
 
+def test_survey():
+
+    test_files = [
+        EX_SPEC_DIR.joinpath('0-test', 'spec-1087-52930-0084.fits'),
+        EX_SPEC_DIR.joinpath('1-test', 'spec-7748-58396-0782.fits'),
+    ]
+
+    options_file = OPTIONS_DIR.joinpath('sdss_single.py')
+    output_dir = test_files[0].parent.joinpath('sdss_test')
+
+    if output_dir.exists():
+        shutil.rmtree(str(output_dir))
+
+    badass.run_BADASS(test_files, options_file=options_file)
+
+
 def test_schema():
     test_file = EX_SPEC_DIR.joinpath('0-test', 'spec-1087-52930-0084.fits')
 
@@ -213,9 +229,11 @@ def create_line_json():
 def main():
     # test_single()
     # test_schema()
-    test_line()
+    # test_line()
     # test_config()
     # test_input_dict()
+
+    test_survey()
 
     # test_muse_single()
     # test_muse_multi()
