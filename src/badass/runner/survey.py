@@ -62,22 +62,35 @@ class SurveyPipeline(BadassPipeline):
     def run(self):
         print('SurveyPipeline run')
 
-        for target in self.target:
+        target_cfgs = self.cfg
+        if isinstance(self.cfg, list):
+            self.cfg = copy.deepcopy(self.cfg[0])
+
+        for i, target in enumerate(self.target):
             print('Running %s'%target.name)
-            target_cfg = copy.deepcopy(self.cfg)
-            target_cfg.io.output_dir = self.cfg.io.output_dir.joinpath(target.name)
+
+            if isinstance(target_cfgs, list):
+                target_cfg = target_cfgs[i]
+            else:
+                target_cfg = copy.deepcopy(self.cfg)
+            target_cfg.io.output_dir = target_cfg.io.output_dir.joinpath(target.name)
+            # TODO: check if already complete
+            target_cfg.io.output_dir.mkdir(parents=True, exist_ok=True)
             self.single_targets[target.name] = (target, target_cfg)
 
         if self.cfg.io.nprocesses == 1:
             for target, target_cfg in list(self.single_targets.values()):
-                self.target_results[target.name] = pipeline_run(target, target_cfg)
+                res = pipeline_run(target, target_cfg)
+                if not res is None:
+                    self.target_results[target.name] = res
         else:
             p = Pool(processes=self.cfg.io.nprocesses, maxtasksperchild=1)
             run_results = p.starmap(pipeline_run, list(self.single_targets.values()), chunksize=1)
             p.close()
 
             for res in run_results:
-                self.target_results[res.name] = res
+                if not res is None:
+                    self.target_results[res.name] = res
 
 
     def finalize(self):

@@ -146,7 +146,9 @@ class SpectralLine(BadassComponent):
         # if the user wants BADASS to determine a good amp init guess, and amp is a free parameter
         if (self.line_dict['AMP_ADJUST']) and (isinstance(amp_val,dict)):
             init = self.get_amp_init()
-            if (amp_val['plim'][0] <= init) and (init <= amp_val['plim'][1]):
+            # TODO: should recheck after params have been initialized and plim values all numbers?
+            if (not isinstance(amp_val['plim'][0],(int,float)) or amp_val['plim'][0] <= init) and \
+               (not isinstance(amp_val['plim'][1],(int,float)) or init <= amp_val['plim'][1]):
                 self.ctx.log.info('Adjusting %s amp to %0.04f'%(self.name,init))
                 amp_val['init'] = init
 

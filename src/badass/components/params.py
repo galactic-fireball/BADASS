@@ -295,9 +295,9 @@ class ParameterRegistry:
 
 
     def get_constraints(self):
-        def eval_con(x, ctx, expr1, expr2):
-            ctx.param_reg.update_vals(x)
-            local_dict = ctx.param_reg.get_param_dict()
+        def eval_con(x, self, expr1, expr2):
+            self.update_vals(x)
+            local_dict = self.get_param_dict()
             r1 = ne.evaluate(expr1, local_dict=local_dict).item()
             r2 = ne.evaluate(expr2, local_dict=local_dict).item()
             return r1 - r2

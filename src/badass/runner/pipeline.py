@@ -3,6 +3,7 @@
 from badass.runner.bootstrap import MLResult, MLRunner
 # from badass.runner.mcmc import MCMCContext, MCMCResult, MCMCStage
 
+from badass.utils import plotting
 
 class BadassPipeline:
 
@@ -11,10 +12,12 @@ class BadassPipeline:
         print('BadassPipeline init')
 
         # Batch run IFU areas
-        if not cfg.fit.fit_area.type is None:
-            pipeline_cls = get_ifu_type(cfg.fit.fit_area.type)
+        test_cfg = cfg
+        if isinstance(test_cfg, list): test_cfg = test_cfg[0]
+        if not test_cfg.fit.fit_area.type is None:
+            pipeline_cls = get_ifu_type(test_cfg.fit.fit_area.type)
             if pipeline_cls is None:
-                raise Exception('Unexpected area type: %s'%cfg.fit.fit_area.type)
+                raise Exception('Unexpected area type: %s'%test_cfg.fit.fit_area.type)
 
             return pipeline_cls(targets, cfg)
 
@@ -32,6 +35,7 @@ class BadassPipeline:
         self.target = target
         self.cfg = cfg
         self.single = single
+        self.result = None
 
 
     def run(self):
@@ -45,9 +49,13 @@ class BadassPipeline:
 
         if not self.cfg.fit.skip_bootstrap:
             runner = MLRunner(self.target, self.cfg)
+            if not runner.target.valid:
+                runner.log.error('Invalid target! Skipping!')
+                return None
             runner.run()
             runner.finalize()
-            return runner.result
+            self.result = runner.result
+            return self.result
 
         # run mcmc
 
@@ -57,7 +65,7 @@ class BadassPipeline:
     def finalize(self):
         print('BadassPipeline finalize')
         if self.single:
-            plotting.plot_best_model()
+            plotting.plot_ml_results(self.result, self.target)
 
 
 class IFUPipeline(BadassPipeline):

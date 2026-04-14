@@ -411,7 +411,7 @@ class BadassConfig(CustomBaseModel):
     @classmethod
     def get_config(cls, options_data):
         if isinstance(options_data, list):
-            return [cls.get_options(o) for o in options_data]
+            return [cls.get_config(o) for o in options_data]
 
         if isinstance(options_data, dict):
             return cls.from_dict(options_data)
