@@ -94,11 +94,6 @@ def run_BADASS(inputs, **kwargs):
     cfg = BadassConfig.get_config_from_args(kwargs)
     targets = BadassInput.get_inputs(inputs, cfg)
 
-    if len(targets) == 0:
-        # TODO: master logger
-        print('No valid targets to process, returning')
-        return
-
     pipeline = BadassPipeline.init(targets, cfg)
     pipeline.run()
     pipeline.finalize()

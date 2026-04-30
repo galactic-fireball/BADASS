@@ -191,9 +191,8 @@ class BadassInput():
 
     @classmethod
     def from_dict(cls, input_data, cfg=prodict.Prodict({})):
-        if (len(cfg) == 0) and (not input_data.get('cfg', None) is None):
-            cfg = prodict.Prodict(input_data['cfg'])
-
+        # if (len(cfg) == 0) and (not input_data.get('cfg', None) is None):
+        #     cfg = prodict.Prodict(input_data['cfg'])
         return cls.from_format(input_data, cfg)
 
 
@@ -268,23 +267,23 @@ class BadassInput():
 
             inputs = []
             for ind, opt in zip(input_data, cfg):
-                inputs.extend(cls.get_inputs(ind, opt))
+                res = cls.get_inputs(ind, opt)
+                if isinstance(res, list):
+                    inputs.extend(res)
+                else:
+                    inputs.append(res)
             return inputs
 
         if isinstance(input_data, dict):
-            ret = cls.from_dict(input_data, cfg)
-            return ret if isinstance(ret, list) else [ret]
+            return cls.from_dict(input_data, cfg)
 
         if isinstance(input_data, pathlib.Path):
-            ret = cls.from_path(input_data, cfg)
-            return ret if isinstance(ret, list) else [ret]
+            return cls.from_path(input_data, cfg)
 
         # Check if string path
         if isinstance(input_data, str):
             if pathlib.Path(input_data).exists():
-                ret = cls.from_path(input_data, cfg)
-                return ret if isinstance(ret, list) else [ret]
-            # if not, could be actual data
+                return cls.from_path(input_data, cfg)
 
         ret = cls.from_format(input_data, cfg)
         return ret if isinstance(ret, list) else [ret]

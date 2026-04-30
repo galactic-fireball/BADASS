@@ -28,7 +28,8 @@ class OpticalFeIITemplate(BadassTemplate):
 
         if (temp_class.TEMP_LAM_RANGE[1] > 0.0 and ctx.fit_wave[0] > temp_class.TEMP_LAM_RANGE[1]) or (ctx.fit_wave[-1] < temp_class.TEMP_LAM_RANGE[0]):
             ctx.log.warn('Optical FeII template disabled because template is outside of fitting region')
-            ctx.log.update_opt_feii()
+            # TODO: add log util functions
+            # ctx.log.update_opt_feii()
             ctx.cfg.comp.fit_feii = False
             return None
 

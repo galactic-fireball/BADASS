@@ -4,6 +4,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from multiprocessing import Pool
 import numpy as np
 import pandas as pd
+import shutil
 from tabulate import tabulate
 
 from badass.runner.pipeline import BadassPipeline
@@ -50,6 +51,21 @@ def pipeline_run(target, target_cfg):
     return BadassPipeline(target, target_cfg, single=False).run()
 
 
+def skip_existing(outdir, overwrite):
+    # TODO: check for fit completed
+    if not outdir.joinpath('badass_result', 'mc_result', 'par_table.fits').exists():
+        return False
+
+    if overwrite:
+        print('Removing old output directory: [%s]'%str(outdir))
+        shutil.rmtree(str(outdir))
+        return False
+
+    print('Output directory [%s] already exists, not overwriting'%str(outdir))
+    return True
+
+
+
 class SurveyPipeline(BadassPipeline):
 
     def __init__(self, target, cfg):
@@ -73,9 +89,13 @@ class SurveyPipeline(BadassPipeline):
                 target_cfg = target_cfgs[i]
             else:
                 target_cfg = copy.deepcopy(self.cfg)
-            target_cfg.io.output_dir = target_cfg.io.output_dir.joinpath(target.name)
-            # TODO: check if already complete
-            target_cfg.io.output_dir.mkdir(parents=True, exist_ok=True)
+
+            target_out_dir = target_cfg.io.output_dir.joinpath(target.name)
+            if skip_existing(target_out_dir, target_cfg.io.overwrite):
+                continue
+
+            target_cfg.io.output_dir = target_out_dir
+            target_out_dir.mkdir(parents=True, exist_ok=True)
             self.single_targets[target.name] = (target, target_cfg)
 
         if self.cfg.io.nprocesses == 1:

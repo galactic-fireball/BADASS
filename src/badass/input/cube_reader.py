@@ -47,6 +47,7 @@ class CubeReader(BadassInput):
         nx = cube_dict.get('nx', cube_dict['spec'].shape[0])
         ny = cube_dict.get('ny', cube_dict['spec'].shape[1])
 
+        # TODO: 'exclude' option
         if isinstance(spaxels, str):
             if spaxels.lower() != 'all':
                 raise Exception('spaxel list invalid: %s'%spaxels)
