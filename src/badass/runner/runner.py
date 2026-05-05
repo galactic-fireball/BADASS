@@ -56,6 +56,8 @@ class BadassRunContext:
         self.log = make_logger(kwargs.get('name', self.target.name), log_file=self.cfg.io.output_dir.joinpath('log.txt'))
         self.target.log = self.log
         self.target.postinit()
+        if not self.target.valid:
+            return
 
         self.__dict__.update(kwargs)
 

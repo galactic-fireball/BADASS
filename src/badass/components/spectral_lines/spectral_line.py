@@ -267,9 +267,8 @@ class SpectralLine(BadassComponent):
         if not cls.spec_features is None:
             return cls.spec_features
 
-        galaxy_csub = ba_utils.continuum_subtract(cls.ctx.fit_wave,cls.ctx.fit_spec,cls.ctx.fit_noise,sigma_clip=2.0,plot=False,verbose=False)
-
         try:
+            galaxy_csub = ba_utils.continuum_subtract(cls.ctx.fit_wave,cls.ctx.fit_spec,cls.ctx.fit_noise,sigma_clip=2.0,plot=False,verbose=False)
             # normalize by noise
             norm_csub = galaxy_csub/cls.ctx.fit_noise
 
