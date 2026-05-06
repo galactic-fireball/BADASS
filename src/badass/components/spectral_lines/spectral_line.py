@@ -277,17 +277,17 @@ class SpectralLine(BadassComponent):
             peak_wave = cls.ctx.fit_wave[peaks]
             trough_wave = cls.ctx.fit_wave[troughs]
         except:
-            peak_wave = np.array()
-            trough_wave = np.array()
+            peak_wave = None
+            trough_wave = None
 
         cls.spec_features = {
             'peaks': None,
             'troughs': None,
         }
 
-        if len(peak_wave) != 0:
+        if (not peak_wave is None) and len(peak_wave) != 0:
             cls.spec_features['peaks'] = peak_wave
-        if len(trough_wave) != 0:
+        if (not trough_wave is None) and len(trough_wave) != 0:
             cls.spec_features['troughs'] = trough_wave
 
         return cls.spec_features
