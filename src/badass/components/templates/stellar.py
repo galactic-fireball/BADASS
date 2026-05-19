@@ -6,6 +6,7 @@ from badass.components.templates.common import BadassTemplate, convolve_gauss_he
 import badass.utils.constants as consts
 from badass.utils.utils import log_rebin
 
+MIN_WAVE_REG = 205 # angstroms
 
 class StellarTemplate(BadassTemplate):
 
@@ -23,6 +24,9 @@ class StellarTemplate(BadassTemplate):
         StellarTemplate.temp_dir = consts.BADASS_DATA_DIR.joinpath(ctx.cfg.losvd.library)
         if not StellarTemplate.temp_dir.exists():
             ctx.log.error('Unable to find directory for stellar templates: %s' % str(StellarTemplate.temp_dir))
+            return None
+
+        if ctx.fit_wave[-1] - ctx.fit_wave[0] < MIN_WAVE_REG:
             return None
 
         return cls(ctx)
