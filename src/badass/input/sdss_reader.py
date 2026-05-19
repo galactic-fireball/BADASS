@@ -18,7 +18,9 @@ class SDSSReader(BadassInput):
         self.infile = input_data
         with fits.open(self.infile) as hdu:
             specobj = hdu[2].data
-            self.z = specobj['z'][0]
+            self.z = options.fit.redshift
+            if self.z < 0:
+                self.z = specobj['z'][0]
 
             if 'RA' in hdu[0].header:
                 self.ra = hdu[0].header['RA']
