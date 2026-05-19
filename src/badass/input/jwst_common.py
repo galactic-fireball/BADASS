@@ -66,6 +66,7 @@ class JWSTReader(CubeReader):
         cube_err = cube_err / flux_norm
         cube_data['flux_norm'] = flux_norm
 
+        cube_data['obs_wave'] = obs_wave
         cube_data['wave'] = wave
         cube_data['velscale'] = np.nan # will be set when the class is initialized
         cube_data['spec'] = cube_spec

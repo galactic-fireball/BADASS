@@ -90,6 +90,7 @@ class BadassInput():
         reg_mask = ((self.wave >= self.fit_reg.min) & (self.wave <= self.fit_reg.max))
         self.spec = self.spec[reg_mask]
         self.wave = self.wave[reg_mask]
+        self.obs_wave = self.obs_wave[reg_mask]
         self.noise = self.noise[reg_mask]
         self.disp_res = self.disp_res[reg_mask]
 
@@ -111,7 +112,7 @@ class BadassInput():
             fit_mask_bad.extend(metal_masker(self.wave,self.spec,self.noise))
 
         ebv = get_ebv(self.ra, self.dec)
-        self.spec = ccm_unred(self.wave, self.spec, ebv)
+        self.spec = ccm_unred(self.obs_wave, self.spec, ebv)
 
         self.fit_norm = np.round(np.nanmax(self.spec), 5)
         self.spec = self.spec / self.fit_norm

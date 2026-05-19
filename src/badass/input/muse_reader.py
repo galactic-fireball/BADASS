@@ -56,6 +56,7 @@ class MUSEReader(CubeReader):
             disp_res = fwhm_res / 2.3548
             cube_data['velscale'] = np.log(obs_wave[1] / obs_wave[0]) * c  # Constant velocity scale in km/s per pixel
 
+            cube_data['obs_wave'] = obs_wave
             cube_data['wave'] = dered(obs_wave, cube_data['z'])
             cube_data['disp_res'] = dered(disp_res, cube_data['z'])
 

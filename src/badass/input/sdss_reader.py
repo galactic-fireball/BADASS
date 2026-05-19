@@ -35,18 +35,18 @@ class SDSSReader(BadassInput):
             t = hdu[1].data
 
             self.spec = t['flux']
-            obs_wave = np.power(10, t['loglam'])
+            self.obs_wave = np.power(10, t['loglam'])
             self.noise = np.sqrt(1 / t['ivar'])
             self.bad_pix = np.where(t['and_mask'] != 0)[0] # TODO: need?
             self.flux_norm = SDSS_FLUX_NORM
 
-            frac = obs_wave[1]/obs_wave[0] # Constant lambda fraction per pixel
-            dlam_gal = (frac - 1)*obs_wave # Size of every pixel in Angstrom
+            frac = self.obs_wave[1]/self.obs_wave[0] # Constant lambda fraction per pixel
+            dlam_gal = (frac - 1)*self.obs_wave # Size of every pixel in Angstrom
             wdisp = t['wdisp'] # Intrinsic dispersion of every pixel, in pixels units
             self.disp_res = wdisp*dlam_gal # Resolution FWHM of every pixel, in angstroms
             self.velscale = np.log(frac) * const.c.to(u.km/u.s).value
 
-            self.wave = dered(obs_wave, self.z)
+            self.wave = dered(self.obs_wave, self.z)
             self.disp_res = dered(self.disp_res, self.z)
 
         super().__init__(input_data, options)
