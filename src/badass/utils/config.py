@@ -286,7 +286,7 @@ class BaseLine(SpectralLine):
     # General hyperpars; child classes can override
     amp: NonNegativeParam = {'init':'0.001*median_flux', 'plim':(0.0,1.0)}
     amp_adjust: bool = True # allow BADASS to adjust amp depending on surrounding features
-    disp: NonNegativeParam = {'init':50.0, 'plim':(0.001,300.0)}
+    disp: NonNegativeParam = {'init':50.0, 'plim':(0.001,500.0)}
     voff: Param = {'init':0.0, 'plim':(-500.0,500.0), 'prior':{'type':'gaussian'}}
     voff_adjust: bool = True # allow BADASS to adjust voff depending on surrounding features
 
