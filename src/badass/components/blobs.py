@@ -326,6 +326,7 @@ class ComponentBlob(Blob):
 
         cont = kwargs['continuum']
         ew = np.trapz(self.comp_spec/cont, ComponentBlob.obs_wave)
+        ew = ba_utils.dered(pew, z=ctx.target.z)
         self.cur_val[self.name+'_EW'] = ew if np.isfinite(ew) else 0.0
 
         return self.cur_val
