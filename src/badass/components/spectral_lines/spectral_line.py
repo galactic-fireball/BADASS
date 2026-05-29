@@ -229,12 +229,12 @@ class SpectralLine(BadassComponent):
         return self.pr.get_param_val(full_name)
 
 
-    def add_components(self, comp_dict, host_model):
+    def add_components(self, comp_dict, host_model, extra_comps):
         if self.is_combined:
             for line in self.children:
-                host_model = line.add_components(comp_dict, host_model)
+                host_model = line.add_components(comp_dict, host_model, extra_comps)
 
-            comp_dict[self.name] = np.sum([comp_dict[line.name] for line in self.children], axis=0)
+            extra_comps[self.name] = np.sum([comp_dict[line.name] for line in self.children], axis=0)
             return host_model
 
         line_comp = self.line_profile.construct_line(self)

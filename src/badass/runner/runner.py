@@ -139,12 +139,18 @@ class BadassRunContext:
     def fit_model(self):
         host_model = np.copy(self.fit_spec)
 
+        self.comps = {}
+        extra_comps = {}
         for line in self.line_list:
-            host_model = line.add_components(self.comps, host_model)
+            host_model = line.add_components(self.comps, host_model, extra_comps)
 
         for template in self.templates.values():
             host_model = template.add_components(self.comps, host_model)
 
         # The final model
         self.model = np.sum(list(self.comps.values()), axis=0)
+
+        # Add extra comps after we've computed the model
+        self.comps.update(extra_comps)
+
 
