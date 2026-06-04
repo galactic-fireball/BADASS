@@ -1,5 +1,5 @@
 ################################# IO Options ################################
-io_options={
+io={
     "infmt" : "nirspec",
     "output_dir" : 'nirspec_test', # same directory as input file
     "dust_cache" : None,
@@ -13,10 +13,10 @@ io_options={
 
 ################################## Fit Options #################################
 # Fitting Parameters
-fit_options={
+fit={
 "fit_reg"    : (36400,40000),# Fitting region; Note: Indo-US Library=(3460,9464)
 "redshift": 0.002336,
-"fit_area": {"spaxel": (30,27), "plot_input":True},
+"fit_area": {"type":"spaxels","args": [(30,27),], "plot_input":False},
 "good_thresh": 0.0, # percentage of "good" pixels required in fig_reg for fit.
 "mask_bad_pix": False, # mask pixels SDSS flagged as 'bad' (careful!)
 "mask_emline" : False, # automatically mask lines for continuum fitting.
@@ -53,20 +53,27 @@ mcmc_options={
 ################################################################################
 
 ############################ Fit component op dtions #############################
-comp_options={
-"fit_opt_feii"     : False, # optical FeII
-"fit_uv_iron"      : False, # UV Iron 
-"fit_balmer"       : False, # Balmer continuum (<4000 A)
-"fit_losvd"        : False, # stellar LOSVD
-"fit_host"         : False, # host template
-"fit_power"        : True, # AGN power-law
-"fit_poly"         : True, # Add polynomial continuum component
-"fit_narrow"       : True, # narrow lines
-"fit_broad"        : True, # broad lines
-"fit_absorp"       : False, # absorption lines
-"tie_line_disp"    : False, # tie line widths (dispersions)
-"tie_line_voff"    : False, # tie line velocity offsets
+# comp_options={
+# "fit_opt_feii"     : False, # optical FeII
+# "fit_uv_iron"      : False, # UV Iron 
+# "fit_balmer"       : False, # Balmer continuum (<4000 A)
+# "fit_losvd"        : False, # stellar LOSVD
+# "fit_host"         : False, # host template
+# "fit_power"        : True, # AGN power-law
+# "fit_poly"         : True, # Add polynomial continuum component
+# "fit_narrow"       : True, # narrow lines
+# "fit_broad"        : True, # broad lines
+# "fit_absorp"       : False, # absorption lines
+# "tie_line_disp"    : False, # tie line widths (dispersions)
+# "tie_line_voff"    : False, # tie line velocity offsets
+# }
+
+comp = {
+    'fit_losvd': False,
+    # 'fit_host': True,
+    'fit_feii': False,
 }
+
 
 # Line options for each narrow, broad, and absorption.
 narrow_options = {
@@ -102,13 +109,18 @@ absorp_options = {
 ################################################################################
 # User lines overrides the default line list with a user-input line list!
 
-user_lines = {
-    "FEAT1": {"center":36584.56,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
-    "FEAT2": {"center":37400.61,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
-    "FEAT3": {"center":38077.33,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
-    "FEAT4": {"center":38462.13,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
-    "FEAT5": {"center":39337.88,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
-}
+# user_lines = {
+#     "FEAT1": {"center":36584.56,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
+#     "FEAT2": {"center":37400.61,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
+#     "FEAT3": {"center":38077.33,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
+#     "FEAT4": {"center":38462.13,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
+#     "FEAT5": {"center":39337.88,"line_type":"user","line_profile":"gaussian","ncomp":1,"line_type":"na"},
+# }
+
+
+user_lines = [
+    {'name': 'FEAT1', 'center': 36584.56}
+]
 
 
 user_constraints = []
@@ -130,22 +142,22 @@ combined_lines = {
 # convolution during the fitting process.
 ################################################################################
 
-losvd_options = {
-"library"   : "IndoUS", # Options: IndoUS, Vazdekis2010
-"vel_const" :  {"bool":False, "val":0.0},
-"disp_const":  {"bool":False, "val":250.0},
-}
+# losvd_options = {
+# "library"   : "IndoUS", # Options: IndoUS, Vazdekis2010
+# "vel_const" :  {"bool":False, "val":0.0},
+# "disp_const":  {"bool":False, "val":250.0},
+# }
 
 ########################## SSP Host Galaxy Template & Options ##################
 # The default is zero velocity, 100 km/s dispersion 10 Gyr template from 
 # the eMILES stellar library. 
 ################################################################################
 
-host_options = {
-"age"       : [1.0,5.0,10.0], # Gyr; [0.09 Gyr - 14 Gyr] 
-"vel_const" : {"bool":False, "val":0.0},
-"disp_const": {"bool":False, "val":150.0}
-}
+# host_options = {
+# "age"       : [1.0,5.0,10.0], # Gyr; [0.09 Gyr - 14 Gyr] 
+# "vel_const" : {"bool":False, "val":0.0},
+# "disp_const": {"bool":False, "val":150.0}
+# }
 
 ########################### AGN power-law continuum & Options ##################
 # The default is a simple power law.
@@ -181,12 +193,12 @@ poly_options = {
 # voff_const : constant velocity offset (default True)
 # temp_const : constant temp ('K10' only)
 
-opt_feii_options={
-"opt_template"  :{"type":"VC04"}, 
-"opt_amp_const" :{"bool":False, "br_opt_feii_val":1.0   , "na_opt_feii_val":1.0},
-"opt_disp_const":{"bool":False, "br_opt_feii_val":3000.0, "na_opt_feii_val":500.0},
-"opt_voff_const":{"bool":False, "br_opt_feii_val":0.0   , "na_opt_feii_val":0.0},
-}
+# opt_feii_options={
+# "opt_template"  :{"type":"VC04"}, 
+# "opt_amp_const" :{"bool":False, "br_opt_feii_val":1.0   , "na_opt_feii_val":1.0},
+# "opt_disp_const":{"bool":False, "br_opt_feii_val":3000.0, "na_opt_feii_val":500.0},
+# "opt_voff_const":{"bool":False, "br_opt_feii_val":0.0   , "na_opt_feii_val":0.0},
+# }
 # or
 # opt_feii_options={
 # "opt_template"  :{"type":"K10"},
@@ -198,24 +210,24 @@ opt_feii_options={
 ################################################################################
 
 ############################### UV Iron options ################################
-uv_iron_options={
-"uv_amp_const"  :{"bool":False, "uv_iron_val":1.0},
-"uv_disp_const" :{"bool":False, "uv_iron_val":3000.0},
-"uv_voff_const" :{"bool":True,  "uv_iron_val":0.0},
-}
+# uv_iron_options={
+# "uv_amp_const"  :{"bool":False, "uv_iron_val":1.0},
+# "uv_disp_const" :{"bool":False, "uv_iron_val":3000.0},
+# "uv_voff_const" :{"bool":True,  "uv_iron_val":0.0},
+# }
 ################################################################################
 
 ########################### Balmer Continuum options ###########################
 # For most purposes, only the ratio R, and the overall amplitude are free paramters
 # but if you want to go crazy, you can fit everything.
-balmer_options = {
-"R_const"          :{"bool":True,  "R_val":1.0}, # ratio between balmer continuum and higher-order balmer lines
-"balmer_amp_const" :{"bool":False, "balmer_amp_val":1.0}, # amplitude of overall balmer model (continuum + higher-order lines)
-"balmer_disp_const":{"bool":True,  "balmer_disp_val":5000.0}, # broadening of higher-order Balmer lines
-"balmer_voff_const":{"bool":True,  "balmer_voff_val":0.0}, # velocity offset of higher-order Balmer lines
-"Teff_const"       :{"bool":True,  "Teff_val":15000.0}, # effective temperature
-"tau_const"        :{"bool":True,  "tau_val":1.0}, # optical depth
-}
+# balmer_options = {
+# "R_const"          :{"bool":True,  "R_val":1.0}, # ratio between balmer continuum and higher-order balmer lines
+# "balmer_amp_const" :{"bool":False, "balmer_amp_val":1.0}, # amplitude of overall balmer model (continuum + higher-order lines)
+# "balmer_disp_const":{"bool":True,  "balmer_disp_val":5000.0}, # broadening of higher-order Balmer lines
+# "balmer_voff_const":{"bool":True,  "balmer_voff_val":0.0}, # velocity offset of higher-order Balmer lines
+# "Teff_const"       :{"bool":True,  "Teff_val":15000.0}, # effective temperature
+# "tau_const"        :{"bool":True,  "tau_val":1.0}, # optical depth
+# }
 
 ################################################################################
 

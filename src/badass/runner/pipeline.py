@@ -15,6 +15,7 @@ class BadassPipeline:
         test_cfg = cfg
         if isinstance(test_cfg, list): test_cfg = test_cfg[0]
         if not test_cfg.fit.fit_area.type is None:
+            from badass.runner.ifu import get_ifu_type
             pipeline_cls = get_ifu_type(test_cfg.fit.fit_area.type)
             if pipeline_cls is None:
                 raise Exception('Unexpected area type: %s'%test_cfg.fit.fit_area.type)

@@ -92,7 +92,7 @@ class CubeReader(BadassInput):
             for key, val in split_dict.items():
                 spax_dict[key] = val[x,y,:]
 
-            inputs.extend(cls.from_dict(spax_dict))
+            inputs.extend(cls.from_dict(spax_dict, cfg=cfg))
 
         return inputs
 
