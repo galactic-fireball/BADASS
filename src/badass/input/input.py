@@ -18,6 +18,12 @@ from badass.utils.utils import ccm_unred, get_ebv, emline_masker, metal_masker
 # TODO: set up pre-input creation logger
 
 
+class FitReg(NamedTuple):
+    min: float
+    max: float
+
+    def __str__(self):
+        return f'({self.min}, {self.max})'
 
 
 @dataclass
@@ -107,29 +113,29 @@ class BadassSpec(SparkSpec):
 
     def set_fit_region(self):
         # Determines the fitting region for an input spectrum and fit options
-
         # Fitting region initially the edges of wavelength vector
-        self.fit_reg = (self.wave[0], self.wave[-1])
-        self.log.info('Initial fitting region: ({mi}, {ma})'.format(mi=self.fit_reg[0], ma=self.fit_reg[1]))
+        self.fit_reg = FitReg(min=self.wave[0], max=self.wave[-1])
+        self.log.info('Initial fitting region: {fr}'.format(fr=self.fit_reg))
 
         user_fit_reg = self.cfg.fit.fit_reg
         if isinstance(user_fit_reg, (tuple,list)):
-            if user_fit_reg[0] > user_fit_reg[1]:
+            user_fit_reg = FitReg(*user_fit_reg)
+            if user_fit_reg.min > user_fit_reg.max:
                 self.log.error('Fitting boundaries overlap!')
                 self.fit_reg = None
                 return
 
-            if (user_fit_reg[0] > self.fit_reg[1]) or (user_fit_reg[1] < self.fit_reg[0]):
+            if (user_fit_reg.min > self.fit_reg.max) or (user_fit_reg.max < self.fit_reg.min):
                 self.log.error('Fitting region not available!')
                 self.fit_reg = None
                 return
 
-            if (user_fit_reg[0] < self.fit_reg[0]) or (user_fit_reg[1] > self.fit_reg[1]):
+            if (user_fit_reg[0] < self.fit_reg.min) or (user_fit_reg[1] > self.fit_reg.max):
                 self.log.warn('Input fitting region exceeds available wavelength range. BADASS will adjust your fitting range automatically...')
-                self.log.warn('\t- Input fitting range: (%d, %d)' % (user_fit_reg[0], user_fit_reg[1]))
-                self.log.warn('\t- Available wavelength range: (%d, %d)' % (self.fit_reg[0], self.fit_reg[1]))
+                self.log.warn('\t- Input fitting range: %s' % (user_fit_reg))
+                self.log.warn('\t- Available wavelength range: %s' % (self.fit_reg))
 
-            self.fit_reg = (np.max([user_fit_reg[0], self.fit_reg[0]]), np.min([user_fit_reg[1], self.fit_reg[1]]))
+            self.fit_reg = FitReg(np.max([user_fit_reg.min, self.fit_reg.min]), np.min([user_fit_reg.max, self.fit_reg.max]))
         elif (isinstance(user_fit_reg, str)) and (user_fit_reg == 'auto'):
             self.log.info('Auto setting fitting region')
         else:
@@ -137,22 +143,17 @@ class BadassSpec(SparkSpec):
             self.fit_reg = None
             return
 
-
         # The lower limit of the spectrum must be the lower limit of our stellar templates
         # TODO: template function to let each template affect the fitting region?
         if self.cfg.comp.fit_losvd:
             min_losvd = constants.LOSVD_LIBRARIES[self.cfg.losvd.library].min_losvd
             max_losvd = constants.LOSVD_LIBRARIES[self.cfg.losvd.library].max_losvd
-            if (self.fit_reg[0] < min_losvd) or (self.fit_reg[1] > max_losvd):
-                self.log.warn("Warning: Fitting LOSVD requires wavelenth range between {mi} Å and {ma} Å for stellar templates. BADASS will adjust your fitting range to fit the LOSVD...".format(mi=min_losvd, ma=max_losvd))
-                self.log.warn("\t- Available wavelength range: (%d, %d)" % (self.fit_reg[0], self.fit_reg[1]))
-            self.fit_reg = (np.max([min_losvd, self.fit_reg[0]]), np.min([max_losvd, self.fit_reg[1]]))
+            if (self.fit_reg.min < min_losvd) or (self.fit_reg.max > max_losvd):
+                self.log.warn('Warning: Fitting LOSVD requires wavelenth range between {mi} Å and {ma} Å for stellar templates. BADASS will adjust your fitting range to fit the LOSVD...'.format(mi=min_losvd, ma=max_losvd))
+                self.log.warn('\t- Available wavelength range: %s' % (self.fit_reg))
+            self.fit_reg = FitReg(np.max([min_losvd, self.fit_reg.min]), np.min([max_losvd, self.fit_reg.max]))
 
-        # allow for more explicit variable name: fit_reg.min and fit_reg.max
-        # self.fit_reg = type('FitReg', (object,), dict(min=self.fit_reg[0], max=self.fit_reg[1]))
-        self.fit_reg = prodict.Prodict({'min':self.fit_reg[0],'max':self.fit_reg[1]})
-        self.log.info("- New fitting region is ({mi}, {ma})".format(mi=self.fit_reg.min, ma=self.fit_reg.max))
-
+        self.log.info('- New fitting region is {fr}'.format(fr=self.fit_reg))
         if (self.fit_reg.max - self.fit_reg.min) < constants.MIN_FIT_REGION:
             self.log.error('Fitting region too small! The fitting region must be at least {min_reg} A!'.format(min_reg=constants.MIN_FIT_REGION))
             self.fit_reg = None
