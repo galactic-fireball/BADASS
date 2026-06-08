@@ -1,11 +1,21 @@
+from dataclasses import dataclass
 
+from badass.input.input import BadassSpec
+from badass.runner.runner import BadassResult
 # from badass.runner.tests import TestResult, TestRunner
 from badass.runner.bootstrap import MLResult, MLRunner
 # from badass.runner.mcmc import MCMCContext, MCMCResult, MCMCStage
+from badass.utils.config import BadassConfig
 
 from badass.utils import plotting
 
+@dataclass
 class BadassPipeline:
+
+    sources: BadassSpec = None
+    cfg: BadassConfig = None
+    single: bool = True
+    result: BadassResult = None
 
     @staticmethod
     def init(targets, cfg):
@@ -30,13 +40,6 @@ class BadassPipeline:
         # Single target fitting, no tests
         if isinstance(cfg, list): cfg = cfg[0]
         return BadassPipeline(targets, cfg)
-
-
-    def __init__(self, target, cfg, single=True):
-        self.target = target
-        self.cfg = cfg
-        self.single = single
-        self.result = None
 
 
     def run(self):

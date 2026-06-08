@@ -45,7 +45,7 @@ from badass.components.params import ParameterRegistry
 from badass.components.blobs import BlobRegistry
 
 from badass.utils.config import BadassConfig
-from badass.input.input import BadassInput
+from badass.input.input import BadassSpec
 from badass.utils.output import ResultWriter
 import badass.utils.utils as ba_utils
 from badass.components.templates.common import initialize_templates
@@ -77,7 +77,7 @@ __status__ = 'Release'
 
 def target_check(inputs, **kwargs):
     cfg = BadassConfig.get_config_from_args(kwargs)
-    targets = BadassInput.get_inputs(inputs, cfg)
+    targets = BadassSpec.get_inputs(inputs, cfg)
     print('Fitting %d targets'%len(targets))
 
 
@@ -92,9 +92,9 @@ from badass.runner.pipeline import BadassPipeline
 
 def run_BADASS(inputs, **kwargs):
     cfg = BadassConfig.get_config_from_args(kwargs)
-    targets = BadassInput.get_inputs(inputs, cfg)
+    sources = BadassSpec.get_inputs(inputs, cfg)
 
-    pipeline = BadassPipeline.init(targets, cfg)
+    pipeline = BadassPipeline.init(sources, cfg)
     pipeline.run()
     pipeline.finalize()
 

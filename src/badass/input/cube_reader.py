@@ -1,13 +1,16 @@
 from astropy.coordinates import Angle
 import copy
+from dataclasses import dataclass
 import matplotlib.pyplot as plt
 import numpy as np
 from photutils.aperture import ApertureStats, CircularAperture, RectangularAperture
 
-from badass.input.input import BadassInput
+from spark.io.models input BadassSpec
 
-class CubeReader(BadassInput):
+from badass.input.input import BadassSpec
 
+@dataclass
+class BadassCube(BadassSpec, SparkCube)
     def __init__(self, input_data, cfg):
         if not isinstance(input_data, dict):
             raise Exception('Default user data input should be dict')

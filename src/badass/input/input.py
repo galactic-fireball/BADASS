@@ -1,11 +1,12 @@
+from dataclasses import dataclass
 from importlib import import_module
 import matplotlib.pyplot as plt
 import numpy as np
-import os
 import pathlib
 import prodict
-import time
-import shutil
+from typing import NamedTuple
+
+from spark.io.models import SparkSpec
 
 from badass.utils.config import BadassConfig
 import badass.utils.constants as constants
@@ -37,56 +38,41 @@ class BadassInput():
 
         if not hasattr(self, 'flux_norm'):
             self.flux_norm = 1.0
+@dataclass
+class BadassSpec(SparkSpec):
+    name: str = None
+    cfg: BadassConfig = None
+    obs_wave: np.ndarray = None
+    fit_reg: FitReg = None
+    flux_norm: float = 1.0
+    disp_res: int | float | np.ndarray = None
+    velscale: float = 0.0
+    valid: bool = True
+    err_log: str = ''
 
-        if not hasattr(self, 'cfg'):
-            self.cfg = cfg
+    def __post_init__(self):
+        print('BadassSpec __post_init__')
+        super().__post_init__()
 
-        if not hasattr(self, 'name'):
-            if hasattr(self.cfg.io, 'product_name'):
+        if self.name is None:
+            if not self.cfg.io.product_name is None:
                 self.name = self.cfg.io.product_name
-            elif hasattr(self, 'infile'):
-                self.name = self.infile.stem
+            elif not self.file is None:
+                self.name = self.file.stem
             else:
                 self.name = 'spec-%d'%int(time.time() * 1000)
 
-        if not hasattr(self, 'outdir'):
-            if hasattr(self.cfg.io, 'output_dir'):
-                self.outdir = pathlib.Path(self.cfg.io.output_dir)
-                if self.cfg.io.get('multi', False):
-                    self.outdir = self.outdir.joinpath(self.name)
-            elif hasattr(self, 'infile'):
-                self.outdir = self.infile.parent.resolve().joinpath(self.name)
-            else:
-                self.outdir = pathlib.Path(os.getcwd()).resolve().joinpath(self.name)
-        if not self.outdir.is_absolute():
-            self.outdir = pathlib.Path(os.getcwd()).resolve().joinpath(self.outdir)
-
-        # TODO: check for fit completed
-        if self.outdir.joinpath('results', 'mc_result', 'par_table.fits').exists():
-            if self.cfg.io.get('overwrite', False):
-                print('Removing old output directory: [%s]'%str(self.outdir))
-                shutil.rmtree(str(self.outdir))
-            else:
-                self.valid = False
-                self.err_log = 'Output directory [%s] already exists, not overwriting'%str(self.outdir)
-                print(self.err_log)
-                return
+        if isinstance(self.disp_res, (float,int)):
+            self.disp_res = np.full(len(self.wave), self.disp_res)
 
 
     def postinit(self):
-
-        self.outdir.mkdir(parents=True, exist_ok=True)
-        self.outdir.joinpath('log').mkdir(parents=True, exist_ok=True) # TODO: 'log' mkdir eventually happens in separate output class
 
         self.set_fit_region()
         if self.fit_reg is None:
             self.valid = False
             return
 
-        if isinstance(self.disp_res, (float,int)):
-            self.disp_res = np.full(len(self.wave), self.disp_res)
-
-        self.bad_pix = getattr(self, 'bad_pix', np.array([]))
         reg_mask = ((self.wave >= self.fit_reg.min) & (self.wave <= self.fit_reg.max))
         self.spec = self.spec[reg_mask]
         self.wave = self.wave[reg_mask]
@@ -103,6 +89,7 @@ class BadassInput():
 
         fit_mask_bad = []
         if self.cfg.fit.mask_bad_pix:
+            self.bad_pix = getattr(self, 'bad_pix', np.array([]))
             fit_mask_bad.extend(self.bad_pix)
         if self.cfg.fit.mask_emline:
             fit_mask_bad.extend(emline_masker(self.wave,self.spec,self.noise))

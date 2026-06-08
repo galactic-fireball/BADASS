@@ -1,4 +1,5 @@
 from astropy.io import fits
+from dataclasses import dataclass
 import numpy as np
 import scipy.optimize as op
 from tabulate import tabulate
@@ -196,15 +197,17 @@ class MLResult(BadassResult):
         hdu.writeto(self.out_dir.joinpath('best_model_components.fits'), overwrite=True)
 
 
+@dataclass
 class MLRunner(BadassRunContext):
-
     result_cls = MLResult
 
-    def __init__(self, target, cfg, **kwargs):
-        super().__init__(target, cfg, **kwargs)
+    force_thresh: float = None
 
-        if not hasattr(self, 'force_thresh'):
-            self.force_thresh = badass_test_suite.root_mean_squared_error(self.target.spec, np.full_like(self.target.spec,np.nanmedian(self.target.spec)))
+    def __post_init__(self):
+        super().__post_init__()
+
+        if self.force_thresh is None:
+            self.force_thresh = badass_test_suite.root_mean_squared_error(self.fit_flux, np.full_like(self.fit_flux, np.nanmedian(self.fit_flux)))
         if not np.isfinite(self.force_thresh):
             self.force_thresh = np.inf
 

@@ -1,14 +1,21 @@
 from dataclasses import dataclass
 import logging
 import numpy as np
+import os
+import pathlib
+import shutil
 import time
+from typing import Any
 
 from badass.components.params import ParameterRegistry
 from badass.components.blobs import BlobRegistry
 from badass.components.templates.common import initialize_templates
 from badass.components.spectral_lines.spectral_line import SpectralLine
+from badass.input.input import BadassSpec
+from badass.utils.config import BadassConfig
 
 
+# TODO: move to BadassLogger class
 def make_logger(name, log_file=None):
     log = logging.getLogger('badass.%s'%name)
     log.setLevel(logging.INFO)
@@ -45,21 +52,56 @@ class BadassResult:
         pass
 
 
+@dataclass
 class BadassRunContext:
-
     result_cls = BadassResult
 
-    def __init__(self, target, cfg, single=True, **kwargs):
-        self.start_time = time.time()
-        self.target = target
-        self.cfg = cfg
-        self.log = make_logger(kwargs.get('name', self.target.name), log_file=self.cfg.io.output_dir.joinpath('log.txt'))
-        self.target.log = self.log
-        self.target.postinit()
-        if not self.target.valid:
-            return
+    source: BadassSpec = None
+    cfg: BadassConfig = None
+    # log: BadassLogger = None
+    outdir: pathlib.Path = None
 
-        self.__dict__.update(kwargs)
+    # TODO: type should by numpy arrays?
+    fit_wave: Any = None
+    fit_flux: Any = None
+    fit_err: Any = None
+
+
+    def __post_init__(self):
+        self.start_time = time.time()
+
+        if self.outdir is None:
+            if not self.cfg.io.output_dir is None:
+                self.outdir = self.cfg.io.output_dir
+            elif not source.file is None:
+                self.outdir = source.file.with_suffix('')
+            else:
+                self.outdir = pathlib.Path(os.getcwd()).resolve().joinpath(self.source.name)
+        if not self.outdir.is_absolute():
+            self.outdir = pathlib.Path(os.getcwd()).resolve().joinpath(self.outdir)
+
+        # TODO: implement fit status files
+        if self.outdir.joinpath('results', 'mc_result', 'par_table.fits').exists():
+            if self.cfg.io.overwrite:
+                # TODO: set up tmp logger
+                print('Removing old output directory: [%s]'%str(self.outdir))
+                shutil.rmtree(str(self.outdir))
+            else:
+                self.source.valid = False
+                self.source.err_log = 'Output directory [%s] already exists, not overwriting'%str(self.outdir)
+                print(self.err_log)
+                return
+
+        self.outdir.mkdir(parents=True, exist_ok=True)
+        log_dir = self.outdir.joinpath('log')
+        log_dir.mkdir(parents=True, exist_ok=True) # TODO: 'log' mkdir eventually happens in separate output class
+
+        self.log = make_logger(self.source.name, log_file=log_dir.joinpath('log.txt'))
+        self.source.log = self. log # TODO: separate logger for source?
+
+        self.source.postinit()
+        if not self.source.valid:
+            return
 
         # The spectral data currently being fit
         if not hasattr(self, 'fit_wave'):
