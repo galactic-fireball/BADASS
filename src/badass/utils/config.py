@@ -79,6 +79,7 @@ def to_path(v:Any) -> pathlib.Path:
 class IOOptions(CustomBaseModel):
     infmt: Literal[*(consts.SUPPORTED_INSTRUMENTS+['default',])] = Field(None, json_schema_extra={'required':True}, description='The format of the input file. Currently supported options: `[\'sdss\', \'muse\', \'nirspec\', \'miri\']`')
     output_dir: Annotated[DirectoryPath, BeforeValidator(to_path)] = Field(None, description='The output directory of the BADASS results, logs, plots, etc.')
+    product_name: str = Field(None, description='')
     overwrite: bool = Field(False, description='If `True`, overwrite the `output_dir` if it already exists.')
     nprocesses: int = Field(1, description='For runs of multiple spectra or IFU cubes, run in multiprocess mode.')
     out_fmt: Literal['fits', 'json', 'csv'] = Field('fits', description='The output format.')

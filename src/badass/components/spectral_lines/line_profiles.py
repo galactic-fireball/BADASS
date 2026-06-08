@@ -44,11 +44,11 @@ class GaussianProfile(LineProfile):
     def construct_line(line):
 
         # dispersion in pixels (velscale = km/s/pixel)
-        sigma_pix = line.get_param('disp') / SpectralLine.ctx.target.velscale
+        sigma_pix = line.get_param('disp') / SpectralLine.ctx.source.velscale
         if sigma_pix <= 0.01: sigma_pix = 0.01
 
         # velocity offset in pixels
-        voff_pix = line.get_param('voff') / SpectralLine.ctx.target.velscale
+        voff_pix = line.get_param('voff') / SpectralLine.ctx.source.velscale
         # shift the line center by voff in pixels
         center_pix = line.center_pix + voff_pix
 
@@ -87,11 +87,11 @@ class LorentzianProfile(LineProfile):
 
         fwhm = line.get_param('disp')*2.3548
         # fwhm in pixels (velscale = km/s/pixel)
-        fwhm_pix = fwhm / SpectralLine.ctx.target.velscale
+        fwhm_pix = fwhm / SpectralLine.ctx.source.velscale
         if fwhm_pix <= 0.01: fwhm_pix = 0.01
 
         # velocity offset in pixels
-        voff_pix = line.get_param('voff') / SpectralLine.ctx.target.velscale
+        voff_pix = line.get_param('voff') / SpectralLine.ctx.source.velscale
         # shift the line center by voff in pixels
         center_pix = line.center_pix + voff_pix
 
@@ -140,14 +140,14 @@ class VoigtProfile(LineProfile):
         # https://docs.mantidproject.org/nightly/fitting/fitfunctions/PseudoVoigt.html
 
         # fwhm in pixels (velscale = km/s/pixel)
-        fwhm_pix = (line.get_param('disp')*2.3548) / SpectralLine.ctx.target.velscale
+        fwhm_pix = (line.get_param('disp')*2.3548) / SpectralLine.ctx.source.velscale
         if fwhm_pix <= 0.01: fwhm_pix = 0.01
 
         sigma_pix = fwhm_pix/2.3548
         if sigma_pix <= 0.01: sigma_pix = 0.01
 
         # velocity offset in pixels
-        voff_pix = line.get_param('voff') / SpectralLine.ctx.target.velscale
+        voff_pix = line.get_param('voff') / SpectralLine.ctx.source.velscale
         # shift the line center by voff in pixels
         center_pix = line.center_pix + voff_pix
 
@@ -217,11 +217,11 @@ class GaussHermiteProfile(LineProfile):
                 h_moments[i] = line.get_param('H%d'%m)
 
         # dispersion in pixels (velscale = km/s/pixel)
-        sigma_pix = line.get_param('disp') / SpectralLine.ctx.target.velscale
+        sigma_pix = line.get_param('disp') / SpectralLine.ctx.source.velscale
         if sigma_pix <= 0.01: sigma_pix = 0.01
 
         # velocity offset in pixels
-        voff_pix = line.get_param('voff') / SpectralLine.ctx.target.velscale
+        voff_pix = line.get_param('voff') / SpectralLine.ctx.source.velscale
         # shift the line center by voff in pixels
         center_pix = line.center_pix + voff_pix
 
@@ -287,11 +287,11 @@ class LaplaceProfile(LineProfile):
         # Laplace kernel from Sanders & Evans (2020): https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.5806S/abstract
 
         # dispersion in pixels (velscale = km/s/pixel)
-        sigma_pix = line.get_param('disp') / SpectralLine.ctx.target.velscale
+        sigma_pix = line.get_param('disp') / SpectralLine.ctx.source.velscale
         if sigma_pix <= 0.01: sigma_pix = 0.01
 
         # velocity offset in pixels
-        voff_pix = line.get_param('voff') / SpectralLine.ctx.target.velscale
+        voff_pix = line.get_param('voff') / SpectralLine.ctx.source.velscale
         # shift the line center by voff in pixels
         center_pix = line.center_pix + voff_pix
 
@@ -329,11 +329,11 @@ class UniformProfile(LineProfile):
         # Uniform kernel from Sanders & Evans (2020): https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.5806S/abstract
 
         # dispersion in pixels (velscale = km/s/pixel)
-        sigma_pix = line.get_param('disp') / SpectralLine.ctx.target.velscale
+        sigma_pix = line.get_param('disp') / SpectralLine.ctx.source.velscale
         if sigma_pix <= 0.01: sigma_pix = 0.01
         
         # velocity offset in pixels
-        voff_pix = line.get_param('voff') / SpectralLine.ctx.target.velscale
+        voff_pix = line.get_param('voff') / SpectralLine.ctx.source.velscale
         # shift the line center by voff in pixels
         center_pix = line.center_pix + voff_pix
 

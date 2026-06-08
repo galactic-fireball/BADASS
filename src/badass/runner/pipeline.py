@@ -18,7 +18,7 @@ class BadassPipeline:
     result: BadassResult = None
 
     @staticmethod
-    def init(targets, cfg):
+    def init(sources, cfg):
         print('BadassPipeline init')
 
         # Batch run IFU areas
@@ -30,16 +30,17 @@ class BadassPipeline:
             if pipeline_cls is None:
                 raise Exception('Unexpected area type: %s'%test_cfg.fit.fit_area.type)
 
-            return pipeline_cls(targets, cfg)
+            return pipeline_cls(sources, cfg)
 
         # Multiple non-IFU targets
-        if isinstance(targets, list):
+        if isinstance(sources, list):
             from badass.runner.survey import SurveyPipeline
-            return SurveyPipeline(targets, cfg)
+            return SurveyPipeline(sources, cfg)
 
         # Single target fitting, no tests
+        print('Single target')
         if isinstance(cfg, list): cfg = cfg[0]
-        return BadassPipeline(targets, cfg)
+        return BadassPipeline(sources=sources, cfg=cfg)
 
 
     def run(self):
@@ -52,8 +53,8 @@ class BadassPipeline:
         #     runner.finalize()
 
         if not self.cfg.fit.skip_bootstrap:
-            runner = MLRunner(self.target, self.cfg)
-            if not runner.target.valid:
+            runner = MLRunner(source=self.sources, cfg=self.cfg)
+            if not runner.source.valid:
                 runner.log.error('Invalid target! Skipping!')
                 return None
             runner.run()
@@ -69,7 +70,7 @@ class BadassPipeline:
     def finalize(self):
         print('BadassPipeline finalize')
         if self.single:
-            plotting.plot_ml_results(self.result, self.target)
+            plotting.plot_ml_results(self.result, self.sources)
 
 
 

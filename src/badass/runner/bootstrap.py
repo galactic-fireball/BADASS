@@ -89,17 +89,17 @@ class MLResult(BadassResult):
                 self.blobs_chain[blob.name][i] = blob.cur_val
 
         self.metrics_chain['LOG_LIKE'][i] = result['fun']
-        self.metrics_chain['R_SQUARED'][i] = badass_test_suite.r_squared(ctx.fit_spec, ctx.model)
-        self.metrics_chain['RCHI_SQUARED'][i] = badass_test_suite.r_chi_squared(ctx.fit_spec, ctx.model, ctx.fit_noise, len(ctx.param_reg.get_free_parameters()))
+        self.metrics_chain['R_SQUARED'][i] = badass_test_suite.r_squared(ctx.fit_flux, ctx.model)
+        self.metrics_chain['RCHI_SQUARED'][i] = badass_test_suite.r_chi_squared(ctx.fit_flux, ctx.model, ctx.fit_err, len(ctx.param_reg.get_free_parameters()))
 
         # TODO: copy needed? option to turn off saving these
         for comp, val in ctx.comps.items():
             self.comps_chain[comp][i] = val.copy()
 
-        meta_comps_dict = {'wave':ctx.fit_wave.copy(),'data':ctx.fit_spec.copy(),'noise':ctx.fit_noise.copy(),'model':ctx.model.copy()}
+        meta_comps_dict = {'wave':ctx.fit_wave.copy(),'data':ctx.fit_flux.copy(),'noise':ctx.fit_err.copy(),'model':ctx.model.copy()}
         for comp, comp_arr in meta_comps_dict.items():
             self.meta_comps_chain[comp][i] = comp_arr
-        self.meta_comps_chain['resid'][i] = ctx.fit_spec-ctx.model
+        self.meta_comps_chain['resid'][i] = ctx.fit_flux-ctx.model
 
 
     def compile_results(self, ctx):
@@ -140,19 +140,19 @@ class MLResult(BadassResult):
         for pname, param_dict in self.params.items():
             if pname[-4:] != '_AMP':
                 continue
-            param_dict['med'] *= ctx.target.fit_norm
-            param_dict['std'] *= ctx.target.fit_norm
+            param_dict['med'] *= ctx.source.fit_norm
+            param_dict['std'] *= ctx.source.fit_norm
 
         # updated with final model fit
         for key, comp in ctx.comps.items():
-            self.components[key] = comp * ctx.target.fit_norm
+            self.components[key] = comp * ctx.source.fit_norm
 
         self.meta_components['wave'] = ctx.fit_wave.copy()
-        meta_comps_dict = {'data':ctx.fit_spec.copy(),'noise':ctx.fit_noise.copy(),'model':ctx.model.copy(),}
+        meta_comps_dict = {'data':ctx.fit_flux.copy(),'noise':ctx.fit_err.copy(),'model':ctx.model.copy(),}
         for comp, comp_arr in meta_comps_dict.items():
-            self.meta_components[comp] = comp_arr * ctx.target.fit_norm
-        self.meta_components['resid'] = (ctx.fit_spec-ctx.model) * ctx.target.fit_norm
-        self.meta_components['mask'] = ctx.target.fit_mask.copy()
+            self.meta_components[comp] = comp_arr * ctx.source.fit_norm
+        self.meta_components['resid'] = (ctx.fit_flux-ctx.model) * ctx.source.fit_norm
+        self.meta_components['mask'] = ctx.source.fit_mask.copy()
 
         self.line_list = ctx.line_list
 
@@ -175,11 +175,11 @@ class MLResult(BadassResult):
         table_hdu = fits.BinTableHDU.from_columns(cols)
 
         hdr = fits.Header()
-        hdr['z'] = ctx.target.z
-        hdr['med_noise'] = np.nanmedian(ctx.fit_noise)
-        hdr['velscale'] = ctx.target.velscale
-        hdr['fit_norm'] = ctx.target.fit_norm
-        hdr['flux_norm'] = ctx.target.flux_norm
+        hdr['z'] = ctx.source.target.z
+        hdr['med_noise'] = np.nanmedian(ctx.fit_err)
+        hdr['velscale'] = ctx.source.velscale
+        hdr['fit_norm'] = ctx.source.fit_norm
+        hdr['flux_norm'] = ctx.source.flux_norm
 
         primary = fits.PrimaryHDU(header=hdr)
         hdu = fits.HDUList([primary, table_hdu])
@@ -229,7 +229,7 @@ class MLRunner(BadassRunContext):
         param_bounds = self.param_reg.get_fit_bounds()
 
         n_basinhop = self.cfg.fit.n_basinhop
-        lowest_rmse = badass_test_suite.root_mean_squared_error(self.fit_spec, np.zeros(len(self.fit_spec)))
+        lowest_rmse = badass_test_suite.root_mean_squared_error(self.fit_flux, np.zeros(len(self.fit_flux)))
         callback_ftn = None
         if np.isfinite(self.force_thresh):
             self.log.debug('Required Maximum Likelihood RMSE threshold: %0.4f' % (self.force_thresh))
@@ -257,7 +257,7 @@ class MLRunner(BadassRunContext):
                     accepted_count += 1
 
                 self.fit_model()
-                rmse = badass_test_suite.root_mean_squared_error(self.fit_spec, self.model)
+                rmse = badass_test_suite.root_mean_squared_error(self.fit_flux, self.model)
                 lowest_rmse = min(lowest_rmse, rmse)
 
                 accept_thresh = 0.001 # Define an acceptance threshold
@@ -308,32 +308,32 @@ class MLRunner(BadassRunContext):
         self.result.init_chains(self, max_like_niter)
         self.result.save_iter(self, 0, basinhop_result)
 
-        orig_fit_spec = self.fit_spec.copy()
+        orig_fit_flux = self.fit_flux.copy()
 
         for n in range(1, max_like_niter+1):
             self.log.info('Bootstrap iteration %d'%n)
             # Generate a simulated galaxy spectrum with noise added at each pixel
-            mcgal = np.random.normal(self.fit_spec, np.abs(self.fit_noise))
+            mcgal = np.random.normal(self.fit_flux, np.abs(self.fit_err))
             # Get rid of any infs or nan if there are none; this will cause scipy.optimize to fail
             mcgal[~np.isfinite(mcgal)] = np.nanmedian(mcgal)
-            self.fit_spec = mcgal
+            self.fit_flux = mcgal
 
             result = op.minimize(fun=self.lnprob_wrapper, x0=self.param_reg.fit_vector(), method='SLSQP',
                                    bounds=param_bounds, constraints=param_constraints, options={'maxiter':1000,'disp': False})
             self.result.save_iter(self, n, result)
 
             # return original spectrum
-            self.fit_spec = orig_fit_spec
+            self.fit_flux = orig_fit_flux
 
 
     def reweight(self):
         if not self.cfg.fit.reweighting:
             return
         self.log.debug('Reweighting noise to achieve a reduced chi-squared ~ 1')
-        cur_rchi2 = badass_test_suite.r_chi_squared(self.fit_spec, self.model, self.fit_noise, self.param_reg.free_count)
+        cur_rchi2 = badass_test_suite.r_chi_squared(self.fit_flux, self.model, self.fit_err, self.param_reg.free_count)
         self.log.debug('\tCurrent reduced chi-squared = %0.5f' % cur_rchi2)
-        self.fit_noise = self.fit_noise*np.sqrt(cur_rchi2)
-        new_rchi2 = badass_test_suite.r_chi_squared(self.fit_spec, self.model, self.fit_noise, self.param_reg.free_count)
+        self.fit_err = self.fit_err*np.sqrt(cur_rchi2)
+        new_rchi2 = badass_test_suite.r_chi_squared(self.fit_flux, self.model, self.fit_err, self.param_reg.free_count)
         self.log.debug('\tNew reduced chi-squared = %0.5f' % new_rchi2)
 
 

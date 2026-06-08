@@ -104,15 +104,15 @@ class BadassRunContext:
             return
 
         # The spectral data currently being fit
-        if not hasattr(self, 'fit_wave'):
-            self.fit_wave = self.target.wave.copy()
-        if not hasattr(self, 'fit_spec'):
-            self.fit_spec = self.target.spec.copy()
-        if not hasattr(self, 'fit_noise'):
-            self.fit_noise = self.target.noise.copy()
+        if self.fit_wave is None:
+            self.fit_wave = self.source.wave.copy()
+        if self.fit_flux is None:
+            self.fit_flux = self.source.flux.copy()
+        if self.fit_err is None:
+            self.fit_err = self.source.err.copy()
 
-        max_flux = np.nanmax(self.fit_spec)*1.5
-        median_flux = np.nanmedian(self.fit_spec)
+        max_flux = np.nanmax(self.fit_flux)*1.5
+        median_flux = np.nanmedian(self.fit_flux)
 
         # For use in parameter/hyperpar expressions
         component_args = {
@@ -134,9 +134,9 @@ class BadassRunContext:
 
         # current model components
         self.comps = {}
-        self.model = np.zeros_like(self.fit_spec)
+        self.model = np.zeros_like(self.fit_flux)
 
-        self.result = self.result_cls(self, target.name)
+        self.result = self.result_cls(self, self.source.name)
 
 
     def lnprob_wrapper(self, fit_vals):
@@ -164,22 +164,22 @@ class BadassRunContext:
         # Log-likelihood function
 
         self.fit_model()
-        fit_mask = self.target.fit_mask
+        fit_mask = self.source.fit_mask
         fit_stat = self.cfg.fit.fit_stat
 
-        data = self.fit_spec[fit_mask]
+        data = self.fit_flux[fit_mask]
         model = self.model[fit_mask]
-        noise = self.fit_noise[fit_mask]
+        err = self.fit_err[fit_mask]
 
         if fit_stat == 'ML':
-            return -0.5*np.sum(((data-model)**2/noise**2) + np.log(2*np.pi*noise**2), axis=0)
+            return -0.5*np.sum(((data-model)**2/err**2) + np.log(2*np.pi*err**2), axis=0)
 
         if fit_stat == 'OLS':
             return -np.sum((data - model)**2, axis=0)
 
 
     def fit_model(self):
-        host_model = np.copy(self.fit_spec)
+        host_model = np.copy(self.fit_flux)
 
         self.comps = {}
         extra_comps = {}

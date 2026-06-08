@@ -83,7 +83,7 @@ class SpectralLine(BadassComponent):
             line_dict['CENTER'] = parent.center
 
         # make sure line is in the fitting region
-        if (line_dict['CENTER'] <= SpectralLine.ctx.target.wave[0]+EDGE_PAD) or (line_dict['CENTER'] >= SpectralLine.ctx.target.wave[-1]-EDGE_PAD):
+        if (line_dict['CENTER'] <= SpectralLine.ctx.source.wave[0]+EDGE_PAD) or (line_dict['CENTER'] >= SpectralLine.ctx.source.wave[-1]-EDGE_PAD):
             SpectralLine.ctx.log.warn('Not fitting line %s (out of fit region)'%(line_dict['NAME']))
             return None
 
@@ -206,7 +206,7 @@ class SpectralLine(BadassComponent):
 
     def get_amp_init(self):
         # derive the amp_init value based on the flux close to the line center
-        init = float(self.ctx.fit_spec[ba_utils.find_nearest(self.ctx.fit_wave,self.center)[1]])
+        init = float(self.ctx.fit_flux[ba_utils.find_nearest(self.ctx.fit_wave,self.center)[1]])
 
         # apply a factor based on the number of components
         amp_factor = len(self.parent.children) if self.parent else 1 # number of siblings (including self)
@@ -251,11 +251,11 @@ class SpectralLine(BadassComponent):
         # We will use this to determine the dispersion resolution as a function of wavelength for each
         # emission line so we can correct for the resolution at every iteration.
         # TODO: make this common
-        disp_res_ftn = interp1d(SpectralLine.ctx.target.wave,SpectralLine.ctx.target.disp_res,kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
+        disp_res_ftn = interp1d(SpectralLine.ctx.source.wave,SpectralLine.ctx.source.disp_res,kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
         # Interpolation function that maps x (in angstroms) to pixels so we can get the exact
         # location in pixel space of the emission line.
-        x_pix = np.array(range(len(SpectralLine.ctx.target.wave)))
-        pix_interp_ftn = interp1d(SpectralLine.ctx.target.wave,x_pix,kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
+        x_pix = np.array(range(len(SpectralLine.ctx.source.wave)))
+        pix_interp_ftn = interp1d(SpectralLine.ctx.source.wave,x_pix,kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
 
         self.center_pix = float(pix_interp_ftn(self.center)) # line center in pixels
         self.disp_res_ang = float(disp_res_ftn(self.center)) # instrumental FWHM resolution in angstroms
@@ -268,9 +268,9 @@ class SpectralLine(BadassComponent):
             return cls.spec_features
 
         try:
-            galaxy_csub = ba_utils.continuum_subtract(cls.ctx.fit_wave,cls.ctx.fit_spec,cls.ctx.fit_noise,sigma_clip=2.0,plot=False,verbose=False)
+            galaxy_csub = ba_utils.continuum_subtract(cls.ctx.fit_wave,cls.ctx.fit_flux,cls.ctx.fit_err,sigma_clip=2.0,plot=False,verbose=False)
             # normalize by noise
-            norm_csub = galaxy_csub/cls.ctx.fit_noise
+            norm_csub = galaxy_csub/cls.ctx.fit_err
 
             peaks,_ = signal.find_peaks(norm_csub, height=2.0, width=3.0, prominence=1)
             troughs,_ = signal.find_peaks(-norm_csub, height=2.0, width=3.0, prominence=1)

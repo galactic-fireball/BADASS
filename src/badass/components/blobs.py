@@ -19,7 +19,7 @@ class BlobRegistry:
         self.ctx = ctx
         self.blobs = []
 
-        IndexBlob.register_index_blobs(self, self.ctx.target.wave[0], self.ctx.target.wave[-1])
+        IndexBlob.register_index_blobs(self, self.ctx.source.wave[0], self.ctx.source.wave[-1])
         ContinuumBlob.register_cont_blobs(self)
         ContFracBlob.register_contfrac_blobs(self)
 
@@ -155,7 +155,7 @@ class LineVelBlob(Blob):
         self.name = self.name + '_LINE_VEL'
 
         if (LineVelBlob.interp_ftn is None) and (not ctx is None):
-            LineVelBlob.interp_ftn = interp1d(ctx.target.wave, np.arange(len(ctx.target.wave))*ctx.target.velscale, kind='linear', bounds_error=False)
+            LineVelBlob.interp_ftn = interp1d(ctx.source.wave, np.arange(len(ctx.source.wave))*ctx.source.velscale, kind='linear', bounds_error=False)
 
 
     def compute(self, ctx, kwargs):
@@ -186,7 +186,7 @@ class IndexBlob(Blob):
 
 
     def compute(self, ctx, kwargs):
-        self.cur_val = float(ba_utils.find_nearest(ctx.target.wave,self.wave)[1])
+        self.cur_val = float(ba_utils.find_nearest(ctx.source.wave,self.wave)[1])
         return self.cur_val
 
 
@@ -243,14 +243,14 @@ class ContinuumBlob(Blob):
     def compute(self, ctx, kwargs):
         conts = ContinuumBlob.get_conts_at_idx(ctx, self.idx)
         self.cur_val.update({
-            'F_CONT_TOT_%d'%self.wave: conts['TOTAL']*ctx.target.flux_norm*ctx.target.fit_norm,
-            'F_CONT_AGN_%d'%self.wave: conts['AGN']*ctx.target.flux_norm*ctx.target.fit_norm,
-            'F_CONT_HOST_%d'%self.wave: conts['HOST']*ctx.target.flux_norm*ctx.target.fit_norm,
+            'F_CONT_TOT_%d'%self.wave: conts['TOTAL']*ctx.source.flux_norm*ctx.source.fit_norm,
+            'F_CONT_AGN_%d'%self.wave: conts['AGN']*ctx.source.flux_norm*ctx.source.fit_norm,
+            'F_CONT_HOST_%d'%self.wave: conts['HOST']*ctx.source.flux_norm*ctx.source.fit_norm,
         })
         self.cur_val.update({
-            'L_CONT_TOT_%d'%self.wave: ba_utils.flux_to_lum(self.cur_val['F_CONT_TOT_%d'%self.wave], ctx.cfg.fit.cosmology, ctx.target.z),
-            'L_CONT_AGN_%d'%self.wave: ba_utils.flux_to_lum(self.cur_val['F_CONT_AGN_%d'%self.wave], ctx.cfg.fit.cosmology, ctx.target.z),
-            'L_CONT_HOST_%d'%self.wave: ba_utils.flux_to_lum(self.cur_val['F_CONT_HOST_%d'%self.wave], ctx.cfg.fit.cosmology, ctx.target.z),
+            'L_CONT_TOT_%d'%self.wave: ba_utils.flux_to_lum(self.cur_val['F_CONT_TOT_%d'%self.wave], ctx.cfg.fit.cosmology, ctx.source.target.z),
+            'L_CONT_AGN_%d'%self.wave: ba_utils.flux_to_lum(self.cur_val['F_CONT_AGN_%d'%self.wave], ctx.cfg.fit.cosmology, ctx.source.target.z),
+            'L_CONT_HOST_%d'%self.wave: ba_utils.flux_to_lum(self.cur_val['F_CONT_HOST_%d'%self.wave], ctx.cfg.fit.cosmology, ctx.source.target.z),
         })
         return self.cur_val
 
@@ -308,7 +308,7 @@ class ComponentBlob(Blob):
 
     def compute(self, ctx, kwargs):
         # if ComponentBlob.obs_wave is None:
-        ComponentBlob.obs_wave = ba_utils.redden(ctx.fit_wave, z=ctx.target.z)
+        ComponentBlob.obs_wave = ba_utils.redden(ctx.fit_wave, z=ctx.source.target.z)
 
         self.comp_spec = BlobRegistry.get_component(ctx, self.name)
 
@@ -319,14 +319,14 @@ class ComponentBlob(Blob):
             return self.cur_val
 
         flux = np.trapz(self.comp_spec, ComponentBlob.obs_wave)
-        flux = np.abs(flux)*ctx.target.flux_norm*ctx.target.fit_norm
+        flux = np.abs(flux)*ctx.source.flux_norm*ctx.source.fit_norm
         self.cur_val[self.name+'_FLUX'] = np.log10(flux) if flux != 0.0 else flux
 
-        self.cur_val[self.name+'_LUM'] = np.log10(ba_utils.flux_to_lum(flux, ctx.cfg.fit.cosmology, ctx.target.z)) if flux != 0.0 else 0.0
+        self.cur_val[self.name+'_LUM'] = np.log10(ba_utils.flux_to_lum(flux, ctx.cfg.fit.cosmology, ctx.source.target.z)) if flux != 0.0 else 0.0
 
         cont = kwargs['continuum']
         ew = np.trapz(self.comp_spec/cont, ComponentBlob.obs_wave)
-        ew = ba_utils.dered(ew, z=ctx.target.z)
+        ew = ba_utils.dered(ew, z=ctx.source.target.z)
         self.cur_val[self.name+'_EW'] = ew if np.isfinite(ew) else 0.0
 
         return self.cur_val
@@ -350,16 +350,16 @@ class LineComponentBlob(ComponentBlob):
     def compute(self, ctx, kwargs):
         super().compute(ctx, kwargs)
 
-        self.cur_val[self.line.name+'_FWHM'] = calculate_fwhm(ctx.fit_wave, self.comp_spec, ctx.target.velscale)
+        self.cur_val[self.line.name+'_FWHM'] = calculate_fwhm(ctx.fit_wave, self.comp_spec, ctx.source.velscale)
         self.cur_val[self.line.name+'_W80'] = calculate_w80(ctx.fit_wave, self.comp_spec, self.line.center)
 
         # compute number of pixels (NPIX)
         # - the number of pixels of the line model that are above the raw noise
-        self.cur_val[self.line.name+'_NPIX'] = len(np.where(np.abs(self.comp_spec) > ctx.fit_noise)[0])
+        self.cur_val[self.line.name+'_NPIX'] = len(np.where(np.abs(self.comp_spec) > ctx.fit_err)[0])
 
         # compute the signal-to-noise ratio (SNR)
         # - the maximum value of the line model above the MEAN value of the noise within the channels
-        self.cur_val[self.line.name+'_SNR'] = np.nanmax(np.abs(self.comp_spec)) / np.nanmean(ctx.fit_noise)
+        self.cur_val[self.line.name+'_SNR'] = np.nanmax(np.abs(self.comp_spec)) / np.nanmean(ctx.fit_err)
 
         return self.cur_val
         # TODO: add line window metrics
@@ -403,7 +403,7 @@ class CombinedLineComponentBlob(LineComponentBlob):
 
         # get the LineVel blob associated with this line
         line_vel = ctx.blob_reg.get_blob(self.name+'_LINE_VEL').cur_val
-        vel = np.arange(len(ctx.fit_wave))*ctx.target.velscale - line_vel
+        vel = np.arange(len(ctx.fit_wave))*ctx.source.velscale - line_vel
         full_profile = np.abs(self.comp_spec)
         norm_profile = full_profile/np.sum(full_profile)
         voff = np.trapz(vel*norm_profile,vel)/simpson(norm_profile,vel)

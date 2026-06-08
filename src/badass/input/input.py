@@ -17,27 +17,9 @@ from badass.utils.utils import ccm_unred, get_ebv, emline_masker, metal_masker
 # TODO: use a dataclass to explicitly define expected attrs and make sure all input classes have consistent attrs
 # TODO: set up pre-input creation logger
 
-class BadassInput():
 
-    def __init__(self, input_data, cfg):
-        # TODO: make dataclass
-        if not hasattr(self, 'valid'):
-            self.valid = True
-        if not hasattr(self, 'err_log'):
-            self.err_log = ''
 
-        if (not hasattr(self, 'wave')) or (not hasattr(self, 'spec')):
-            self.valid = False
-            self.err_log = 'Can\'t fit spec without \'wave\' or \'spec\' values'
-            print(self.err_log)
-            return
 
-        if (not hasattr(self, 'ra')) or (not hasattr(self, 'dec')):
-            print('WARNING: ra and/or dec not set, the galactic average E(B-V) will used')
-            self.ra, self.dec = None, None
-
-        if not hasattr(self, 'flux_norm'):
-            self.flux_norm = 1.0
 @dataclass
 class BadassSpec(SparkSpec):
     name: str = None
@@ -74,48 +56,48 @@ class BadassSpec(SparkSpec):
             return
 
         reg_mask = ((self.wave >= self.fit_reg.min) & (self.wave <= self.fit_reg.max))
-        self.spec = self.spec[reg_mask]
+        self.flux = self.flux[reg_mask]
         self.wave = self.wave[reg_mask]
         self.obs_wave = self.obs_wave[reg_mask]
-        self.noise = self.noise[reg_mask]
+        self.err = self.err[reg_mask]
         self.disp_res = self.disp_res[reg_mask]
 
-        nan_gal = np.where(~np.isfinite(self.spec))[0]
-        nan_noise = np.where(~np.isfinite(self.noise))[0]
-        inan = np.unique(np.concatenate([nan_gal,nan_noise]))
-        # Interpolate over nans and infs if in galaxy or noise
-        self.noise[inan] = np.nan
-        self.noise[inan] = 1.0 if all(np.isnan(self.noise)) else np.nanmedian(self.noise)
+        nan_flux = np.where(~np.isfinite(self.flux))[0]
+        nan_err = np.where(~np.isfinite(self.err))[0]
+        inan = np.unique(np.concatenate([nan_flux,nan_err]))
+        # Interpolate over nans and infs if in galaxy or err
+        self.err[inan] = np.nan
+        self.err[inan] = 1.0 if all(np.isnan(self.err)) else np.nanmedian(self.err)
 
         fit_mask_bad = []
         if self.cfg.fit.mask_bad_pix:
             self.bad_pix = getattr(self, 'bad_pix', np.array([]))
             fit_mask_bad.extend(self.bad_pix)
         if self.cfg.fit.mask_emline:
-            fit_mask_bad.extend(emline_masker(self.wave,self.spec,self.noise))
+            fit_mask_bad.extend(emline_masker(self.wave,self.flux,self.err))
         for m in self.cfg.user_mask:
             fit_mask_bad.extend(np.where((self.wave >= m[0]) & (self.wave <= m[1]))[0])
         if self.cfg.fit.mask_metal:
-            fit_mask_bad.extend(metal_masker(self.wave,self.spec,self.noise))
+            fit_mask_bad.extend(metal_masker(self.wave,self.flux,self.err))
 
-        ebv = get_ebv(self.ra, self.dec)
-        self.spec = ccm_unred(self.obs_wave, self.spec, ebv)
+        ebv = get_ebv(self.target.ra, self.target.dec)
+        self.flux = ccm_unred(self.obs_wave, self.flux, ebv)
 
-        self.fit_norm = np.round(np.nanmax(self.spec), 5)
-        self.spec = self.spec / self.fit_norm
-        self.noise = self.noise / self.fit_norm
-        self.noise[self.noise == 0] = np.nanmedian(self.noise)
+        self.fit_norm = np.round(np.nanmax(self.flux), 5)
+        self.flux = self.flux / self.fit_norm
+        self.err = self.err / self.fit_norm
+        self.err[self.err == 0] = np.nanmedian(self.err)
 
         if self.cfg.get('pca', {}).get('do_pca',False):
             pca_reconstruction(self) # TODO: test
 
-        if np.isnan(self.spec).all():
+        if np.isnan(self.flux).all():
             self.valid = False
-            self.err_log = '\'spec\' array is all nans, not running fit'
+            self.err_log = '\'flux\' array is all nans, not running fit'
             return
 
-        fit_mask_bad.extend(np.where(np.isnan(self.spec))[0])
-        fit_mask_bad.extend(np.where(np.isnan(self.noise))[0])
+        fit_mask_bad.extend(np.where(np.isnan(self.flux))[0])
+        fit_mask_bad.extend(np.where(np.isnan(self.err))[0])
         fit_mask_bad = np.sort(np.unique(fit_mask_bad))
         self.fit_mask = np.setdiff1d(np.arange(0,len(self.wave),1,dtype=int),fit_mask_bad)
 
@@ -186,7 +168,8 @@ class BadassSpec(SparkSpec):
 
     @classmethod
     def parse(cls, input_data, cfg):
-        return cls(input_data, cfg)
+        print('BadassSpec parse')
+        return cls.from_fits(input_data, cfg=cfg)
 
 
     @classmethod
@@ -201,19 +184,7 @@ class BadassSpec(SparkSpec):
         if not getattr(module, 'Reader', None):
             raise Exception('No Reader specified in %s' % fmt)
 
-        readers = module.Reader.parse(input_data, cfg)
-        readers = readers if isinstance(readers, list) else [readers]
-        # valid_readers = []
-        # for reader in readers:
-        #     if not reader.valid:
-        #         continue
-        #     reader.postinit()
-        #     if reader.valid:
-        #         valid_readers.append(reader)
-        #     # TODO: log invalid readers
-        # return valid_readers
-
-        return readers
+        return module.Reader.parse(input_data, cfg)
 
 
     @classmethod
@@ -273,32 +244,9 @@ class BadassSpec(SparkSpec):
             if pathlib.Path(input_data).exists():
                 return cls.from_path(input_data, cfg)
 
-        ret = cls.from_format(input_data, cfg)
-        return ret if isinstance(ret, list) else [ret]
+        return cls.from_format(input_data, cfg)
 
 
     def set_new_logger(self):
         self.log = BadassLogger(self)
-
-
-    def validate_input(self):
-        # Custom input parsers or input dict should provide these values
-        # TODO: further validation for each value?
-        # TODO: check fit_reg
-        # TODO: need infile?
-        for attr in ['infile', 'ra', 'dec', 'z', 'wave', 'spec', 'noise', 'disp_res']:
-            if not hasattr(self, attr) or getattr(self, attr) is None:
-                raise Exception('BADASS input missing expected value: {attr}'.format(attr=attr))
-
-        return True
-
-
-# TODO: use default_reader.py?
-# TODO: make Mixin instead so targets can still have their associated class
-class CustomReader(BadassInput):
-    def __init__(self, input_data, cfg):
-        self.__dict__.update(input_data)
-        if not hasattr(self, 'cfg'):
-            self.cfg = cfg
-        super().__init__(input_data, cfg)
 
