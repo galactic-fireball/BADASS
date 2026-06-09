@@ -110,13 +110,15 @@ class Cosmology(CustomBaseModel):
 class FitArea(CustomBaseModel):
     # TODO: after validator to change spaxel to spaxels for consistency
     type: Literal['spaxel', 'spaxels', 'bins', 'aperture'] = None
-    args: dict | list = None
+    spaxels: dict | list | str = None
+    bins: dict | list = None
+    apertures: dict | list = None
     plot_input: bool = False
 
 
 class FitOptions(CustomBaseModel):
     fit_reg: Annotated[list[NonNegativeNum] | str, AfterValidator(validate_fitreg)] = Field('auto', description='The minimum and maximum desired fitting wavelength in angstroms.', examples=[(4400,5500), '\'auto\''])
-    redshift: NonNegativeNum = Field(-1.0, description='Redshift of the fitting target')
+    redshift: NonNegativeNum = Field(0.0, description='Redshift of the fitting target')
     skip_bootstrap: bool = Field(False, description='Option to skip max likelihood bootstrapping')
     n_basinhop: NonNegativeInt = Field(25, description='Number of successive `niter_success` times the basinhopping algorithm needs to achieve a solution. The fit becomes much better with more success times, however this can increase the time to a solution significantly.')
     max_like_niter: NonNegativeInt = Field(10, description='Number of bootstrapping iterations to perform after the initial basinhopping fit. This is a means to obtain uncertainties on parameters without performing MCMC fitting, however, do not produce as robust uncertainties as MCMC.')

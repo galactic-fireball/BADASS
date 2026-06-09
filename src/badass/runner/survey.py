@@ -72,8 +72,8 @@ class SurveyPipeline(BadassPipeline):
     single_sources: dict = field(default_factory=dict)
     source_results: dict = field(default_factory=dict)
 
-    def run(self):
-        print('SurveyPipeline run')
+    def __post_init__(self):
+        print('SurveyPipeline __post_init__')
 
         source_cfgs = self.cfg
         if isinstance(self.cfg, list):
@@ -95,6 +95,9 @@ class SurveyPipeline(BadassPipeline):
             source_out_dir.mkdir(parents=True, exist_ok=True)
             self.single_sources[source.name] = (source, source_cfg)
 
+
+    def run(self):
+        print('SurveyPipeline run')
         if self.cfg.io.nprocesses == 1:
             for source, source_cfg in list(self.single_sources.values()):
                 res = pipeline_run(source, source_cfg)

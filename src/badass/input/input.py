@@ -1,3 +1,5 @@
+from __future__ import annotations
+import astropy.units as u
 from dataclasses import dataclass
 from importlib import import_module
 import matplotlib.pyplot as plt
@@ -6,7 +8,8 @@ import pathlib
 import prodict
 from typing import NamedTuple
 
-from spark.io.models import SparkSpec
+from spark.io.models import Coord, SparkSpec, SparkCube, SparkSpaxel
+from spark.utils import redden, deredden
 
 from badass.utils.config import BadassConfig
 import badass.utils.constants as constants
@@ -36,9 +39,9 @@ class BadassSpec(SparkSpec):
     cfg: BadassConfig = None
     obs_wave: np.ndarray = None
     fit_reg: FitReg = None
-    flux_norm: float = 1.0
+    flux_norm: float = None
     disp_res: int | float | np.ndarray = None
-    velscale: float = 0.0
+    velscale: float = None
     valid: bool = True
     err_log: str = ''
 
@@ -53,6 +56,17 @@ class BadassSpec(SparkSpec):
                 self.name = self.file.stem
             else:
                 self.name = 'spec-%d'%int(time.time() * 1000)
+
+        for attr in ['wave', 'obs_wave', 'flux', 'err']:
+            attr_val = getattr(self, attr)
+            if isinstance(attr_val, u.Quantity):
+                setattr(self, attr, attr_val.value)
+
+        if self.wave_is_rest:
+            self.obs_wave = redden(self.wave, z=self.target.z)
+        else:
+            self.obs_wave = self.wave.copy()
+            self.wave = deredden(self.obs_wave, z=self.target.z)
 
         if isinstance(self.disp_res, (float,int)):
             self.disp_res = np.full(len(self.wave), self.disp_res)
@@ -174,7 +188,7 @@ class BadassSpec(SparkSpec):
     @classmethod
     def parse(cls, input_data, cfg):
         print('BadassSpec parse')
-        return cls.from_fits(input_data, cfg=cfg)
+        return cls.from_fits(input_data, cfg=cfg, z=cfg.fit.redshift)
 
 
     @classmethod
@@ -254,4 +268,14 @@ class BadassSpec(SparkSpec):
 
     def set_new_logger(self):
         self.log = BadassLogger(self)
+
+
+@dataclass
+class BadassSpaxel(BadassSpec, SparkSpaxel):
+    pass
+
+
+@dataclass
+class BadassCube(BadassSpec, SparkCube):
+    spaxel_class = BadassSpaxel
 
