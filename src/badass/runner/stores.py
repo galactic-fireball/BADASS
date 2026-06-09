@@ -54,7 +54,7 @@ class StageStore:
     # TODO: better place for this?
     def update_metrics(self):
         self.metrics['R_SQUARED'] = badass_test_suite.r_squared(self.meta_comps.data, self.meta_comps.model)
-        self.metrics['RCHI_SQUARED'] = badass_test_suite.r_chi_squared(self.meta_comps.data, self.meta_comps.model, self.ctx.fit_noise, len(self.ctx.param_reg.get_free_parameters()))
+        self.metrics['RCHI_SQUARED'] = badass_test_suite.r_chi_squared(self.meta_comps.data, self.meta_comps.model, self.ctx.fit_err, len(self.ctx.param_reg.get_free_parameters()))
 
 
     def save_iter(self):
@@ -76,7 +76,7 @@ class StageStore:
 
 
     def get_outfile(self):
-        outfile = self.ctx.target.outdir.joinpath('results', self.OUT_NAME)
+        outfile = self.ctx.source.outdir.joinpath('results', self.OUT_NAME)
         outfile.parent.mkdir(parents=True, exist_ok=True)
         return outfile
 
@@ -161,13 +161,13 @@ class MCStore(StageStore):
         for pname, param_dict in self.fit_results.items():
             if pname[-4:] != '_AMP':
                 continue
-            param_dict['med'] *= self.ctx.target.fit_norm
-            param_dict['std'] *= self.ctx.target.fit_norm
+            param_dict['med'] *= self.ctx.source.fit_norm
+            param_dict['std'] *= self.ctx.source.fit_norm
 
         for key, comp in self.comps.items():
-            self.comps[key] = comp * self.ctx.target.fit_norm
+            self.comps[key] = comp * self.ctx.source.fit_norm
 
-        self.meta_comps.finalize(self.ctx.target.fit_norm)
+        self.meta_comps.finalize(self.ctx.source.fit_norm)
 
 
     def output(self):
@@ -176,7 +176,7 @@ class MCStore(StageStore):
         outdir = self.get_outfile()
         outdir.mkdir(parents=True, exist_ok=True)
 
-        self.ctx.log.info('Done ML fitting %s!' % self.ctx.target.cfg.io.output_dir)
+        self.ctx.log.info('Done ML fitting %s!' % self.ctx.source.cfg.io.output_dir)
 
 
 

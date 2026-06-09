@@ -34,30 +34,30 @@ def create_input_plot(ctx):
 
     ### Un-normalized spectrum
 
-    ax1.step(ctx.fit_wave, ctx.fit_spec*ctx.target.fit_norm, label='Object Fit Region', linewidth=0.5, color='xkcd:bright aqua')
-    ax1.step(ctx.fit_wave, ctx.fit_noise*ctx.target.fit_norm, label=r'$1\sigma$ Uncertainty', linewidth=0.5, color='xkcd:bright orange')
+    ax1.step(ctx.fit_wave, ctx.fit_flux*ctx.source.fit_norm, label='Object Fit Region', linewidth=0.5, color='xkcd:bright aqua')
+    ax1.step(ctx.fit_wave, ctx.fit_err*ctx.source.fit_norm, label=r'$1\sigma$ Uncertainty', linewidth=0.5, color='xkcd:bright orange')
     ax1.axhline(0.0, color='white', linewidth=0.5, linestyle='--')
 
     # TODO: change to masked_pixels
-    if (hasattr(ctx.target, 'ibad')) and (len(ctx.target.ibad) > 0):
+    if (hasattr(ctx.source, 'ibad')) and (len(ctx.source.ibad) > 0):
         for m in ibad:
             ax1.axvspan(ctx.fit_wave[m], ctx.fit_wave[m], alpha=0.25, color='xkcd:lime green')
         ax1.axvspan(0, 0, alpha=0.25, color='xkcd:lime green', label='bad pixels')
 
     ax1.set_title(r'Input Spectrum', fontsize=fontsize)
     ax1.set_xlabel(r'$\lambda_{\rm{rest}}$ ($\mathrm{\AA}$)', fontsize=fontsize)
-    ax1.set_ylabel(r'$f_\lambda$ ($10^{%d}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)' % (np.log10(ctx.target.flux_norm)), fontsize=fontsize)
+    ax1.set_ylabel(r'$f_\lambda$ ($10^{%d}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)' % (np.log10(ctx.source.flux_norm)), fontsize=fontsize)
     ax1.set_xlim(np.min(ctx.fit_wave), np.max(ctx.fit_wave))
     ax1.legend(loc='best')
 
     ### Normalized spectrum
 
-    ax2.step(ctx.fit_wave, ctx.fit_spec, label='Object Fit Region', linewidth=0.5, color='xkcd:bright aqua')
-    ax2.step(ctx.fit_wave, ctx.fit_noise, label=r'$1\sigma$ Uncertainty', linewidth=0.5, color='xkcd:bright orange')
+    ax2.step(ctx.fit_wave, ctx.fit_flux, label='Object Fit Region', linewidth=0.5, color='xkcd:bright aqua')
+    ax2.step(ctx.fit_wave, ctx.fit_err, label=r'$1\sigma$ Uncertainty', linewidth=0.5, color='xkcd:bright orange')
     ax2.axhline(0.0, color='white', linewidth=0.5, linestyle='--')
 
     # TODO: change to masked_pixels
-    if (hasattr(ctx.target, 'ibad')) and (len(ctx.target.ibad) > 0):
+    if (hasattr(ctx.source, 'ibad')) and (len(ctx.source.ibad) > 0):
         for m in ibad:
             ax1.axvspan(ctx.fit_wave[m], ctx.fit_wave[m], alpha=0.25, color='xkcd:lime green')
         ax1.axvspan(0, 0, alpha=0.25, color='xkcd:lime green', label='bad pixels')
@@ -68,11 +68,11 @@ def create_input_plot(ctx):
     ax2.set_xlim(np.min(ctx.fit_wave),np.max(ctx.fit_wave))
 
     plt.tight_layout()
-    plt.savefig(ctx.target.outdir.joinpath('input_spectrum.pdf'))
+    plt.savefig(ctx.source.outdir.joinpath('input_spectrum.pdf'))
     plt.close(fig)
 
 
-def create_test_plot(target, fit_results, label_A, label_B, test_title=None):
+def create_test_plot(source, fit_results, label_A, label_B, test_title=None):
     plt.style.use('dark_background')
 
     test_A_fit = fit_results[label_A]
@@ -190,14 +190,14 @@ def create_test_plot(target, fit_results, label_A, label_B, test_title=None):
     test_B_axes[0].set_title('TEST%s: %s'%(' '+test_title.replace('_', '\\_') if test_title else '', label_B), fontsize=16)
 
     fig.tight_layout()
-    plot_dir = target.outdir.joinpath('test_plots')
+    plot_dir = source.outdir.joinpath('test_plots')
     plot_dir.mkdir(parents=True, exist_ok=True)
     plt.savefig(plot_dir.joinpath('test%s_%s_vs_%s'%('_'+test_title if test_title else '', label_A, label_B)), bbox_inches='tight', dpi=300)
     plt.close()
 
 
-def plot_ml_results(mlresult, target):
-    ml_fig = plot_best_model(mlresult, target)
+def plot_ml_results(mlresult, source):
+    ml_fig = plot_best_model(mlresult, source)
     ml_fig.savefig(mlresult.out_dir.joinpath('max_likelihood_fit.png'))
     return ml_fig
 
@@ -205,7 +205,7 @@ def plot_ml_results(mlresult, target):
     #     plotly_best_fit(mlstore)
 
 
-def plot_best_model(mlresult, target):
+def plot_best_model(mlresult, source):
     plt.style.use('dark_background')
 
     fig = plt.figure(figsize=(14,6))
@@ -298,7 +298,7 @@ def plot_best_model(mlresult, target):
     # Axes labels
     ax1.set_xticklabels([])
     # TODO: label should represent actual flux_norm
-    ax1.set_ylabel(r'$f_\lambda$ ($10^{%d}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)'%int(np.log10(target.flux_norm)), fontsize=10)
+    ax1.set_ylabel(r'$f_\lambda$ ($10^{%d}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)'%int(np.log10(source.flux_norm)), fontsize=10)
     ax2.set_yticklabels(np.round(np.array(ax2.get_yticks()/3.0)))
     ax2.set_ylabel(r'$\Delta f_\lambda$', fontsize=12)
     ax2.set_xlabel(r'Wavelength, $\lambda\;(\mathrm{\AA})$', fontsize=12)
@@ -330,7 +330,7 @@ def plot_best_model(mlresult, target):
     #     ax1.annotate(label, xy=(xloc, yloc), xycoords='data', xytext=(xloc, yloc), textcoords='data',
     #                  horizontalalignment='center', verticalalignment='bottom', color='xkcd:white', fontsize=6)
 
-    ax1.set_title(r'%s'%target.name.replace('_', '\\_'), fontsize=12)
+    ax1.set_title(r'%s'%source.name.replace('_', '\\_'), fontsize=12)
 
     return fig
 
@@ -404,7 +404,7 @@ def plotly_best_fit(mlstore):
             t=100,
             pad=1
         ),
-        title= mlstore.ctx.target.name,
+        title= mlstore.ctx.source.name,
         font_family='Times New Roman',
         font_size=16,
         font_color='white',
@@ -425,7 +425,7 @@ def plotly_best_fit(mlstore):
                      gridwidth=1, gridcolor='#222A2A', zerolinewidth=2, zerolinecolor='#222A2A', row=2, col=1)
 
     fig.update_xaxes(matches='x')
-    fig.write_html(mlstore.ctx.target.outdir.joinpath('%s_bestfit.html' % mlstore.ctx.target.name), include_mathjax='cdn')
+    fig.write_html(mlstore.ctx.source.outdir.joinpath('%s_bestfit.html' % mlstore.ctx.source.name), include_mathjax='cdn')
 
 
 def posterior_plot(key, mcmc_results, chain, burn_in, outdir):
@@ -531,6 +531,6 @@ def corner_plot(ctx):
 
     with plt.style.context('default'):
         fig = corner.corner(flat_samples, labels=labels)
-        plt.savefig(ctx.target.outdir.joinpath('corner.pdf'))
+        plt.savefig(ctx.source.outdir.joinpath('corner.pdf'))
         plt.close()
 

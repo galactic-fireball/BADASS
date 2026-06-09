@@ -81,11 +81,11 @@ class HostTemplate(BadassTemplate):
         lamRange_temp = [np.min(lam_temp), np.max(lam_temp)]
 
         # Variable sigma
-        disp_res_interp = np.interp(lam_temp, self.ctx.fit_wave, self.ctx.target.disp_res)
+        disp_res_interp = np.interp(lam_temp, self.ctx.fit_wave, self.ctx.source.disp_res)
         disp_dif = np.sqrt((disp_res_interp**2 - disp_temp**2).clip(0))
         sigma = disp_dif/2.355/h['CDELT1'] # Sigma difference in pixels
 
-        sspNew = log_rebin(lamRange_temp, ssp, velscale=self.ctx.target.velscale)[0]
+        sspNew = log_rebin(lamRange_temp, ssp, velscale=self.ctx.source.velscale)[0]
         if sspNew.shape[0] < self.ctx.fit_wave.shape[0]:
             oversample = int(np.ceil(self.ctx.fit_wave.shape[0]/ssp.shape[0])) # make sure template size >= fit_wave size
             sspNew = log_rebin(lamRange_temp, ssp, oversample=oversample)[0]
@@ -110,7 +110,7 @@ class HostTemplate(BadassTemplate):
 
             ssp = ssp[mask]
             ssp = gaussian_filter1d(ssp, sigma)  # perform convolution with variable sigma
-            sspNew,loglam_temp,velscale_temp = log_rebin(lamRange_temp, ssp, velscale=self.ctx.target.velscale)
+            sspNew,loglam_temp,velscale_temp = log_rebin(lamRange_temp, ssp, velscale=self.ctx.source.velscale)
             if sspNew.shape[0] < self.ctx.fit_wave.shape[0]:
                 oversample = int(np.ceil(self.ctx.fit_wave.shape[0]/ssp.shape[0])) # make sure template size >= fit_wave size
                 sspNew = log_rebin(lamRange_temp, ssp, oversample=oversample)[0]
@@ -122,13 +122,13 @@ class HostTemplate(BadassTemplate):
         self.ssp_fft, self.npad = template_rfft(templates)
 
         if self.pre_convolve:
-            self.conv_host = convolve_gauss_hermite(self.ssp_fft, self.npad, float(self.ctx.target.velscale),
+            self.conv_host = convolve_gauss_hermite(self.ssp_fft, self.npad, float(self.ctx.source.velscale),
                            [self.get_param('vel'), self.get_param('disp')], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
 
 
     def add_components(self, comp_dict, host_model):
         if not self.pre_convolve:
-            self.conv_host = convolve_gauss_hermite(self.ssp_fft, self.npad, float(self.ctx.target.velscale),
+            self.conv_host = convolve_gauss_hermite(self.ssp_fft, self.npad, float(self.ctx.source.velscale),
                            [self.get_param('vel'), self.get_param('disp')], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
 
 

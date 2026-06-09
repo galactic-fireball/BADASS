@@ -38,7 +38,7 @@ class OpticalFeIITemplate(BadassTemplate):
 
     def convolve(self, fft, feii_voff, feii_disp, npad=None):
         if npad is None: npad = self.npad
-        return convolve_gauss_hermite(fft, npad, float(self.ctx.target.velscale),
+        return convolve_gauss_hermite(fft, npad, float(self.ctx.source.velscale),
                                      [feii_voff, feii_disp/2.3548], self.ctx.fit_wave.shape[0],
                                      velscale_ratio=1, sigma_diff=0, vsyst=self.vsyst)
 
@@ -90,7 +90,7 @@ class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
         # Convolve templates to the native resolution of SDSS
         fwhm_feii = 1.0 # templates were created with 1.0 FWHM resolution
         disp_feii = fwhm_feii/2.3548
-        disp_res_interp = np.interp(lam_feii, self.ctx.fit_wave, self.ctx.target.disp_res)
+        disp_res_interp = np.interp(lam_feii, self.ctx.fit_wave, self.ctx.source.disp_res)
         disp_diff = np.sqrt((disp_res_interp**2 - disp_feii**2).clip(0))
         sigma = disp_diff/dlam_feii # Sigma difference in pixels
         spec_feii_br = gaussian_filter1d(spec_feii_br, sigma)
@@ -98,8 +98,8 @@ class VC04_OpticalFeIITemplate(OpticalFeIITemplate):
 
         # log-rebin the spectrum to same velocity scale as the input galaxy
         lamRange_feii = [np.min(lam_feii), np.max(lam_feii)]
-        spec_feii_br_new, loglam_feii, velscale_feii = log_rebin(lamRange_feii, spec_feii_br, velscale=self.ctx.target.velscale)
-        spec_feii_na_new, loglam_feii, velscale_feii = log_rebin(lamRange_feii, spec_feii_na, velscale=self.ctx.target.velscale)
+        spec_feii_br_new, loglam_feii, velscale_feii = log_rebin(lamRange_feii, spec_feii_br, velscale=self.ctx.source.velscale)
+        spec_feii_na_new, loglam_feii, velscale_feii = log_rebin(lamRange_feii, spec_feii_na, velscale=self.ctx.source.velscale)
 
         # Pre-compute FFT of templates, since they do not change (only the LOSVD and convolution changes)
         self.br_opt_feii_fft, self.npad = template_rfft(spec_feii_br_new)
@@ -265,7 +265,7 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
         lamRange_feii = [np.min(lam_feii), np.max(lam_feii)]
         # Get size of output log-rebinned spectrum
         ga = gaussian_angstroms(lam_feii, self.transitions['F'].wavelength[0], 1.0, disp, 0.0)
-        new_size, loglam_feii, velscale_feii = log_rebin(lamRange_feii, ga, velscale=self.ctx.target.velscale)
+        new_size, loglam_feii, velscale_feii = log_rebin(lamRange_feii, ga, velscale=self.ctx.source.velscale)
 
         for trans in self.transitions.values():
             # Create storage arrays for each emission line of each transition
@@ -274,7 +274,7 @@ class K10_OpticalFeIITemplate(OpticalFeIITemplate):
             # Generate templates with an amplitude of 1.0
             for i in range(np.shape(trans.templates)[1]):
                 ga = gaussian_angstroms(lam_feii, trans.wavelength[i], 1.0, disp, 0.0)
-                new_temp = log_rebin(lamRange_feii, ga, velscale=self.ctx.target.velscale)[0]
+                new_temp = log_rebin(lamRange_feii, ga, velscale=self.ctx.source.velscale)[0]
                 trans.templates[:,i] = new_temp/np.max(new_temp)
 
             # Pre-compute the FFT for each transition

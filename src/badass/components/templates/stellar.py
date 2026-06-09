@@ -82,10 +82,10 @@ class StellarTemplate(BadassTemplate):
         # of the templates. Outside the range of the galaxy spectrum the resolution
         # will be extrapolated, but this is irrelevant as those pixels cannot be
         # used in the fit anyway.
-        if isinstance(ctx.target.disp_res, (list,np.ndarray)):
-            disp_res_interp = np.interp(lam_temp, ctx.fit_wave, ctx.target.disp_res)
-        elif isinstance(ctx.target.disp_res, (int,float)):
-            disp_res_interp = np.full_like(lam_temp, ctx.target.disp_res)
+        if isinstance(ctx.source.disp_res, (list,np.ndarray)):
+            disp_res_interp = np.interp(lam_temp, ctx.fit_wave, ctx.source.disp_res)
+        elif isinstance(ctx.source.disp_res, (int,float)):
+            disp_res_interp = np.full_like(lam_temp, ctx.source.disp_res)
 
         # Convolve the whole Vazdekis library of spectral templates
         # with the quadratic difference between the SDSS and the
@@ -100,7 +100,7 @@ class StellarTemplate(BadassTemplate):
         disp_dif = np.sqrt((disp_res_interp**2 - disp_temp**2).clip(0))
         sigma = disp_dif/h2['CDELT1'] # Sigma difference in pixels
 
-        sspNew = log_rebin(lamRange_temp, ssp, velscale=ctx.target.velscale)[0]
+        sspNew = log_rebin(lamRange_temp, ssp, velscale=ctx.source.velscale)[0]
         if sspNew.shape[0] < self.ctx.fit_wave.shape[0]:
             oversample = int(np.ceil(self.ctx.fit_wave.shape[0]/ssp.shape[0])) # make sure template size >= fit_wave size
             sspNew = log_rebin(lamRange_temp, ssp, oversample=oversample)[0]
@@ -111,7 +111,7 @@ class StellarTemplate(BadassTemplate):
             ssp = hdu[0].data
             ssp = ssp[mask_temp]
             ssp = gaussian_filter1d(ssp, sigma)  # perform convolution with variable sigma
-            sspNew = log_rebin(lamRange_temp, ssp, velscale=ctx.target.velscale)[0]
+            sspNew = log_rebin(lamRange_temp, ssp, velscale=ctx.source.velscale)[0]
             if sspNew.shape[0] < self.ctx.fit_wave.shape[0]:
                 oversample = int(np.ceil(self.ctx.fit_wave.shape[0]/ssp.shape[0])) # make sure template size >= fit_wave size
                 sspNew = log_rebin(lamRange_temp, ssp, oversample=oversample)[0]
@@ -127,20 +127,20 @@ class StellarTemplate(BadassTemplate):
         # wavelength to the rest frame before using the line below (see above).
         self.vsyst = np.log(lam_temp[0]/ctx.fit_wave[0]) * consts.c
 
-        npix = ctx.fit_spec.shape[0] # number of output pixels
+        npix = ctx.fit_flux.shape[0] # number of output pixels
         ntemp = np.shape(templates)[1] # number of templates
 
         # Pre-compute FFT of templates, since they do not change (only the LOSVD and convolution changes)
         self.temp_fft, self.npad = template_rfft(templates)
 
         if self.pre_convolve:
-            self.conv_temp = convolve_gauss_hermite(self.temp_fft, self.npad, float(self.ctx.target.velscale),
+            self.conv_temp = convolve_gauss_hermite(self.temp_fft, self.npad, float(self.ctx.source.velscale),
                            [self.get_param('vel'), self.get_param('disp')], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
 
 
     def add_components(self, comp_dict, host_model):
         if not self.pre_convolve:
-            self.conv_temp = convolve_gauss_hermite(self.temp_fft, self.npad, float(self.ctx.target.velscale),
+            self.conv_temp = convolve_gauss_hermite(self.temp_fft, self.npad, float(self.ctx.source.velscale),
                            [self.get_param('vel'), self.get_param('disp')], np.shape(self.ctx.fit_wave)[0], vsyst=self.vsyst)
 
         host_model[~np.isfinite(host_model)] = 0

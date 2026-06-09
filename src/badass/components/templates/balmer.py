@@ -55,7 +55,7 @@ class BalmerTemplate(BadassTemplate):
         lamRange_balmer = [np.min(lam_balmer), np.max(lam_balmer)]
         fwhm_balmer = 1.0
         disp_balmer = fwhm_balmer/2.3548
-        disp_res_interp = np.interp(lam_balmer, self.ctx.fit_wave, self.ctx.target.disp_res)
+        disp_res_interp = np.interp(lam_balmer, self.ctx.fit_wave, self.ctx.source.disp_res)
         disp_diff = np.sqrt((disp_res_interp**2 - disp_balmer**2).clip(0))
         sigma = disp_diff/dlam_balmer # Sigma difference in pixels
 
@@ -63,7 +63,7 @@ class BalmerTemplate(BadassTemplate):
         spec_high_balmer = gaussian_filter1d(spec_high_balmer, sigma)
 
         # Log-rebin to same velocity scale as galaxy
-        self.spec_high_balmer, loglam_balmer, self.velscale_balmer = log_rebin(lamRange_balmer, spec_high_balmer, velscale=self.ctx.target.velscale)
+        self.spec_high_balmer, loglam_balmer, self.velscale_balmer = log_rebin(lamRange_balmer, spec_high_balmer, velscale=self.ctx.source.velscale)
         if (np.sum(self.spec_high_balmer)>0):
             # Normalize to 1
             self.spec_high_balmer = self.spec_high_balmer/np.max(self.spec_high_balmer)
@@ -100,7 +100,7 @@ class BalmerTemplate(BadassTemplate):
         disp = self.get_param('disp')
         if disp <= 0.01: disp = 0.01
         # Broaden the higher-order Balmer lines
-        conv_temp = convolve_gauss_hermite(balmer_fft, balmer_npad, float(self.ctx.target.velscale),
+        conv_temp = convolve_gauss_hermite(balmer_fft, balmer_npad, float(self.ctx.source.velscale),
                                            [self.get_param('voff'), disp], self.ctx.fit_wave.shape[0],
                                            velscale_ratio=1, sigma_diff=0, vsyst=vsyst)
 

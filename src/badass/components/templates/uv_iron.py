@@ -54,7 +54,7 @@ class UVIronTemplate(BadassTemplate):
 
         # log-rebin the spectrum to same velocity scale as the input galaxy
         lamRange_uviron = [np.min(lam_uviron), np.max(lam_uviron)]
-        spec_uviron_new, loglam_uviron, velscale_uviron = log_rebin(lamRange_uviron, spec_uviron, velscale=self.ctx.target.velscale)
+        spec_uviron_new, loglam_uviron, velscale_uviron = log_rebin(lamRange_uviron, spec_uviron, velscale=self.ctx.source.velscale)
 
         # Pre-compute FFT of templates, since they do not change (only the LOSVD and convolution changes)
         self.uv_iron_fft, self.npad = template_rfft(spec_uviron_new)
@@ -65,7 +65,7 @@ class UVIronTemplate(BadassTemplate):
 
 
     def convolve(self, uv_iron_voff, uv_iron_disp):
-        return convolve_gauss_hermite(self.uv_iron_fft, self.npad, self.ctx.target.velscale,
+        return convolve_gauss_hermite(self.uv_iron_fft, self.npad, self.ctx.source.velscale,
                                               [uv_iron_voff, uv_iron_disp], self.ctx.fit_wave.shape[0],
                                                velscale_ratio=1, sigma_diff=0, vsyst=self.vsyst)
 
