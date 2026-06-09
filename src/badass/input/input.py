@@ -26,6 +26,10 @@ class FitReg(NamedTuple):
         return f'({self.min}, {self.max})'
 
 
+    def __repr__(self):
+        return self.__str__()
+
+
 @dataclass
 class BadassSpec(SparkSpec):
     name: str = None
@@ -130,10 +134,10 @@ class BadassSpec(SparkSpec):
                 self.fit_reg = None
                 return
 
-            if (user_fit_reg[0] < self.fit_reg.min) or (user_fit_reg[1] > self.fit_reg.max):
+            if (user_fit_reg.min < self.fit_reg.min) or (user_fit_reg.max > self.fit_reg.max):
                 self.log.warn('Input fitting region exceeds available wavelength range. BADASS will adjust your fitting range automatically...')
-                self.log.warn('\t- Input fitting range: %s' % (user_fit_reg))
-                self.log.warn('\t- Available wavelength range: %s' % (self.fit_reg))
+                self.log.warn('\t- Input fitting range: %s'%str(user_fit_reg))
+                self.log.warn('\t- Available wavelength range: %s'%str(self.fit_reg))
 
             self.fit_reg = FitReg(np.max([user_fit_reg.min, self.fit_reg.min]), np.min([user_fit_reg.max, self.fit_reg.max]))
         elif (isinstance(user_fit_reg, str)) and (user_fit_reg == 'auto'):

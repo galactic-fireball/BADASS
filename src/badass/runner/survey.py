@@ -1,4 +1,5 @@
 import copy
+from dataclasses import dataclass, field
 import jinja2
 from matplotlib.backends.backend_pdf import PdfPages
 from multiprocessing import Pool
@@ -23,7 +24,7 @@ REPORT_HTML_HEADER = '''
         thead { background: #9E9EEA; }
         th, td { border: 1px solid lightgrey; padding: 0.25rem 1.25rem; }
         tbody tr:nth-child(even) { background: #D0D0F5}
-        .target-report { display: grid; place-items: center; }
+        .source-report { display: grid; place-items: center; }
         .best-fit-plot { padding: 30px; }
         .params-table { display: flex; flex-direction: row; justify-content: space-around; gap: 5rem; padding: 30px}
     </style>
@@ -32,8 +33,8 @@ REPORT_HTML_HEADER = '''
 '''
 
 REPORT_HTML_TEMPLATE = '''
-<div class="target-report">
-    <h2>{{ target_name }}</h2>
+<div class="source-report">
+    <h2>{{ source_name }}</h2>
     <img class="best-fit-plot" src={{ plot_src }} />
     <div class="params-table">
         {{ params_table_data }}
@@ -47,8 +48,8 @@ REPORT_HTML_FOOTER = '''
 '''
 
 
-def pipeline_run(target, target_cfg):
-    return BadassPipeline(target, target_cfg, single=False).run()
+def pipeline_run(source, source_cfg):
+    return BadassPipeline(source, source_cfg, single=False).run()
 
 
 def skip_existing(outdir, overwrite):
@@ -65,70 +66,66 @@ def skip_existing(outdir, overwrite):
     return True
 
 
-
+@dataclass
 class SurveyPipeline(BadassPipeline):
 
-    def __init__(self, target, cfg):
-        super().__init__(target, cfg)
-
-        self.single_targets = {}
-        self.target_results = {}
-
+    single_sources: dict = field(default_factory=dict)
+    source_results: dict = field(default_factory=dict)
 
     def run(self):
         print('SurveyPipeline run')
 
-        target_cfgs = self.cfg
+        source_cfgs = self.cfg
         if isinstance(self.cfg, list):
             self.cfg = copy.deepcopy(self.cfg[0])
 
-        for i, target in enumerate(self.target):
-            print('Running %s'%target.name)
+        for i, source in enumerate(self.sources):
+            print('Running %s'%source.name)
 
-            if isinstance(target_cfgs, list):
-                target_cfg = target_cfgs[i]
+            if isinstance(source_cfgs, list):
+                source_cfg = source_cfgs[i]
             else:
-                target_cfg = copy.deepcopy(self.cfg)
+                source_cfg = copy.deepcopy(self.cfg)
 
-            target_out_dir = target_cfg.io.output_dir.joinpath(target.name)
-            if skip_existing(target_out_dir, target_cfg.io.overwrite):
+            source_out_dir = source_cfg.io.output_dir.joinpath(source.name)
+            if skip_existing(source_out_dir, source_cfg.io.overwrite):
                 continue
 
-            target_cfg.io.output_dir = target_out_dir
-            target_out_dir.mkdir(parents=True, exist_ok=True)
-            self.single_targets[target.name] = (target, target_cfg)
+            source_cfg.io.output_dir = source_out_dir
+            source_out_dir.mkdir(parents=True, exist_ok=True)
+            self.single_sources[source.name] = (source, source_cfg)
 
         if self.cfg.io.nprocesses == 1:
-            for target, target_cfg in list(self.single_targets.values()):
-                res = pipeline_run(target, target_cfg)
+            for source, source_cfg in list(self.single_sources.values()):
+                res = pipeline_run(source, source_cfg)
                 if not res is None:
-                    self.target_results[target.name] = res
+                    self.source_results[source.name] = res
         else:
             p = Pool(processes=self.cfg.io.nprocesses, maxtasksperchild=1)
-            run_results = p.starmap(pipeline_run, list(self.single_targets.values()), chunksize=1)
+            run_results = p.starmap(pipeline_run, list(self.single_sources.values()), chunksize=1)
             p.close()
 
             for res in run_results:
                 if not res is None:
-                    self.target_results[res.name] = res
+                    self.source_results[res.name] = res
 
 
     def finalize(self):
-        self.make_target_plots()
+        self.make_source_plots()
         self.make_survey_csv()
         self.make_report_html()
         self.make_report_pdf()
 
 
-    def make_target_plots(self):
-        for res in self.target_results.values():
-            res.figures['ml_fit'] = plotting.plot_ml_results(res, self.single_targets[res.name][0])
+    def make_source_plots(self):
+        for res in self.source_results.values():
+            res.figures['ml_fit'] = plotting.plot_ml_results(res, self.single_sources[res.name][0])
 
 
     def make_survey_csv(self):
         data_rows = []
-        for res in self.target_results.values():
-            row_data = {'target': res.name}
+        for res in self.source_results.values():
+            row_data = {'source': res.name}
             for param, param_dict in res.params.items():
                 std_label = param + '_STD'
                 row_data[param] = round(param_dict['med'], 4)
@@ -146,7 +143,7 @@ class SurveyPipeline(BadassPipeline):
         environment = jinja2.Environment()
         template = environment.from_string(REPORT_HTML_TEMPLATE)
 
-        for res in self.target_results.values():
+        for res in self.source_results.values():
             df = pd.DataFrame(columns=['Parameter', 'Best Fit', 'Std. Dev.'])
 
             for param, param_dict in res.params.items():
@@ -163,7 +160,7 @@ class SurveyPipeline(BadassPipeline):
                 table_data += tdf.to_html(index=False, justify='center')
                 table_data += '\n'
 
-            html += template.render(target_name=res.name, plot_src=str(plot_src), params_table_data=table_data)
+            html += template.render(source_name=res.name, plot_src=str(plot_src), params_table_data=table_data)
 
         html += REPORT_HTML_FOOTER
         with open(self.cfg.io.output_dir.joinpath('survey_results.html'), 'w') as out:
@@ -172,8 +169,8 @@ class SurveyPipeline(BadassPipeline):
 
     def make_report_pdf(self):
         pdf = PdfPages(self.cfg.io.output_dir.joinpath('survey_results.pdf'))
-        for res in self.target_results.values():
-            fit_fig = res.figures.get('ml_fit', plotting.plot_ml_results(res, self.single_targets[res.name][0]))
+        for res in self.source_results.values():
+            fit_fig = res.figures.get('ml_fit', plotting.plot_ml_results(res, self.single_sources[res.name][0]))
             pdf.savefig(fit_fig)
         pdf.close()
 
