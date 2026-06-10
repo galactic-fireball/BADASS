@@ -112,18 +112,26 @@ class Cosmology(CustomBaseModel):
 class BinSpec(CustomBaseModel):
     side_length: int = 0
     method: str = 'sum'
-    plot_input: bool = False
     x: list | tuple = (0,-1)
     y: list | tuple = (0,-1)
 
+
+# 'apertures': {'shape':'rectangular', 'center': (10,40), 'width':12,},
+class ApSpec(CustomBaseModel):
+    shape: str
+    center: tuple | list
+    method: str = 'sum'
+    width: float = -1.0
+    height: float = -1.0
+    radius: float = -1.0
 
 
 class FitArea(CustomBaseModel):
     # TODO: after validator to change spaxel to spaxels for consistency
     type: str = None
-    spaxels: dict | list | str = None
-    bins: BinSpec = Field(default=BinSpec())
-    apertures: dict | list = None
+    spaxels: dict | list | str = Field(default=None, alias='spaxel')
+    bins: BinSpec = Field(default=BinSpec(), alias='bin')
+    apertures: ApSpec | list[ApSpec] = Field(default=None, alias='aperture')
     plot_input: bool = False
 
 

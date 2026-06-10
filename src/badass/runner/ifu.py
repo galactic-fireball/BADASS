@@ -7,7 +7,7 @@ from badass.utils import plotting
 
 @dataclass
 class IFUPipeline(SurveyPipeline):
-    area_type = 'general'
+    area_types = ['general',]
 
     single_sources: dict = field(default_factory=dict)
     source_results: dict = field(default_factory=dict)
@@ -82,7 +82,7 @@ class BinsPipeline(IFUPipeline):
         # TODO: voronoi binning
         slength = self.cfg.fit.fit_area.bins.side_length
         method = self.cfg.fit.fit_area.bins.method
-        plot = self.cfg.fit.fit_area.bins.plot_input
+        plot = self.cfg.fit.fit_area.plot_input
 
         if plot:
             import matplotlib.pyplot as plt
@@ -135,7 +135,21 @@ class AperturesPipeline(IFUPipeline):
     area_types = ['aperture','apertures',]
 
     def __post_init__(self):
-        pass
+        aps = self.cfg.fit.fit_area.apertures
+        if not isinstance(aps, list): aps = [aps,]
+
+        for i, ap in enumerate(aps):
+            # TODO: different cfg (user lines) for each aperture
+            ap_cfg = copy.deepcopy(self.cfg)
+            ap_name = 'ap_%d'%i
+            kwargs = {k:v for k,v in ap.model_dump().items() if k in ['width','height','radius']}
+            kwargs['name'] = ap_name
+            source_ap = self.sources.aperture(ap.shape, ap.center, **kwargs)
+
+            ap_out_dir = ap_cfg.io.output_dir.joinpath(self.sources.name, source_ap.name)
+            ap_cfg.io.output_dir = ap_out_dir
+            ap_out_dir.mkdir(parents=True, exist_ok=True)
+            self.single_sources[source_ap.name] = (source_ap, ap_cfg)
 
 
 def get_ifu_type(area_type):
