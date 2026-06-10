@@ -17,10 +17,9 @@ class IFUPipeline(SurveyPipeline):
         pass
 
 
-# TODO: different spaxels/bins/apertures can have different configs
 @dataclass
 class SpaxelsPipeline(IFUPipeline):
-    area_type = 'spaxels'
+    area_types = ['spaxel','spaxels']
 
     spaxels: list = field(default_factory=list)
 
@@ -67,49 +66,6 @@ class SpaxelsPipeline(IFUPipeline):
             self.single_sources[source_spax.name] = (source_spax, spaxel_cfg)
 
 
-            
-
-    #         
-    #             
-    #         
-    #     
-    #     
-
-    #     if cfg.fit.fit_area.plot_input:
-    #         medcube = np.nanmedian(cube_dict['spec'], axis=2)
-    #         medcube[np.isnan(medcube)] = 0.0
-
-    #         plt.figure()
-    #         plt.imshow(medcube.T, origin='lower')
-    #         for x,y in fit_spaxels:
-    #             plt.scatter(x, y, color='orange', marker='+', s=22)
-    #         plt.show()
-
-    #     # These are the values the subclass Reader told us are spaxel-splitable
-    #     # This way we don't do a deepcopy of large 3D arrays that are going to be cutdown anyway
-    #     split_dict = {split_key:cube_dict.pop(split_key,None) for split_key in cube_dict.pop('splitable', ['spec','noise'])}
-
-    #     inputs = []
-    #     for x,y in fit_spaxels:
-    #         spax_dict = copy.deepcopy(cube_dict)
-    #         spax_dict['cfg'].fit.fit_area.args = [(x,y),]
-    #         spax_dict['cfg'].io.output_dir = '%s/spaxel_%d_%d' % (spax_dict['cfg'].io.output_dir,x,y)
-    #         spax_dict['name'] = 'spaxel_%d_%d'%(x,y)
-
-    #         for key, val in split_dict.items():
-    #             spax_dict[key] = val[x,y,:]
-
-    #         inputs.extend(cls.from_dict(spax_dict, cfg=cfg))
-
-    #     return inputs
-
-
-
-
-
-
-
-
     def finalize(self):
         self.make_source_plots()
 
@@ -120,195 +76,71 @@ class SpaxelsPipeline(IFUPipeline):
 
 
 class BinsPipeline(IFUPipeline):
-    area_type = 'bins'
+    area_types = ['bin','bins',]
+
+    def __post_init__(self):
+        # TODO: voronoi binning
+        slength = self.cfg.fit.fit_area.bins.side_length
+        method = self.cfg.fit.fit_area.bins.method
+        plot = self.cfg.fit.fit_area.bins.plot_input
+
+        if plot:
+            import matplotlib.pyplot as plt
+            from matplotlib.patches import Rectangle
+            medcube = np.nanmedian(cube_dict['spec'], axis=2)
+            medcube[np.isnan(medcube)] = 0.0
+
+            plt.figure()
+            plt.imshow(medcube.T, origin='lower')
+
+        sx,ex = self.cfg.fit.fit_area.bins.x
+        if ex < 0: ex = self.sources.flux.shape[2]
+        sy,ey = self.cfg.fit.fit_area.bins.y
+        if ey < 0: ey = self.sources.flux.shape[1]
+
+        bxs_r = range(sx, ex, slength)
+        bys_r = range(sy, ey, slength)
+
+        bnx = bny = 0
+        for bxs in bxs_r:
+            for bys in bys_r:
+                bxe = min(bxs+slength, ex)
+                bye = min(bys+slength, ey)
+                width = bxe - bxs
+                height = bye - bys
+
+                if plot:
+                    plt.gca().add_patch(Rectangle((bxs,bys), width=bxe-bxs, height=bye-bys, facecolor='none', edgecolor='orange'))
+
+                # TODO: different cfg (user lines) for each bin
+                bin_cfg = copy.deepcopy(self.cfg)
+                center = (bxs+(width/2), bys+(height/2))
+                bin_name = 'bin_%d_%d'%(bnx,bny)
+                source_bin = self.sources.aperture('rectangular', center, width=width, height=height, name=bin_name)
+
+                bin_out_dir = bin_cfg.io.output_dir.joinpath(self.sources.name, source_bin.name)
+                bin_cfg.io.output_dir = bin_out_dir
+                bin_out_dir.mkdir(parents=True, exist_ok=True)
+
+                self.single_sources[source_bin.name] = (source_bin, bin_cfg)
+                bny += 1
+            bny = 0
+            bnx += 1
+
+        if plot:
+            plt.show()
 
 
 class AperturesPipeline(IFUPipeline):
-    area_type = 'apertures'
+    area_types = ['aperture','apertures',]
+
+    def __post_init__(self):
+        pass
 
 
 def get_ifu_type(area_type):
     for pipeline in [IFUPipeline, SpaxelsPipeline, BinsPipeline, AperturesPipeline]:
-        if pipeline.area_type == area_type:
+        if area_type in pipeline.area_types:
             return pipeline
     return None
 
-
-
-
-    # @classmethod
-    # def parse(cls, input_data, cfg):
-
-    #     # input_data is already a 1D spectrum
-    #     if (isinstance(input_data, dict)) and ('spec' in input_data) and (len(input_data['spec'].shape) == 1):
-    #         return cls(input_data, cfg)
-
-    #     cube_dict = cls.get_cube_data(input_data, cfg)
-    #     cube_dict['cfg'] = cfg
-
-    #     # TODO: separate subclasses
-    #     area_parsers = {
-    #         'spaxel': cls.spaxel_parse,
-    #         'spaxels': cls.spaxel_parse,
-    #         'bins': cls.bin_parse,
-    #         'aperture': cls.aperture_parse,
-    #     }
-
-    #     fit_area = cfg.fit.fit_area
-    #     if not fit_area.type in area_parsers:
-    #         raise Exception('Fit area type unsupported: %s'%fit_area_type)
-    #     fit_area_func = area_parsers[fit_area.type]
-
-    #     return fit_area_func(cube_dict, input_data, cfg)
-
-
-    # @classmethod
-    # def bin_parse(cls, cube_dict, input_data, options):
-    #     slength = options.fit_options.fit_area.bins.side_length
-    #     method = options.fit_options.fit_area.bins.get('method','sum')
-    #     plot = options.fit_options.fit_area.get('plot_input', False)
-
-    #     if plot:
-    #         from matplotlib.patches import Rectangle
-    #         medcube = np.nanmedian(cube_dict['spec'], axis=2)
-    #         medcube[np.isnan(medcube)] = 0.0
-
-    #         plt.figure()
-    #         plt.imshow(medcube.T, origin='lower')
-
-    #     nx = cube_dict.get('nx', cube_dict['spec'].shape[0])
-    #     ny = cube_dict.get('ny', cube_dict['spec'].shape[1])
-    #     sx,nx = options.fit_options.fit_area.bins.get('x',(0,nx))
-    #     sy,ny = options.fit_options.fit_area.bins.get('y',(0,ny))
-
-    #     bxs_r = range(sx, nx, slength)
-    #     bys_r = range(sy, ny, slength)
-
-    #     cube_spec = cube_dict.pop('spec')
-    #     cube_noise = cube_dict.pop('noise')
-
-    #     product_name = options.io_options.get('product_name', '')
-    #     if product_name != '': product_name = product_name + '_'
-
-    #     inputs = []
-    #     bnx = bny = 0
-    #     for bxs in bxs_r:
-    #         for bys in bys_r:
-    #             bxe = min(bxs+slength, nx)
-    #             bye = min(bys+slength, ny)
-
-    #             if plot:
-    #                 plt.gca().add_patch(Rectangle((bxs,bys), width=bxe-bxs, height=bye-bys, facecolor='none', edgecolor='orange'))
-
-    #             # print('bin(%d,%d): (%d,%d) ; (%d,%d)'%(bnx,bny,bxs,bxe,bys,bye))
-    #             bin_dict = copy.deepcopy(cube_dict)
-    #             bin_dict['options'].io_options.product_name = product_name + 'BIN(%d,%d)'%(bnx,bny)
-    #             bin_dict['options'].io_options.output_dir = '%s/bin_%d_%d' % (bin_dict['options'].io_options.output_dir,bnx,bny)
-
-    #             bin_spec = cube_spec[bxs:bxe,bys:bye,:]
-    #             bin_noise = cube_noise[bxs:bxe,bys:bye,:]
-
-    #             if method == 'sum':
-    #                 bin_spec = np.apply_over_axes(np.nansum, bin_spec, (0,1))
-    #                 bin_noise = np.sqrt(np.apply_over_axes(np.sum, np.square(bin_noise), (0,1)))
-    #             elif method == 'mean':
-    #                 bin_spec = np.apply_over_axes(np.nanmean, bin_spec, (0,1))
-    #                 bin_noise = (np.sqrt(np.apply_over_axes(np.sum, np.square(bin_noise), (0,1)))) / (slength**2)
-    #             else:
-    #                 raise Exception('Unsupport bin method: %s'%method)
-
-    #             bin_dict['spec'] = bin_spec[0,0,:]
-    #             bin_dict['noise'] = bin_noise[0,0,:]
-    #             inputs.append(cls.from_dict(bin_dict))
-
-    #             bny += 1
-    #         bny = 0
-    #         bnx += 1
-
-    #     if plot:
-    #         plt.show()
-
-    #     return inputs
-
-
-    # @classmethod
-    # def aperture_parse(cls, cube_dict, input_data, options):
-    #     aperture_options = options.fit_options.fit_area.aperture
-    #     # TODO: RectangularAperture
-    #     # TODO: other methods (mean, etc.)
-    #     # TODO: batch run multiple apertures
-
-    #     def get_aperture_spec(aperture):
-    #         if options.fit_options.fit_area.get('plot_input', False):
-    #             medcube = np.nanmedian(cube_dict['spec'], axis=2)
-    #             medcube[np.isnan(medcube)] = 0.0
-
-    #             plt.figure()
-    #             plt.imshow(medcube.T, origin='lower')
-    #             aperture.plot()
-    #             plt.show()
-
-    #         wave = cube_dict['wave']
-    #         ap_spec = np.zeros(len(wave))
-    #         ap_err = np.zeros(len(wave))
-
-    #         sum_method = aperture_options.get('sum_method', 'exact')
-    #         if not sum_method in ['exact', 'center', 'subpixel']:
-    #             print('Invalid sum method: %s'%sum_method)
-    #             return None, None
-
-    #         subpixels = aperture_options.get('subpixels', 1)
-
-    #         for i in range(0, len(wave)):
-    #             apstat = ApertureStats(cube_dict['spec'][:,:,i], aperture, error=cube_dict['noise'][:,:,i], sum_method=sum_method, subpixels=subpixels)
-    #             ap_spec[i] = apstat.sum
-    #             ap_err[i] = apstat.sum_err
-    #         return ap_spec, ap_err
-
-
-    #     def get_circular_aperture():
-    #         for attr in ['center', 'radius']:
-    #             if not attr in aperture_options:
-    #                 print('\'%s\' required for CircularAperture'%attr)
-    #                 return None, None
-
-    #         ap_center = aperture_options.center
-    #         radius = aperture_options.radius
-    #         aperture = CircularAperture(ap_center, r=radius)
-    #         return get_aperture_spec(aperture)
-
-
-    #     def get_rectangular_aperture():
-    #         for attr in ['center', 'width', 'height']:
-    #             if not attr in aperture_options:
-    #                 print('\'%s\' required for RectangularAperture'%attr)
-    #                 return None, None
-
-    #         center = aperture_options.center
-    #         width = aperture_options.width
-    #         height = aperture_options.height
-    #         theta = aperture_options.get('theta', 0.0)
-    #         theta = Angle(theta, 'deg')
-    #         aperture = RectangularAperture(center, width, height, theta=theta)
-    #         return get_aperture_spec(aperture)
-
-
-    #     ap_types = {
-    #         'circular': get_circular_aperture,
-    #         'rectangular': get_rectangular_aperture,
-    #     }
-
-    #     ap_type = aperture_options.type
-    #     ap_func = ap_types.get(ap_type, None)
-    #     if ap_func is None:
-    #         raise Exception('Unsupported aperture type: %s'%ap_type)
-
-    #     ap_spec, ap_noise = ap_func()
-    #     if (ap_spec is None) or (ap_noise is None):
-    #         return None
-
-    #     input_dict = cube_dict
-    #     input_dict['spec'] = ap_spec
-    #     input_dict['noise'] = ap_noise
-
-    #     return cls.from_dict(input_dict)

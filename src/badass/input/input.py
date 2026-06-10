@@ -8,7 +8,7 @@ import pathlib
 import prodict
 from typing import NamedTuple
 
-from spark.io.models import Coord, SparkSpec, SparkCube, SparkSpaxel
+from spark.io.models import Coord, SparkSpec, SparkCube, SparkSpaxel, SparkCircularAperture, SparkRectangularAperture
 from spark.utils import redden, deredden
 
 from badass.utils.config import BadassConfig
@@ -276,6 +276,21 @@ class BadassSpaxel(BadassSpec, SparkSpaxel):
 
 
 @dataclass
+class BadassCircularAperture(BadassSpec, SparkCircularAperture):
+    pass
+
+
+@dataclass
+class BadassRectangularAperture(BadassSpec, SparkRectangularAperture):
+    pass
+
+
+@dataclass
 class BadassCube(BadassSpec, SparkCube):
     spaxel_class = BadassSpaxel
+
+    ap_shapes = {
+        'circular': BadassCircularAperture,
+        'rectangular': BadassRectangularAperture,
+    }
 

@@ -13,6 +13,7 @@ PositiveNum = PositiveInt | PositiveFloat
 NonNegativeNum = NonNegativeInt | NonNegativeFloat
 
 
+# TODO: add as after validator when necessary
 def is_lohi(v: list | tuple) -> list:
     if (len(v) == 2) and (v[0]<=v[1]): return v
     raise ValueError('Value is not lo hi')
@@ -107,11 +108,21 @@ class Cosmology(CustomBaseModel):
     Om0: float = 0.30
 
 
+# 'bins': {'side_length':3, 'x': (10,40), 'y':(10,35), 'method': 'mean'},
+class BinSpec(CustomBaseModel):
+    side_length: int = 0
+    method: str = 'sum'
+    plot_input: bool = False
+    x: list | tuple = (0,-1)
+    y: list | tuple = (0,-1)
+
+
+
 class FitArea(CustomBaseModel):
     # TODO: after validator to change spaxel to spaxels for consistency
-    type: Literal['spaxel', 'spaxels', 'bins', 'aperture'] = None
+    type: str = None
     spaxels: dict | list | str = None
-    bins: dict | list = None
+    bins: BinSpec = Field(default=BinSpec())
     apertures: dict | list = None
     plot_input: bool = False
 
