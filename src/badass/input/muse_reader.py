@@ -21,6 +21,7 @@ class MUSEReader(BadassCube, MUSECube):
         self.flux_norm = MUSE_FLUX_NORM
         self.flux / u.Unit(self.flux_norm)
         self.err / u.Unit(self.flux_norm)
+        self.flux_unit / u.Unit(self.flux_norm)
 
         # Default behavior for MUSE data cubes using https://www.aanda.org/articles/aa/pdf/2017/12/aa30833-17.pdf equation 7
         fwhm_res = 5.835e-8 * self.obs_wave**2 - 9.080e-4 * self.obs_wave + 5.983
