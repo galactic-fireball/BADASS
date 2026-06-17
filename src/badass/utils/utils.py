@@ -345,7 +345,7 @@ def log_rebin(lamRange, spec, oversample=1, velscale=None, flux=False):
         velscale = np.diff(logLim)/m*c     # Only for output
     else:
         logScale = velscale/c
-        m = int(np.diff(logLim)/logScale)   # Number of output pixels
+        m = int((np.diff(logLim)/logScale)[0])   # Number of output pixels
         logLim[1] = logLim[0] + m*logScale
 
     newBorders = np.exp(np.linspace(*logLim, num=m+1)) # Logarithmically
