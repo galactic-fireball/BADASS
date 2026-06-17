@@ -23,12 +23,6 @@ class BlobRegistry:
         ContinuumBlob.register_cont_blobs(self)
         ContFracBlob.register_contfrac_blobs(self)
 
-        # compute the values for all the constant blobs
-        for blob in self.blobs:
-            if not blob.is_const:
-                continue
-            blob.compute(self.ctx, {})
-
 
     @staticmethod
     def get_component(ctx, comp):
@@ -37,6 +31,8 @@ class BlobRegistry:
 
     def register_blob(self, blob):
         self.blobs.append(blob)
+        if blob.is_const:
+            blob.compute(self.ctx, {})
         self.ctx.log.debug('Registered %s: %s'%(blob.__class__.__name__, blob.name))
 
 
@@ -404,12 +400,13 @@ class CombinedLineComponentBlob(LineComponentBlob):
         # get the LineVel blob associated with this line
         line_vel = ctx.blob_reg.get_blob(self.name+'_LINE_VEL').cur_val
         vel = np.arange(len(ctx.fit_wave))*ctx.source.velscale - line_vel
-        full_profile = np.abs(self.comp_spec)
-        norm_profile = full_profile/np.sum(full_profile)
-        voff = np.trapz(vel*norm_profile,vel)/simpson(norm_profile,vel)
+
+        norm = simpson(self.comp_spec,vel)
+        voff = simpson(vel*self.comp_spec,vel) / norm
         self.cur_val[self.line.name+'_VOFF'] = voff if np.isfinite(voff) else 0.0
 
-        disp = np.sqrt(np.trapz(vel**2*norm_profile,vel)/np.trapz(norm_profile,vel) - (voff**2))
+        var = simpson(vel**2*self.comp_spec,vel) / norm - (voff**2)
+        disp = np.sqrt(max(var,0.0))
         self.cur_val[self.line.name+'_DISP'] = disp if np.isfinite(disp) else 0.0
         return self.cur_val
 
