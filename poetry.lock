@@ -2571,10 +2571,10 @@ name = "spark"
 version = "0.1.0"
 description = ""
 optional = false
-python-versions = ">=3.11"
+python-versions = ">=3.10"
 groups = ["main"]
 files = []
-develop = true
+develop = false
 
 [package.dependencies]
 astropy = ">=7.2.0,<8.0.0"
@@ -2584,8 +2584,10 @@ pandas = ">=2.3.3,<4.0.0"
 photutils = ">=2.3.0,<3.0.0"
 
 [package.source]
-type = "directory"
-url = "../../../../../../side_quests/portfolio/spark"
+type = "git"
+url = "ssh://git@github.com/galactic-fireball/SPARK.git"
+reference = "HEAD"
+resolved_reference = "36639724504a55647365e02d14a319f4359a2c68"
 
 [[package]]
 name = "spectres"
@@ -2747,4 +2749,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11"
-content-hash = "b1049234dc59b9fa2fd1a3010cb0cf01f02aadfe831ee75c925d5c7cb1e6df4a"
+content-hash = "13621dcbe1e185e70910ea2975cfba09135a2416a27e7302ab355371bb14ef0a"
