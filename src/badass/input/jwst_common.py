@@ -25,7 +25,10 @@ class JWSTReader(BadassCube, JWSTCube):
 
         self.set_dispersion()
         self.disp_res = deredden(self.disp_res, self.target.z)
-        self.flux_norm = 1
+        div = int(np.floor(np.log10(np.abs(np.nanmedian(self.flux)))))
+        self.flux_norm = 10**div
+        self.flux = self.flux / self.flux_norm
+        self.err = self.err / self.flux_norm
         self.velscale = np.nan
 
 
