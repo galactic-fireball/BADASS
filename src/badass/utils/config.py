@@ -129,9 +129,9 @@ class ApSpec(CustomBaseModel):
 class FitArea(CustomBaseModel):
     # TODO: after validator to change spaxel to spaxels for consistency
     type: str = None
-    spaxels: dict | list | str = Field(default=None, alias='spaxel')
-    bins: BinSpec = Field(default=BinSpec(), alias='bin')
-    apertures: ApSpec | list[ApSpec] = Field(default=None, alias='aperture')
+    spaxels: dict | list | str = Field(default=None, alias=AliasChoices('spaxels','spaxel'))
+    bins: BinSpec = Field(default=BinSpec(), alias=AliasChoices('bins','bin'))
+    apertures: ApSpec | list[ApSpec] = Field(default=None, alias=AliasChoices('apertures','aperture'))
     plot_input: bool = False
 
 
