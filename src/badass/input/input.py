@@ -15,10 +15,13 @@ from badass.utils.config import BadassConfig
 import badass.utils.constants as constants
 from badass.utils.logger import BadassLogger
 from badass.utils.pca import pca_reconstruction
-from badass.utils.utils import ccm_unred, get_ebv, emline_masker, metal_masker
+from badass.utils.utils import ccm_unred, get_ebv, emline_masker, log_rebin, metal_masker
 
 # TODO: use a dataclass to explicitly define expected attrs and make sure all input classes have consistent attrs
 # TODO: set up pre-input creation logger
+
+TARGET_WAVE_UNIT = u.AA
+TARGET_FLUX_UNIT_AA = u.erg / u.s / (u.cm**2) / u.AA
 
 
 class FitReg(NamedTuple):
@@ -57,10 +60,12 @@ class BadassSpec(SparkSpec):
             else:
                 self.name = 'spec-%d'%int(time.time() * 1000)
 
-        for attr in ['wave', 'obs_wave', 'flux', 'err']:
+        for attr,unit in {'wave':TARGET_WAVE_UNIT, 'obs_wave':TARGET_WAVE_UNIT, 'flux':TARGET_FLUX_UNIT_AA, 'err':TARGET_FLUX_UNIT_AA}.items():
             attr_val = getattr(self, attr)
             if isinstance(attr_val, u.Quantity):
-                setattr(self, attr, attr_val.value)
+                setattr(self, attr, attr_val.to(unit).value)
+        self.wave_unit = TARGET_WAVE_UNIT
+        self.flux_unit = TARGET_FLUX_UNIT_AA
 
         if self.wave_is_rest:
             self.obs_wave = redden(self.wave, z=self.target.z)
@@ -233,6 +238,15 @@ class BadassSpec(SparkSpec):
     @classmethod
     def get_inputs(cls, input_data, cfg):
         # TODO: from_previous_run
+
+        if isinstance(input_data, cls):
+            if not cfg is None:
+                input_data.cfg = cfg
+            return input_data
+
+        if isinstance(input_data, SparkSpec):
+            return cls.from_spark(input_data, cfg)
+
         if isinstance(input_data, list):
 
             if isinstance(cfg, list) and (len(cfg) != 1 and len(cfg) != len(input_data)):
@@ -293,4 +307,31 @@ class BadassCube(BadassSpec, SparkCube):
         'circular': BadassCircularAperture,
         'rectangular': BadassRectangularAperture,
     }
+
+
+# TODO: there's probably a better way than making these...
+@dataclass
+class LogRebinMixin(BadassSpec):
+    def __post_init__(self):
+        super().__post_init__()
+        lam_range = (np.min(self.wave),np.max(self.wave))
+        self.flux, log_lam, velscale = log_rebin(lam_range, self.flux, velscale=None, flux=False)
+        self.err, _, _ = log_rebin(lam_range, self.err, velscale=velscale, flux=False)
+        self.wave = np.exp(log_lam)
+        self.velscale = velscale[0]
+
+
+@dataclass
+class LogRebinSpaxel(BadassSpaxel, LogRebinMixin):
+    pass
+
+
+@dataclass
+class LogRebinCircularAperture(BadassCircularAperture, LogRebinMixin):
+    pass
+
+
+@dataclass
+class LogRebinRectangularAperture(BadassRectangularAperture, LogRebinMixin):
+    pass
 

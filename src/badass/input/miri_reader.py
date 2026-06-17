@@ -1,4 +1,5 @@
 from astropy.io import fits
+import astropy.units as u
 import pathlib
 from scipy import interpolate
 
@@ -8,9 +9,11 @@ inst_data_file = pathlib.Path(__file__).resolve().parent.joinpath('instrument_da
 
 class MIRIReader(JWSTReader):
 
-    def set_dispersion(self, options, obs_wave):
+    def set_dispersion(self):
         hdu = fits.open(inst_data_file)
-        interp_func = interpolate.interp1d(hdu[1].data['WAVELENGTH'], hdu[1].data['R'], bounds_error=False, fill_value='extrapolate')
-        self.disp_res = obs_wave / interp_func(obs_wave)
+        wave_um = (self.obs_wave*self.wave_unit).to(u.um)
+        interp_func = interpolate.interp1d(hdu[1].data['WAVELENGTH']*u.um, hdu[1].data['R'], bounds_error=False, fill_value='extrapolate')
+        self.disp_res = (wave_um / interp_func(wave_um)).to(self.wave_unit).value
+        hdu.close()
 
 Reader = MIRIReader

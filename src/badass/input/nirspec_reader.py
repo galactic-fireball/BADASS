@@ -1,4 +1,5 @@
 from astropy.io import fits
+import astropy.units as u
 import pathlib
 from scipy import interpolate
 
@@ -14,23 +15,16 @@ FILT_GRAT = {
 
 class NIRSpecReader(JWSTReader):
 
-    @classmethod
-    def set_dispersion(cls, cube_data, options, obs_wave):
-        # if not 'filter' in options.io_options:
-        #     raise Exception('Filter for NIRSpec cube must be provided')
+    def set_dispersion(self):
+        grating = FILT_GRAT[self.cfg.io.filter]
+        disperser = self.cfg.io.disperser.lower()
 
-        # if not 'disperser' in options.io_options:
-        #     raise Exception('Disperser for NIRSpec cube must be provided')
-
-        cube_data['filter'] = options.io.filter
-        cube_data['grating'] = FILT_GRAT[cube_data['filter']]
-        cube_data['disperser'] = options.io.disperser.lower()
-
-        inst_data_file = inst_data_dir.joinpath('jwst_nirspec_g%s%s_disp.fits'%(cube_data['grating'],cube_data['disperser']))
+        inst_data_file = inst_data_dir.joinpath('jwst_nirspec_g%s%s_disp.fits'%(grating,disperser))
         hdu = fits.open(inst_data_file)
 
-        interp_func = interpolate.interp1d(hdu[1].data['WAVELENGTH'], hdu[1].data['R'], bounds_error=False, fill_value='extrapolate')
-        cube_data['disp_res'] = obs_wave / interp_func(obs_wave)
+        wave_um = (self.obs_wave*self.wave_unit).to(u.um)
+        interp_func = interpolate.interp1d(hdu[1].data['WAVELENGTH']*u.um, hdu[1].data['R'], bounds_error=False, fill_value='extrapolate')
+        self.disp_res = (wave_um / interp_func(wave_um)).to(self.wave_unit).value
         hdu.close()
 
 
