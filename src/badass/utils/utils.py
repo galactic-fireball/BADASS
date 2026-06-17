@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numexpr as ne
 import numpy as np
 from scipy.ndimage import generic_filter
+from scipy.integrate import simpson
 import scipy.optimize as op
 
 from badass.utils.constants import *
@@ -384,7 +385,7 @@ def gauss_kde(xs,data,h):
         return (1./np.sqrt(2.*np.pi)) * np.exp(-x**2/2)
 
     kde = np.sum((1./h) * gauss_kernel((xs.reshape(len(xs),1)-data)/h), axis=1)
-    kde = kde/np.trapz(kde,xs) # normalize
+    kde = kde/simpson(kde,xs) # normalize
     return kde
 
 
