@@ -269,13 +269,13 @@ class MLRunner(BadassRunContext):
                 if (accepted_count > 1) and (basinhop_count >= force_basinhop) and (((lowest_rmse-accept_thresh) <= self.force_thresh) or (lowest_rmse <= self.force_thresh)):
                     terminate = True
 
-                self.log.info('\tFit Status: %s\n\tForce threshold: %0.4f\n\tLowest RMSE: %0.4f\n\tCurrent RMSE: %0.4f\n\tAccepted Count: %d\n\tBasinhop Count: %d'%(terminate,self.force_thresh,lowest_rmse,rmse,accepted_count,basinhop_count))
+                self.log.debug('\tFit Status: %s\n\tForce threshold: %0.4f\n\tLowest RMSE: %0.4f\n\tCurrent RMSE: %0.4f\n\tAccepted Count: %d\n\tBasinhop Count: %d'%(terminate,self.force_thresh,lowest_rmse,rmse,accepted_count,basinhop_count))
                 return terminate
 
 
         self.param_reg.dump_parameters()
         self.log.info('Basinhopping')
-        minimizer_args = {'method':'SLSQP', 'bounds':param_bounds,'constraints':param_constraints,'options':{'disp':True,}}
+        minimizer_args = {'method':'SLSQP', 'bounds':param_bounds,'constraints':param_constraints,}
         result = op.basinhopping(func=self.lnprob_wrapper, x0=self.param_reg.fit_vector(), stepsize=1.0, interval=1, niter=2500, minimizer_kwargs=minimizer_args,
                                  disp=False, niter_success=n_basinhop, callback=callback_ftn)
 
