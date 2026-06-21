@@ -214,7 +214,7 @@ def plot_best_model(mlresult, source):
     ax1 = plt.subplot(gs[0:3,0])
     ax2 = plt.subplot(gs[3,0])
 
-    linewidth_default = 0.5
+    linewidth_default = 0.8
     linestyle_default = '-'
 
     ordinal = lambda n: '%d%s' % (n, 'tsnrhtdd'[(n//10%10!=1)*(n%10<4)*n%10::4])
@@ -240,8 +240,12 @@ def plot_best_model(mlresult, source):
        ('Balmer Continuum', 'BALMER_CONT', 'xkcd:bright green', linewidth_default, '--'),
     ]
 
-    ax1.plot(wave, mlresult.meta_components['data'], color='white', linewidth=linewidth_default, linestyle=linestyle_default, label='Data')
-    ax1.plot(wave, mlresult.meta_components['model'], color='xkcd:bright red', linewidth=1.0, linestyle=linestyle_default, label='Model')
+    data = mlresult.meta_components['data']
+    model = mlresult.meta_components['model']
+    noise = mlresult.meta_components['noise']
+    resid = mlresult.meta_components['resid']
+    ax1.plot(wave, data, color='white', linewidth=2.0, linestyle=linestyle_default, label='Data')
+    ax1.plot(wave, model, color='xkcd:bright red', linewidth=1.2, linestyle=linestyle_default, label='Model')
 
     for label, key, color, linewidth, linestyle in plot_vals:
         if not key in mlresult.components:
@@ -256,7 +260,9 @@ def plot_best_model(mlresult, source):
     }
 
 
+    line_centers = set()
     def add_line(line):
+        line_centers.add(line.center)
         if line.is_combined:
             for child in line.children:
                 add_line(child)
@@ -275,62 +281,44 @@ def plot_best_model(mlresult, source):
         ax1.axvspan(wave[m], wave[m], alpha=0.25, color='xkcd:lime green')
     Patch(facecolor='xkcd:lime green', alpha=0.25, label='Bad pixels')
 
+    ax1.set_xlim(wave[0], wave[-1])
+    ax1.set_xticklabels([])
+    if source.flux_norm == 1.0:
+        ax1.set_ylabel(r'$f_\lambda$ (erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)', fontsize=10)
+    else:
+        ax1.set_ylabel(r'$f_\lambda$ ($10^{%d}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)'%int(np.log10(source.flux_norm)), fontsize=10)
+    ax1.legend(loc='upper right', fontsize=8)
+    ax1.set_title(r'%s'%source.name, fontsize=12)
+
+
+
     # Residuals
-    sigma_resid = np.nanstd(mlresult.meta_components['data'][fit_mask]-mlresult.meta_components['model'][fit_mask])
-    sigma_noise = np.nanmedian(mlresult.meta_components['noise'][fit_mask])
-    ax2.plot(wave, mlresult.meta_components['noise']*3.0, linewidth=0.5,color='xkcd:bright orange', label=r'$\sigma_{\mathrm{noise}}=%0.4f$' % sigma_noise)
-    ax2.plot(wave, mlresult.meta_components['resid']*3.0, linewidth=0.5,color='white', label=r'$\sigma_{\mathrm{resid}}=%0.4f$' % sigma_resid)
-    ax1.axhline(0.0, linewidth=1.0, color='white', linestyle='--')
+    sigma_resid = np.nanstd(resid)
+    sigma_noise = np.nanstd(noise)
+    noise_label = '%0.4f'%sigma_noise if abs(sigma_noise) > 1e-4 else '%0.4e'%sigma_noise
+    resid_label = '%0.4f'%sigma_noise if abs(sigma_resid) > 1e-4 else '%0.4e'%sigma_resid
+    ax2.plot(wave, noise, linewidth=0.5, color='xkcd:bright orange', label=r'$\sigma_{\mathrm{noise}}=%s$'%noise_label)
+    ax2.plot(wave, resid, linewidth=0.5, color='white', label=r'$\sigma_{\mathrm{resid}}=%s$'%resid_label)
     ax2.axhline(0.0, linewidth=1.0, color='white', linestyle='--')
 
-    # Axes limits
-    ax_low = np.nanmin([ax1.get_ylim()[0], ax2.get_ylim()[0]])
-    ax_upp = np.nanmax(mlresult.meta_components['data'][fit_mask])+(3.0 * np.nanmedian(mlresult.meta_components['noise'][fit_mask]))
-
-    minimum = [np.nanmin(val[np.where(np.isfinite(val))[0]]) for val in mlresult.components.values() if val[np.isfinite(val)[0]].size > 0]
-    minimum = np.nanmin(minimum) if len(minimum) > 0 else 0.0
-    ax1.set_ylim(np.nanmin([0.0,minimum]), ax_upp)
-    ax1.set_xlim(wave[0], wave[-1])
-
-    ax2.set_ylim(ax_low, ax_upp)
+    ticks = {}
+    for v in [1,-1,3,-3]:
+        s = v*sigma_resid
+        ax2.axhline(s, color='grey', linestyle='--', linewidth=0.5, alpha=0.6)
+        ticks[s] = r'$%d\sigma$'%v
     ax2.set_xlim(wave[0], wave[-1])
+    ax2.set_yticks(list(ticks.keys()), list(ticks.values()))
 
-    # Axes labels
-    ax1.set_xticklabels([])
-    # TODO: label should represent actual flux_norm
-    ax1.set_ylabel(r'$f_\lambda$ ($10^{%d}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)'%int(np.log10(source.flux_norm)), fontsize=10)
-    ax2.set_yticklabels(np.round(np.array(ax2.get_yticks()/3.0)))
+    for center in line_centers:
+        ax1.axvline(center, linestyle='--', linewidth=1.0, color='grey', alpha=0.6)
+        ax2.axvline(center, linestyle='--', linewidth=1.0, color='grey', alpha=0.6)
+
     ax2.set_ylabel(r'$\Delta f_\lambda$', fontsize=12)
     ax2.set_xlabel(r'Wavelength, $\lambda\;(\mathrm{\AA})$', fontsize=12)
-    handles, labels = ax1.get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    ax1.legend(by_label.values(), by_label.keys(), loc='upper right', fontsize=8)
     ax2.legend(loc='upper right', fontsize=8)
 
-    # Gather up emission line center wavelengths and labels (if available, removing any duplicates)
-    # line_labels = []
-    # for line_name, line_dict in ctx.line_list.items():
-    #     if (not 'label' in line_dict) or (line_dict['label'] in line_labels):
-    #         continue
-    #     label = line_dict['label']
-    #     line_labels.append(label)
-
-    #     # TODO: do this elsewhere for each line and store in results
-    #     center = line_dict['center']
-    #     if line_dict['voff'] == 'free':
-    #         voff = ctx.cur_params[line_name+'_VOFF']
-    #     elif isinstance(line_dict['voff'], (float,int,)):
-    #         voff = line_dict['voff']
-    #     else:
-    #         voff = ne.evaluate(line_dict['voff'], local_dict=ctx.cur_params).item()
-    #     xloc = calc_new_center(center, voff)
-    #     offset_factor = 0.05
-    #     wave_arg = ba_utils.find_nearest(ctx.target.wave, xloc)[1]
-    #     yloc = np.max([comp_dict['DATA'][wave_arg], comp_dict['MODEL'][wave_arg]]) + (offset_factor*np.max(comp_dict['DATA']))
-    #     ax1.annotate(label, xy=(xloc, yloc), xycoords='data', xytext=(xloc, yloc), textcoords='data',
-    #                  horizontalalignment='center', verticalalignment='bottom', color='xkcd:white', fontsize=6)
-
-    ax1.set_title(r'%s'%source.name.replace('_', '\\_'), fontsize=12)
+    fig.subplots_adjust(hspace=1.0)
+    fig.tight_layout()
 
     return fig
 
