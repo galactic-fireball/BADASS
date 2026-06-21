@@ -1,5 +1,10 @@
 import copy
 from dataclasses import dataclass, field
+import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
+import numpy as np
+
+from spark.plot import add_ax_labels
 
 from badass.runner.survey import SurveyPipeline, skip_existing
 from badass.utils import plotting
@@ -15,6 +20,18 @@ class IFUPipeline(SurveyPipeline):
 
     def __post_init__(self):
         pass
+
+
+    @staticmethod
+    def setup_map_spec_axes(cube):
+        fig = plt.figure(figsize=(18,10))
+        gs = fig.add_gridspec(1, 2, width_ratios=[2,4])
+        cube_ax = fig.add_subplot(gs[0,0])
+        spec_ax = fig.add_subplot(gs[0,1])
+        medcube = cube.get_median_map()
+        cube_ax.imshow(medcube, origin='lower', norm=LogNorm())
+        return cube_ax, spec_ax
+
 
 
 @dataclass
@@ -85,13 +102,7 @@ class BinsPipeline(IFUPipeline):
         plot = self.cfg.fit.fit_area.plot_input
 
         if plot:
-            import matplotlib.pyplot as plt
-            from matplotlib.patches import Rectangle
-            medcube = np.nanmedian(cube_dict['spec'], axis=2)
-            medcube[np.isnan(medcube)] = 0.0
-
-            plt.figure()
-            plt.imshow(medcube.T, origin='lower')
+            cube_ax, spec_ax = IFUPipeline.setup_map_spec_axes(self.sources)
 
         sx,ex = self.cfg.fit.fit_area.bins.x
         if ex < 0: ex = self.sources.flux.shape[2]
@@ -109,9 +120,6 @@ class BinsPipeline(IFUPipeline):
                 width = bxe - bxs
                 height = bye - bys
 
-                if plot:
-                    plt.gca().add_patch(Rectangle((bxs,bys), width=bxe-bxs, height=bye-bys, facecolor='none', edgecolor='orange'))
-
                 # TODO: different cfg (user lines) for each bin
                 bin_cfg = copy.deepcopy(self.cfg)
                 center = (bxs+(width/2), bys+(height/2))
@@ -119,6 +127,13 @@ class BinsPipeline(IFUPipeline):
                 source_bin = self.sources.aperture('rectangular', center, width=width, height=height, name=bin_name)
 
                 bin_out_dir = bin_cfg.io.output_dir.joinpath(self.sources.name, source_bin.name)
+                if skip_existing(bin_out_dir, bin_cfg.io.overwrite):
+                    continue
+
+                if plot:
+                    source_bin.add_to_plot(cube_ax)
+                    source_bin.add_spec_plot(spec_ax, norm=True)
+
                 bin_cfg.io.output_dir = bin_out_dir
                 bin_out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -128,6 +143,10 @@ class BinsPipeline(IFUPipeline):
             bnx += 1
 
         if plot:
+            cube_ax.set_xlabel('X (px)')
+            cube_ax.set_ylabel('Y (px)')
+            add_ax_labels(spec_ax,'AA')
+            spec_ax.set_ylabel('Normalized flux density')
             plt.show()
 
 
@@ -140,17 +159,7 @@ class AperturesPipeline(IFUPipeline):
         plot = self.cfg.fit.fit_area.plot_input
 
         if plot:
-            import matplotlib.pyplot as plt
-            from matplotlib.colors import LogNorm
-            import numpy as np
-            from spark.plot import add_ax_labels
-            # fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(18,10), width_ratios=[1,4], sharey=True)
-            fig = plt.figure(figsize=(18,10))
-            gs = fig.add_gridspec(1, 2, width_ratios=[2,4])
-            cube_ax = fig.add_subplot(gs[0,0])
-            spec_ax = fig.add_subplot(gs[0,1])
-            medcube = self.sources.get_median_map()
-            cube_ax.imshow(medcube, origin='lower', norm=LogNorm())
+            cube_ax, spec_ax = IFUPipeline.setup_map_spec_axes(self.sources)
 
         for i, ap in enumerate(aps):
             # TODO: different cfg (user lines) for each aperture
@@ -166,7 +175,7 @@ class AperturesPipeline(IFUPipeline):
 
             if plot:
                 source_ap.add_to_plot(cube_ax)
-                source_ap.add_spec_plot(spec_ax)
+                source_ap.add_spec_plot(spec_ax, norm=True)
 
             ap_cfg.io.output_dir = ap_out_dir
             ap_out_dir.mkdir(parents=True, exist_ok=True)
@@ -175,13 +184,8 @@ class AperturesPipeline(IFUPipeline):
         if plot:
             cube_ax.set_xlabel('X (px)')
             cube_ax.set_ylabel('Y (px)')
-
-            clipped = [np.clip(f[0].flux, np.percentile(f[0].flux, 2), np.percentile(f[0].flux, 98)) for f in self.single_sources.values()]
-            all_flux = np.concatenate(clipped)
-            ymin, ymax = np.min(all_flux), np.max(all_flux)
-            spec_ax.set_ylim(ymin, ymax)
-
             add_ax_labels(spec_ax,'AA')
+            spec_ax.set_ylabel('Normalized flux density')
             plt.show()
 
 
