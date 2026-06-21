@@ -89,7 +89,7 @@ class SpectralLine(BadassComponent):
 
         # if you do not have a name, one will be provided for you
         if (not 'NAME' in line_dict) or (line_dict['NAME'] is None) or (line_dict['NAME'] == ''):
-            line_dict['NAME'] = 'FEAT_.5%f'%line_dict['CENTER']
+            line_dict['NAME'] = 'FEAT_%.5f'%line_dict['CENTER']
 
         # make sure types are all consistent to long names
         line_type = line_dict['TYPE'].upper()

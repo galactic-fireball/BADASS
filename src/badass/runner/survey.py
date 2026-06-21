@@ -131,8 +131,12 @@ class SurveyPipeline(BadassPipeline):
             row_data = {'source': res.name}
             for param, param_dict in res.params.items():
                 std_label = param + '_STD'
-                row_data[param] = round(param_dict['med'], 4)
-                row_data[std_label] = round(param_dict['std'], 4)
+                if abs(param_dict['med']) > 1e-4:
+                    row_data[param] = round(param_dict['med'], 4)
+                    row_data[std_label] = round(param_dict['std'], 4)
+                else:
+                    row_data[param] = param_dict['med']
+                    row_data[std_label] = param_dict['std']
             data_rows.append(row_data)
 
         df = pd.DataFrame(data_rows)
@@ -150,7 +154,10 @@ class SurveyPipeline(BadassPipeline):
             df = pd.DataFrame(columns=['Parameter', 'Best Fit', 'Std. Dev.'])
 
             for param, param_dict in res.params.items():
-                row_data = {'Parameter':param, 'Best Fit':round(param_dict['med'],4), 'Std. Dev.':round(param_dict['std'],4)}
+                if abs(param_dict['med']) > 1e-4:
+                    row_data = {'Parameter':param, 'Best Fit':round(param_dict['med'],4), 'Std. Dev.':round(param_dict['std'],4)}
+                else:
+                    row_data = {'Parameter':param, 'Best Fit':param_dict['med'], 'Std. Dev.':param_dict['std']}
                 df.loc[len(df)] = row_data
 
             plot_src = res.out_dir.joinpath('max_likelihood_fit.png').relative_to(self.cfg.io.output_dir)
