@@ -112,7 +112,7 @@ class BadassSpec(SparkSpec):
         ebv = get_ebv(self.target.ra, self.target.dec)
         self.flux = ccm_unred(self.obs_wave, self.flux, ebv)
 
-        self.fit_norm = np.round(np.nanmax(self.flux), 5)
+        self.fit_norm = np.nanmax(self.flux)
         self.flux = self.flux / self.fit_norm
         self.err = self.err / self.fit_norm
         self.err[self.err == 0] = np.nanmedian(self.err)
