@@ -87,6 +87,7 @@ class IOOptions(CustomBaseModel):
     verbose_out: bool = Field(False, description='Return full available output.')
     log_level: str = Field('info', description='The output log level. Options: `[\'debug\', \'info\', \'warning\', \'error\', \'critical\']`')
     filter: str = Field(None, description='The filter of the provided NIRSpec data cube.')
+    grating: str = Field(None, description='The grating of the provided NIRSpec data cube.')
     disperser: str = Field(None, description='The disperser of the provided NIRSpec data cube.')
     dust_cache: Annotated[DirectoryPath | None, BeforeValidator(to_path)] = Field(None, description='Directory path to cache of Irsa dust extinction data.')
 

@@ -3,6 +3,7 @@ import astropy.units as u
 from dataclasses import dataclass
 import numpy as np
 import pathlib
+from scipy import interpolate
 
 from spark.io.readers.jwst import JWSTCube
 from spark.utils import deredden
@@ -25,14 +26,21 @@ class JWSTReader(BadassCube, JWSTCube):
 
         self.set_dispersion()
         self.disp_res = deredden(self.disp_res, self.target.z)
-        div = int(np.floor(np.log10(np.abs(np.nanmedian(self.flux)))))
-        self.flux_norm = 10**div
+        self.flux_norm = 1.0
         self.flux = self.flux / self.flux_norm
         self.err = self.err / self.flux_norm
         self.velscale = np.nan
 
 
-    @classmethod
-    def set_dispersion(cls, cube_data, options, obs_wave):
+    def set_dispersion(self, cube_data, options, obs_wave):
         # Instrument child classes will override
         pass
+
+
+    @staticmethod
+    def interp_dispersion(data_file, wave_array, wave_unit=u.um):
+        hdu = fits.open(data_file)
+        wave_um = (wave_array*wave_unit).to(u.um)
+        interp_func = interpolate.interp1d(hdu[1].data['WAVELENGTH']*u.um, hdu[1].data['R'], bounds_error=False, fill_value='extrapolate')
+        hdu.close()
+        return (wave_um / interp_func(wave_um)).to(wave_unit).value

@@ -24,7 +24,7 @@ LINE_TYPE_TO_NAME = {
     'abs': 'absorp',
 }
 
-SUPPORTED_INSTRUMENTS = ['sdss', 'muse', 'nirspec', 'miri', 'kcwi']
+SUPPORTED_INSTRUMENTS = ['sdss', 'muse', 'nirspec', 'miri', 'kcwi', 'dja']
 
 # For direct fitting of the stellar kinematics (stellar LOSVD), one can
 # specify a stellar template library (Indo-US, Vazdekis 2010, or eMILES).
