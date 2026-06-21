@@ -16,12 +16,14 @@ MUSE_FLUX_NORM = 1e-20
 class MUSEReader(BadassCube, MUSECube):
 
     def __post_init__(self):
-        super().__post_init__()
-
+        # Let MUSE handle its own units before
+        # the parent class gets involved
         self.flux_norm = MUSE_FLUX_NORM
-        self.flux / u.Unit(self.flux_norm)
-        self.err / u.Unit(self.flux_norm)
-        self.flux_unit / u.Unit(self.flux_norm)
+        self.flux /= u.Unit(self.flux_norm)
+        self.err /= u.Unit(self.flux_norm)
+        self.flux_unit /= u.Unit(self.flux_norm)
+
+        super().__post_init__()
 
         # Default behavior for MUSE data cubes using https://www.aanda.org/articles/aa/pdf/2017/12/aa30833-17.pdf equation 7
         fwhm_res = 5.835e-8 * self.obs_wave**2 - 9.080e-4 * self.obs_wave + 5.983
