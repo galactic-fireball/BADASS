@@ -1,7 +1,7 @@
 import copy
 from dataclasses import dataclass, field
 
-from badass.runner.survey import SurveyPipeline
+from badass.runner.survey import SurveyPipeline, skip_existing
 from badass.utils import plotting
 
 
@@ -137,6 +137,20 @@ class AperturesPipeline(IFUPipeline):
     def __post_init__(self):
         aps = self.cfg.fit.fit_area.apertures
         if not isinstance(aps, list): aps = [aps,]
+        plot = self.cfg.fit.fit_area.plot_input
+
+        if plot:
+            import matplotlib.pyplot as plt
+            from matplotlib.colors import LogNorm
+            import numpy as np
+            from spark.plot import add_ax_labels
+            # fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(18,10), width_ratios=[1,4], sharey=True)
+            fig = plt.figure(figsize=(18,10))
+            gs = fig.add_gridspec(1, 2, width_ratios=[2,4])
+            cube_ax = fig.add_subplot(gs[0,0])
+            spec_ax = fig.add_subplot(gs[0,1])
+            medcube = self.sources.get_median_map()
+            cube_ax.imshow(medcube, origin='lower', norm=LogNorm())
 
         for i, ap in enumerate(aps):
             # TODO: different cfg (user lines) for each aperture
@@ -147,9 +161,28 @@ class AperturesPipeline(IFUPipeline):
             source_ap = self.sources.aperture(ap.shape, ap.center, **kwargs)
 
             ap_out_dir = ap_cfg.io.output_dir.joinpath(self.sources.name, source_ap.name)
+            if skip_existing(ap_out_dir, ap_cfg.io.overwrite):
+                continue
+
+            if plot:
+                source_ap.add_to_plot(cube_ax)
+                source_ap.add_spec_plot(spec_ax)
+
             ap_cfg.io.output_dir = ap_out_dir
             ap_out_dir.mkdir(parents=True, exist_ok=True)
             self.single_sources[source_ap.name] = (source_ap, ap_cfg)
+
+        if plot:
+            cube_ax.set_xlabel('X (px)')
+            cube_ax.set_ylabel('Y (px)')
+
+            clipped = [np.clip(f[0].flux, np.percentile(f[0].flux, 2), np.percentile(f[0].flux, 98)) for f in self.single_sources.values()]
+            all_flux = np.concatenate(clipped)
+            ymin, ymax = np.min(all_flux), np.max(all_flux)
+            spec_ax.set_ylim(ymin, ymax)
+
+            add_ax_labels(spec_ax,'AA')
+            plt.show()
 
 
 def get_ifu_type(area_type):
