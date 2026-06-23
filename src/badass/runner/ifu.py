@@ -49,7 +49,7 @@ class SpaxelsPipeline(IFUPipeline):
         ny = self.sources.flux.shape[1]
 
         if isinstance(self.spaxels, str):
-            if spaxels.lower() != 'all':
+            if self.spaxels.lower() != 'all':
                 # TODO: mark spec or self as invalid?
                 raise Exception('spaxel list invalid: %s'%spaxels)
             self.spaxels = [(x,y) for x in range(nx) for y in range(ny)]
