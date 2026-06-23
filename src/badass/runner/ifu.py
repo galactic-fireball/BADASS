@@ -1,3 +1,4 @@
+from astropy.io import fits
 import copy
 from dataclasses import dataclass, field
 import matplotlib.pyplot as plt
@@ -67,7 +68,8 @@ class SpaxelsPipeline(IFUPipeline):
             elif any([not isinstance(spax, (tuple,list)) for spax in self.spaxels]):
                 raise Exception('spaxel list invalid')
         else:
-            raise Exception('spaxel list invalid')
+            xs = (0,nx)
+            ys = (0,ny)
 
         for spaxel in self.spaxels:
             # TODO: different cfg (user lines) for each spaxel
@@ -85,11 +87,31 @@ class SpaxelsPipeline(IFUPipeline):
 
     def finalize(self):
         self.make_source_plots()
+        self.make_parameter_maps()
 
 
     def make_source_plots(self):
         for res in self.source_results.values():
             res.figures['ml_fit'] = plotting.plot_ml_results(res, self.single_sources[res.name][0])
+
+
+    def make_parameter_maps(self):
+        maps = {}
+        for param_name in list(self.source_results.values())[0].params.keys():
+            maps[param_name] = np.zeros(shape=self.sources.shape)
+
+        for name, res in self.source_results.items():
+            x, y = [int(v) for v in name.split('_')[1:]]
+            for param_name, param_dict in res.params.items():
+                maps[param_name][y,x] = param_dict['med']
+
+        result_fits = fits.HDUList()
+        result_fits.append(fits.PrimaryHDU()) # TODO: metadata
+        for name, data in maps.items():
+            result_fits.append(fits.ImageHDU(data, name=name))
+
+        outfile = self.cfg.io.output_dir.joinpath('parameter_maps.fits')
+        result_fits.writeto(outfile, overwrite=True)
 
 
 class BinsPipeline(IFUPipeline):
