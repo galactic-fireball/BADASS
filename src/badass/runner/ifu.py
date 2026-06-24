@@ -77,8 +77,8 @@ class SpaxelsPipeline(IFUPipeline):
             source_spax = self.sources.spax(*spaxel)
 
             spaxel_out_dir = spaxel_cfg.io.output_dir.joinpath(self.sources.name, source_spax.name)
-            # if skip_existing(spaxel_out_dir, spaxel_cfg.io.overwrite):
-                # continue
+            if skip_existing(spaxel_out_dir, spaxel_cfg.io.overwrite):
+                continue
 
             spaxel_cfg.io.output_dir = spaxel_out_dir
             spaxel_out_dir.mkdir(parents=True, exist_ok=True)

@@ -205,6 +205,8 @@ class MLRunner(BadassRunContext):
 
     def __post_init__(self):
         super().__post_init__()
+        if not self.source.valid:
+            return
 
         if self.force_thresh is None:
             self.force_thresh = badass_test_suite.root_mean_squared_error(self.fit_flux, np.full_like(self.fit_flux, np.nanmedian(self.fit_flux)))
