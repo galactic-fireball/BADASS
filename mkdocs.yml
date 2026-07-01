@@ -33,6 +33,7 @@ nav:
   - Home: index.md
   # - Config: test/config_creator.md
   - Installation: documentation/installation.md
+  - Examples: documentation/examples.md
   - Usage:
     - I/O Options: documentation/usage/io.md
     - Fitting Options: documentation/usage/fit.md
@@ -51,7 +52,6 @@ nav:
     - Output Options:
       - Plotting: documentation/usage/output/plotting.md
     - Other Options: documentation/usage/other.md
-  - Examples: documentation/examples.md
   - Changelog: changes.md
   - Spectral Fitting Tutorial:
     - Overview: documentation/tutorial/overview.md
