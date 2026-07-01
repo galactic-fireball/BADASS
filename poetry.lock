@@ -2585,9 +2585,9 @@ photutils = ">=2.3.0,<3.0.0"
 
 [package.source]
 type = "git"
-url = "ssh://git@github.com/galactic-fireball/SPARK.git"
+url = "https://github.com/galactic-fireball/SPARK.git"
 reference = "HEAD"
-resolved_reference = "36639724504a55647365e02d14a319f4359a2c68"
+resolved_reference = "f07daef5a0e81c7801ed55a33566a6b1078494c3"
 
 [[package]]
 name = "spectres"
@@ -2749,4 +2749,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11"
-content-hash = "13621dcbe1e185e70910ea2975cfba09135a2416a27e7302ab355371bb14ef0a"
+content-hash = "edc06f3cd2d1c0f80ff57715ed3a0f5abf0aa4dd0e377dde618590d70b83feb8"
