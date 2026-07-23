@@ -19,10 +19,11 @@ class BasinhopResult(BadassResult):
 
 class MLResult(BadassResult):
 
-    OUT_NAME = 'mc_result'
+    OUT_NAME = 'ml_result'
 
     def __init__(self, ctx, name):
         super().__init__(ctx, name)
+        # TODO: remove, should be in parent class
         self.out_dir = self.out_dir.joinpath(self.OUT_NAME)
         self.out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -225,6 +226,18 @@ class MLRunner(BadassRunContext):
         self.max_likelihood(basinhop_result)
 
 
+    def finalize(self):
+        self.log.info('MLStage finalize')
+
+        self.result.bh_result.compile_results(self)
+        self.result.bh_result.dump_results(self)
+        self.result.bh_result.output(self)
+
+        self.result.compile_results(self)
+        self.result.dump_results(self)
+        self.result.output(self)
+
+
     def basinhop(self):
 
         param_constraints = self.param_reg.get_constraints()
@@ -337,16 +350,4 @@ class MLRunner(BadassRunContext):
         self.fit_err = self.fit_err*np.sqrt(cur_rchi2)
         new_rchi2 = badass_test_suite.r_chi_squared(self.fit_flux, self.model, self.fit_err, self.param_reg.free_count)
         self.log.debug('\tNew reduced chi-squared = %0.5f' % new_rchi2)
-
-
-    def finalize(self):
-        self.log.info('MLStage finalize')
-
-        self.result.bh_result.compile_results(self)
-        self.result.bh_result.dump_results(self)
-        self.result.bh_result.output(self)
-
-        self.result.compile_results(self)
-        self.result.dump_results(self)
-        self.result.output(self)
 
