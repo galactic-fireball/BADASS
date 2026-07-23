@@ -34,7 +34,7 @@ class PolynomialTemplate(BadassTemplate):
             if isinstance(poly_cfg.apoly_coeff,(list,tuple)):
                 coeffs = poly_cfg.apoly_coeff
                 if len(coeffs) != self.apoly_order:
-                    self.ctx.log.warning('Provided %d apoly coeff vals, but order is %d. Updating order'%(len(coeffs),self.apoly_order))
+                    ctx.log.warning('Provided %d apoly coeff vals, but order is %d. Updating order'%(len(coeffs),self.apoly_order))
                     self.apoly_order = len(coeffs)
 
                 for n in range(1,self.apoly_order+1):
@@ -53,7 +53,7 @@ class PolynomialTemplate(BadassTemplate):
             if isinstance(poly_cfg.mpoly_coeff,(list,tuple)):
                 coeffs = poly_cfg.mpoly_coeff
                 if len(coeffs) != self.mpoly_order:
-                    self.ctx.log.warning('Provided %d mpoly coeff vals, but order is %d. Updating order'%(len(coeffs),self.mpoly_order))
+                    ctx.log.warning('Provided %d mpoly coeff vals, but order is %d. Updating order'%(len(coeffs),self.mpoly_order))
                     self.mpoly_order = len(coeffs)
 
                 for n in range(1,self.mpoly_order+1):
@@ -64,7 +64,7 @@ class PolynomialTemplate(BadassTemplate):
 
             self.TEMPLATE_PARAMS.extend(['mpoly_coeff_%d'%n for n in range(1,self.mpoly_order+1)])
 
-        # common template in                                                                                  itialization
+        # common template in initialization
         super().__init__(ctx)
 
 
