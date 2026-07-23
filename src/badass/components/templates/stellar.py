@@ -100,7 +100,7 @@ class StellarTemplate(BadassTemplate):
         disp_dif = np.sqrt((disp_res_interp**2 - disp_temp**2).clip(0))
         sigma = disp_dif/h2['CDELT1'] # Sigma difference in pixels
 
-        sspNew = log_rebin(lamRange_temp, ssp, velscale=ctx.source.velscale)[0]
+        sspNew = log_rebin(lamRange_temp, ssp, velscale=ctx.source.velscale, oversample=ctx.cfg.fit.log_rebin_oversample)[0]
         if sspNew.shape[0] < self.ctx.fit_wave.shape[0]:
             oversample = int(np.ceil(self.ctx.fit_wave.shape[0]/ssp.shape[0])) # make sure template size >= fit_wave size
             sspNew = log_rebin(lamRange_temp, ssp, oversample=oversample)[0]
@@ -109,9 +109,9 @@ class StellarTemplate(BadassTemplate):
         for j, fname in enumerate(temp_list):
             hdu = fits.open(fname)
             ssp = hdu[0].data
-            ssp = ssp[mask_temp]
+            # ssp = ssp[mask_temp]
             ssp = gaussian_filter1d(ssp, sigma)  # perform convolution with variable sigma
-            sspNew = log_rebin(lamRange_temp, ssp, velscale=ctx.source.velscale)[0]
+            sspNew = log_rebin(lamRange_temp, ssp, velscale=ctx.source.velscale, oversample=ctx.cfg.fit.log_rebin_oversample)[0]
             if sspNew.shape[0] < self.ctx.fit_wave.shape[0]:
                 oversample = int(np.ceil(self.ctx.fit_wave.shape[0]/ssp.shape[0])) # make sure template size >= fit_wave size
                 sspNew = log_rebin(lamRange_temp, ssp, oversample=oversample)[0]

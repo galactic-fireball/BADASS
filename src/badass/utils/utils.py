@@ -286,83 +286,129 @@ def interpolate_metal(spec,noise):
             new_spec[nans]= np.interp(x(nans), x(~nans), new_spec[~nans])
         else:
             break
-    #
+
     return new_spec
 
 
-def log_rebin(lamRange, spec, oversample=1, velscale=None, flux=False):
+def log_rebin(lam, spec, velscale=None, oversample=1, flux=False):
+    """Logarithmically rebin a spectrum or an array of spectra.
+
+    This function logarithmically rebins a spectrum, or the first dimension of
+    an array of spectra, while rigorously conserving flux. The photons in the
+    spectrum are redistributed to a new grid of pixels with logarithmic
+    sampling in the spectral direction.
+
+    The function can operate in two modes based on the `flux` parameter.
+    When `flux=True`, it performs an exact integration of the original spectrum,
+    assuming it is a step function constant within each pixel, onto the new
+    logarithmically-spaced pixels. This preserves the total flux.
+    When `flux=False` (default), the integrated flux is divided by the width
+    of each new pixel, preserving the flux density (e.g., in units of
+    erg/(s cm^2 A)). This mode is generally recommended as it preserves the
+    spectral shape.
+
+    Parameters
+    ----------
+    lam : array_like
+        Wavelength values. This can be either a 2-element array specifying the
+        minimum and maximum wavelengths `[lam_min, lam_max]` for a regularly
+        sampled spectrum, or a 1-D array with the central wavelength of each
+        pixel for an irregularly sampled spectrum.
+        - If `lam` has two elements, it defines the central wavelengths of the
+          first and last pixels. The wavelength scale is assumed to be linear.
+          This method is faster for regular sampling.
+        - If `lam` is a 1-D array, it provides the central wavelength for each
+          spectral pixel, allowing for arbitrary irregular sampling. The pixel
+          edges are assumed to be the midpoints between adjacent wavelengths.
+
+        Example for uniform wavelength sampling from FITS keywords::
+
+            lam = CRVAL1 + CDELT1 * np.arange(NAXIS1)
+
+    spec : array_like
+        The input spectrum or an array of spectra to be rebinned. This can be a
+        1-D array `spec[npixels]` or a 2-D array `spec[npixels, nspec]`.
+    velscale : float, optional
+        The desired velocity scale in km/s per pixel for the output spectrum.
+        If not provided, it is computed to produce the same number of output
+        pixels as the input. If specified, it determines the number of pixels
+        and the wavelength scale of the output.
+    oversample : int, default=1
+        Oversampling factor. A value greater than 1 increases the number of
+        output pixels, which can help prevent degradation of spectral
+        resolution, especially over extended wavelength ranges, and avoid
+        aliasing. An `oversample` of 1 results in approximately the same
+        number of output pixels as input pixels.
+    flux : bool, default=False
+        Determines whether to preserve total flux or flux density.
+        - If `True`, the total flux is conserved. The flux in each new pixel
+          is proportional to its wavelength width (`dlam`), which can alter
+          the visual shape of the spectrum.
+        - If `False`, the flux density is conserved. The rebinned spectrum will
+          closely overlap the original spectrum when plotted.
+
+        Example of plotting the output::
+
+            # With flux=True, the spectral shape changes
+            plt.plot(np.exp(ln_lam), specNew)
+            plt.plot(np.linspace(lam[0], lam[1], spec.size), spec)
+
+            # With flux=False, the shapes are nearly identical
+            plt.plot(np.exp(ln_lam), specNew)
+            plt.plot(np.linspace(lam[0], lam[1], spec.size), spec)
+
+    Returns
+    -------
+    spec_new : ndarray
+        The logarithmically-rebinned spectrum or array of spectra.
+    ln_lam : ndarray
+        The natural logarithm of the wavelength for the new pixel grid. This
+        represents the geometric mean of the wavelength at the borders of
+        each pixel.
+    velscale : float
+        The velocity scale per pixel in km/s.
+
     """
-    Logarithmically rebin a spectrum, while rigorously conserving the flux.
-    Basically the photons in the spectrum are simply redistributed according
-    to a new grid of pixels, with non-uniform size in the spectral direction.
-    
-    When the flux keyword is set, this program performs an exact integration 
-    of the original spectrum, assumed to be a step function within the 
-    linearly-spaced pixels, onto the new logarithmically-spaced pixels. 
-    The output was tested to agree with the analytic solution.
+    lam, spec = np.asarray(lam, dtype=float), np.asarray(spec, dtype=float)
+    assert np.all(np.diff(lam) > 0), '`lam` must be monotonically increasing'
+    n = len(spec)
+    assert lam.size in [2, n], '`lam` must be either a 2-elements range or a vector with the length of `spec`'
 
-    :param lamRange: two elements vector containing the central wavelength
-        of the first and last pixels in the spectrum, which is assumed
-        to have constant wavelength scale! E.g. from the values in the
-        standard FITS keywords: LAMRANGE = CRVAL1 + [0, CDELT1*(NAXIS1 - 1)].
-        It must be LAMRANGE[0] < LAMRANGE[1].
-    :param spec: input spectrum.
-    :param oversample: can be used, not to loose spectral resolution,
-        especally for extended wavelength ranges and to avoid aliasing.
-        Default: OVERSAMPLE=1 ==> Same number of output pixels as input.
-    :param velscale: velocity scale in km/s per pixels. If this variable is
-        not defined, then it will contain in output the velocity scale.
-        If this variable is defined by the user it will be used
-        to set the output number of pixels and wavelength scale.
-    :param flux: (boolean) True to preserve total flux. In this case the
-        log rebinning changes the pixels flux in proportion to their
-        dLam so the following command will show large differences
-        beween the spectral shape before and after LOG_REBIN:
-
-           plt.plot(exp(logLam), specNew)  # Plot log-rebinned spectrum
-           plt.plot(np.linspace(lamRange[0], lamRange[1], spec.size), spec)
-
-        By defaul, when this is False, the above two lines produce
-        two spectra that almost perfectly overlap each other.
-    :return: [specNew, logLam, velscale] where logLam is the natural
-        logarithm of the wavelength and velscale is in km/s.
-
-    """
-    lamRange = np.asarray(lamRange)
-    assert len(lamRange) == 2, 'lamRange must contain two elements'
-    assert lamRange[0] < lamRange[1], 'It must be lamRange[0] < lamRange[1]'
-    assert spec.ndim == 1, 'input spectrum must be a vector'
-    n = spec.shape[0]
-    m = int(n*oversample)
-
-    dLam = np.diff(lamRange)/(n - 1.)       # Assume constant dLam
-    lim = lamRange/dLam + [-0.5, 0.5]       # All in units of dLam
-    borders = np.linspace(*lim, num=n+1)     # Linearly
-    logLim = np.log(lim)
-
-    # TODO: use from constants
-    c = 299792.458                         # Speed of light in km/s
-    if velscale is None:                     # Velocity scale is set by user
-        velscale = np.diff(logLim)/m*c     # Only for output
+    if lam.size == 2:
+        dlam = np.diff(lam)/(n - 1) # Assume constant dlam
+        lim = lam + [-0.5, 0.5]*dlam
+        borders = np.linspace(*lim, n + 1)
     else:
-        logScale = velscale/c
-        m = int((np.diff(logLim)/logScale)[0])   # Number of output pixels
-        logLim[1] = (logLim[0] + m*logScale)[0]
+        lim = 1.5*lam[[0, -1]] - 0.5*lam[[1, -2]]
+        borders = np.hstack([lim[0], (lam[1:] + lam[:-1])/2, lim[1]])
+        dlam = np.diff(borders)
+    ln_lim = np.log(lim)
 
-    newBorders = np.exp(np.linspace(*logLim, num=m+1)) # Logarithmically
-    k = (newBorders - lim[0]).clip(0, n-1).astype(int)
+    if velscale is None:
+        m = int(n*oversample) # Number of output elements
+        velscale = c*np.diff(ln_lim).item()/m # Only for output (eq. 8 of Cappellari 2017, MNRAS)
+    else:
+        ln_scale = velscale/c
+        m = int(round(np.diff(ln_lim).item()/ln_scale)) # Number of output pixels
 
-    specNew = np.add.reduceat(spec, k)[:-1]  # Do analytic integral
-    specNew *= np.diff(k) > 0   # fix for design flaw of reduceat()
-    specNew += np.diff((newBorders - borders[k])*spec[k])
+    new_borders = np.exp(ln_lim[0] + velscale/c*np.arange(m + 1))
+
+    if lam.size == 2:
+        k = ((new_borders - lim[0])/dlam).clip(0, n-1).astype(int)
+    else:
+        k = (np.searchsorted(borders, new_borders) - 1).clip(0, n-1)
+
+    spec_new = np.add.reduceat((spec.T*dlam).T, k)[:-1] # Do analytic integral of step function
+    spec_new.T[...] *= np.diff(k) > 0 # fix for design flaw of reduceat()
+    spec_new.T[...] += np.diff(((new_borders - borders[k]))*spec[k].T) # Add to 1st dimension
 
     if not flux:
-        specNew /= np.diff(newBorders)
+        spec_new.T[...] /= np.diff(new_borders) # Divide 1st dimension
 
-    # Output log(wavelength): log of geometric mean
-    logLam = np.log(np.sqrt(newBorders[1:]*newBorders[:-1])*dLam)
+    # Output np.log(wavelength): natural log of geometric mean
+    ln_lam = 0.5*np.log(new_borders[1:]*new_borders[:-1])
 
-    return specNew, logLam, velscale
+    return spec_new, ln_lam, velscale
 
 
 def rebin(x, factor):

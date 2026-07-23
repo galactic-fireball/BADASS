@@ -173,7 +173,7 @@ class BadassSpec(SparkSpec):
             max_losvd = constants.LOSVD_LIBRARIES[self.cfg.losvd.library].max_losvd
             if (self.fit_reg.min < min_losvd) or (self.fit_reg.max > max_losvd):
                 self.log.warn('Warning: Fitting LOSVD requires wavelenth range between {mi} Å and {ma} Å for stellar templates. BADASS will adjust your fitting range to fit the LOSVD...'.format(mi=min_losvd, ma=max_losvd))
-                self.log.warn('\t- Available wavelength range: %s' % (self.fit_reg))
+                self.log.warn('\t- Available wavelength range: ',(self.fit_reg))
             self.fit_reg = FitReg(np.max([min_losvd, self.fit_reg.min]), np.min([max_losvd, self.fit_reg.max]))
 
         self.log.info('- New fitting region is {fr}'.format(fr=self.fit_reg))
@@ -312,13 +312,13 @@ class BadassCube(BadassSpec, SparkCube):
 # TODO: there's probably a better way than making these...
 @dataclass
 class LogRebinMixin(BadassSpec):
-    def __post_init__(self):
-        super().__post_init__()
+
+    def log_rebin(self):
         lam_range = (np.min(self.wave),np.max(self.wave))
-        self.flux, log_lam, velscale = log_rebin(lam_range, self.flux, velscale=None, flux=False)
-        self.err, _, _ = log_rebin(lam_range, self.err, velscale=velscale, flux=False)
+        self.flux, log_lam, self.velscale = log_rebin(self.wave, self.flux, velscale=None, flux=False, oversample=self.cfg.fit.log_rebin_oversample)
+        self.err, _, _ = log_rebin(self.wave, self.err, velscale=self.velscale, flux=False, oversample=self.cfg.fit.log_rebin_oversample)
         self.wave = np.exp(log_lam)
-        self.velscale = velscale[0]
+        self.obs_wave = redden(self.wave, z=self.target.z)
 
 
 @dataclass

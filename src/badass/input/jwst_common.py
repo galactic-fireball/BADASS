@@ -41,6 +41,10 @@ class JWSTReader(BadassCube, JWSTCube):
     def interp_dispersion(data_file, wave_array, wave_unit=u.um):
         hdu = fits.open(data_file)
         wave_um = (wave_array*wave_unit).to(u.um)
+
         interp_func = interpolate.interp1d(hdu[1].data['WAVELENGTH']*u.um, hdu[1].data['R'], bounds_error=False, fill_value='extrapolate')
         hdu.close()
-        return (wave_um / interp_func(wave_um)).to(wave_unit).value
+
+        disp = (wave_um / interp_func(wave_um)).to(wave_unit).value / 2.355
+        return disp
+
