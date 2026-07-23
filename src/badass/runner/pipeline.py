@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from badass.input.input import BadassSpec
 from badass.runner.runner import BadassResult
 # from badass.runner.tests import TestResult, TestRunner
-from badass.runner.bootstrap import MLResult, MLRunner
+from badass.runner.bootstrap import MLRunner
+from badass.runner.mcmc import MCMCRunner
 # from badass.runner.mcmc import MCMCContext, MCMCResult, MCMCStage
 from badass.utils.config import BadassConfig
 
@@ -50,6 +51,7 @@ class BadassPipeline:
 
     def run(self):
         print('BadassPipeline run')
+        # TODO: just set up a list of runners to run
 
         if not self.cfg.fit.skip_bootstrap:
             runner = MLRunner(source=self.sources, cfg=self.cfg)
@@ -59,11 +61,19 @@ class BadassPipeline:
             runner.run()
             runner.finalize()
             self.result = runner.result
+
+        if not self.cfg.mcmc.mcmc_fit:
             return self.result
 
         # run mcmc
-
-        # collect output
+        runner = MCMCRunner(source=self.sources, cfg=self.cfg)
+        if not runner.source.valid:
+            runner.log.error('Invalid source! Skipping!')
+            return None
+        runner.run()
+        runner.finalize()
+        self.result = runner.result
+        return self.result
 
 
     def finalize(self):

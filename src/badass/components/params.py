@@ -9,7 +9,21 @@ from badass.components.priors import lnprior_gaussian, lnprior_halfnorm, lnprior
 prior_map = {'gaussian': lnprior_gaussian, 'halfnorm': lnprior_halfnorm, 'jeffreys': lnprior_jeffreys, 'flat': lnprior_flat}
 
 
-# TODO: make BaseModel instead?
+# TODO: handle all parameter finalization here (such as adjusting for fit_norm, etc.)
+#   include mixin classes for various functionality
+#   include a staticmethod to determine the parameter's class
+#   Parameter -> FreeParameter, ConstParameter, ExprParameter, FitNormMixin, ReddenMixin, etc.
+# Each class handles its own, initialization (class flag for "satisfied"), updating, etc.
+# MetricParameter
+
+
+# TODO: blobs are parameters as well, handle their own stuff:
+#   class BlobParameter(FitParameter)
+
+
+# TODO: Hyperpar NamedTuple with inner PLim Named Tuple
+
+
 @dataclass
 class FitParameter:
 
@@ -59,7 +73,7 @@ class ParameterRegistry:
 
         self.ctx = ctx
         self.params = {}
-        self.free_count = 0
+        self.free_count = 0 # TODO: actually update and use this
         self.expr_dict = {}
         self.constraints = []
 
@@ -86,8 +100,14 @@ class ParameterRegistry:
         return [p for p in self.params.values() if p.is_free]
 
 
+    @property
     def free_param_count(self):
         return len(self.get_free_parameters())
+
+
+    @property
+    def param_names(self):
+        return list(self.params.keys())
 
 
     def get_prior_parameters(self) -> list[FitParameter]:
@@ -98,6 +118,11 @@ class ParameterRegistry:
         if not param_name in self.params:
             return False
         return self.params[param_name].is_free
+
+
+    @property
+    def ntotal(self):
+        return len(self.params)
 
 
     def _update_all(self, todo=[]) -> None:

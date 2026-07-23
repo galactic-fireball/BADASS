@@ -313,7 +313,7 @@ def calculate_aon(test, line_list, mccomps, noise):
 
 
 def get_dof(ctx):
-    return len(ctx.fit_wave) - ctx.param_reg.free_param_count()
+    return len(ctx.fit_wave) - ctx.param_reg.free_param_count
 
 
 def collect_test_metrics(fit_ctx_A, fit_ctx_B):
@@ -344,7 +344,7 @@ def collect_test_metrics(fit_ctx_A, fit_ctx_B):
     metrics['SSR_RATIO'] = ssr_ratio
 
     # ANOVA
-    k_A, k_B = fit_ctx_A.param_reg.free_param_count(), fit_ctx_B.param_reg.free_param_count()
+    k_A, k_B = fit_ctx_A.param_reg.free_param_count, fit_ctx_B.param_reg.free_param_count
     f_stat, f_pval, f_conf = anova_test(resid_A, resid_B, k_A, k_B)
     metrics['ANOVA'] = f_conf
 
