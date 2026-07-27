@@ -187,7 +187,7 @@ class AperturesPipeline(IFUPipeline):
             # TODO: different cfg (user lines) for each aperture
             ap_cfg = copy.deepcopy(self.cfg)
             ap_name = 'ap_%d'%i
-            kwargs = {k:v for k,v in ap.model_dump().items() if k in ['width','height','radius']}
+            kwargs = {k:v for k,v in ap.model_dump().items() if k in ['width','height','radius','a','b','theta']}
             kwargs['name'] = ap_name
             source_ap = self.sources.aperture(ap.shape, ap.center, **kwargs)
 

@@ -8,16 +8,17 @@ from scipy import interpolate
 from spark.io.readers.jwst import JWSTCube
 from spark.utils import deredden
 
-from badass.input.input import BadassCube, LogRebinSpaxel, LogRebinCircularAperture, LogRebinRectangularAperture
+from badass.input.input import BadassCube, LogRebinMixin, LogRebinSpaxel, LogRebinCircularAperture, LogRebinEllipticalAperture, LogRebinRectangularAperture
 
 
 # TODO: after fit, return wave to original units
 # TODO: unit agnostic
 @dataclass
-class JWSTReader(BadassCube, JWSTCube):
+class JWSTReader(BadassCube, JWSTCube, LogRebinMixin):
     spaxel_class = LogRebinSpaxel
     ap_shapes = {
         'circular': LogRebinCircularAperture,
+        'elliptical': LogRebinEllipticalAperture,
         'rectangular': LogRebinRectangularAperture,
     }
 
@@ -30,6 +31,8 @@ class JWSTReader(BadassCube, JWSTCube):
         self.flux = self.flux / self.flux_norm
         self.err = self.err / self.flux_norm
         self.velscale = np.nan
+
+        self.log_rebin()
 
 
     def set_dispersion(self, cube_data, options, obs_wave):
