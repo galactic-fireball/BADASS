@@ -11,6 +11,7 @@ fit = {
     'fit_reg': (36400,40000),
     'redshift': 0.002336,
     'fit_area': {'type':'spaxels','spaxel': [(30,27),],},
+    # 'fit_area': {'type':'spaxels','spaxel':'all',},
 }
 
 

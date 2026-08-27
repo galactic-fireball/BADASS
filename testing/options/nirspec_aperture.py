@@ -10,7 +10,11 @@ io = {
 fit = {
     'fit_reg': (36400,40000),
     'redshift': 0.002336,
-    'fit_area': {'type':'aperture','aperture': {'shape':'circular', 'center':(30,27), 'radius':8}, 'plot_input':False,},
+    'fit_area': {'type':'aperture','apertures': [
+        {'shape':'circular', 'center':(30,27), 'radius':8},
+        {'shape':'rectangular', 'center':(25,25), 'width':5}
+    ],
+    'plot_input':True,},
 }
 
 

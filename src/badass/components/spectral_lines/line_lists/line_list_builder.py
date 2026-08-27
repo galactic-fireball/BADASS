@@ -1,4 +1,10 @@
-def make_multicomponent(line):
+LINE_CATS = {
+	'optical-common': [],
+	'optical-cl': [],
+}
+
+
+def make_multicomponent(line, ncomps=2):
 	pass
 
 

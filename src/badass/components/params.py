@@ -1,9 +1,10 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
+import networkx as nx
 import numexpr as ne
 import numpy as np
 import scipy.optimize as op
 from tabulate import tabulate
-from typing import Dict, List
+from typing import Callable, Dict, List, NamedTuple
 
 from badass.components.priors import lnprior_gaussian, lnprior_halfnorm, lnprior_jeffreys, lnprior_flat
 prior_map = {'gaussian': lnprior_gaussian, 'halfnorm': lnprior_halfnorm, 'jeffreys': lnprior_jeffreys, 'flat': lnprior_flat}
@@ -18,52 +19,98 @@ prior_map = {'gaussian': lnprior_gaussian, 'halfnorm': lnprior_halfnorm, 'jeffre
 
 
 # TODO: blobs are parameters as well, handle their own stuff:
-#   class BlobParameter(FitParameter)
+#   class BlobParameter(Parameter)
 
 
-# TODO: Hyperpar NamedTuple with inner PLim Named Tuple
+
+
+class PLim(NamedTuple):
+    min: int | float
+    max: int | float
+
+
 
 
 @dataclass
-class FitParameter:
+class Parameter:
+    name: str
+    source: str
+    finalize_behavior: Callable | None = None
 
-    name: str = None
-    expr: dict | str | float | int = None
-    source: str = None
+    value: [float,int] = np.nan # the current value being used in the model
 
-    is_free: bool = False
-    value: [float,int] = None # the current value being used in the model
+    # names of parameters whose value depends on self
+    dependents: List[str] = field(default_factory=list)
 
-    # for free parameters
-    idx: int = -1
+
+    @property
+    def is_free(self):
+        return isinstance(self, FreeParameter)
+
+
+    @staticmethod
+    def create(**kwargs):
+        expr = kwargs.get('expr', None)
+        if expr is None:
+            return None
+
+        if isinstance(expr, dict):
+            kwargs.update(expr)
+            return FreeParameter.from_dict(**kwargs)
+        if isinstance(expr, str):
+            return ExprParameter.from_dict(**kwargs)
+        if isinstance(expr, (int,float)):
+            kwargs['value'] = expr
+            return ConstParameter.from_dict(**kwargs)
+
+
+    @classmethod
+    def from_dict(cls, **kwargs):
+        valid_fields = {f.name for f in fields(cls)}
+        cls_data = {k:v for k,v in kwargs.items() if k in valid_fields}
+        return cls(**cls_data)
+
+
+    def initialize(self, comp_args, all_params):
+        pass
+
+
+    def finalize(self):
+        if not self.finalize_behavior:
+            return
+        self.finalize_behavior()
+
+
+@dataclass
+class FreeParameter(Parameter):
+    idx: int = -1 # index into theta
+
     init: str | float | int = None
     plim: List[str | float | int] = field(default_factory=list)
     prior: Dict = field(default_factory=dict)
     has_prior: bool = False
 
-    # names of fit parameters whose value depends on self
-    dependents: List[str] = field(default_factory=list)
-    is_shared: bool = False
-    # if self is a dependent on another fit parameter, self's parent's name
-    parent: str = None
+
+    def initialize(self, comp_args, all_params):
+        self.init = ne.evaluate(self.init, comp_args).item()
+        mi = ne.evaluate(self.plim[0], comp_args).items()
+        ma = ne.evaluate(self.plim[1], comp_args).items()
+        self.plim = PLim(min=mi, max=ma)
+
+        self.value = self.init
 
 
-    def __post_init__(self):
-        self.is_free = isinstance(self.expr, dict)
-        self.has_prior = self.prior != {}
-        self.is_shared = len(self.dependents) != 0
-        if self.expr is None:
-            self.expr = self.init
-        if (self.value is None) and (isinstance(self.expr, (int,float))):
-            self.value = self.expr
-
-        if isinstance(self.plim, tuple):
-            self.plim = list(self.plim) # mutability for expr -> numbers
+class ConstParameter(Parameter):
+    pass
 
 
-    def add_dependent(self, dep_name):
-        self.dependents.append(dep_name)
-        self.is_shared = True
+class ExprParameter(Parameter):
+    expr: str = None
+
+
+
+class BlobParameter(Parameter):
+    pass
 
 
 class ParameterRegistry:
@@ -72,31 +119,44 @@ class ParameterRegistry:
         super().__init__()
 
         self.ctx = ctx
+
         self.params = {}
+        self.free_params = {}
+        self.theta = []
+
         self.free_count = 0 # TODO: actually update and use this
         self.expr_dict = {}
         self.constraints = []
 
 
-    def add_param(self, **kwargs) -> FitParameter:
-        if ('name' in kwargs) and (kwargs['name'] in self.params):
-            self.ctx.log.info('%s already in parameter registry, not adding'%kwargs['name'])
-            return self.params[kwargs['name']]
+    def add_param(self, **kwargs) -> Parameter:
+        param_name = kwargs.get('name', 'PARAM_%d'%len(self.params))
 
-        expr = kwargs.get('expr', None)
-        if isinstance(expr, dict):
-            # free parameter: add init, plim, prior to kwargs
-            kwargs.update(expr)
+        if param_name in self.params:
+            self.ctx.log.info('%s already in parameter registry, not adding'%param_name)
+            return self.params[param_name]
 
-        fp = FitParameter(**kwargs)
-        if fp.name is None:
-            fp.name = 'PARAM_%d'%len(self.params)
+        param = Parameter.create(**kwargs)
+        self.params[param.name] = param
 
-        self.params[fp.name] = fp
-        return fp
+        if param.is_free:
+            param.idx = self.free_count
+            self.free_params[param.name] = param
+            self.free_count += 1
+
+        return param
 
 
-    def get_free_parameters(self) -> list[FitParameter]:
+    def init_values(self, expr_dict):
+        for pname, pval in expr_dict.items():
+            self.add_param(**{'name':pname,'expr':pval,'source':self})
+
+        tmp_dict = {k:0 for k in self.params.keys()}
+        for p in self.params:
+            p.initialize(tmp_dict)
+
+
+    def get_free_parameters(self) -> list[FreeParameter]:
         return [p for p in self.params.values() if p.is_free]
 
 
@@ -110,7 +170,7 @@ class ParameterRegistry:
         return list(self.params.keys())
 
 
-    def get_prior_parameters(self) -> list[FitParameter]:
+    def get_prior_parameters(self) -> list[FreeParameter]:
         return [p for p in self.params.values() if p.has_prior]
 
 
@@ -192,7 +252,7 @@ class ParameterRegistry:
         self._update_all(todo=rerun)
 
 
-    def init_values(self, expr_dict:dict) -> None:
+    def old_init_values(self, expr_dict:dict) -> None:
         self.expr_dict = expr_dict
         valid_dict = self.expr_dict.copy()
         valid_dict.update({k:0 for k in self.params.keys()})

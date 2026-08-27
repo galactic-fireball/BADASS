@@ -2,10 +2,10 @@ from astropy import constants as const
 import numpy as np
 import spectres
 
-from badass.input.input import BadassInput
+from badass.input.input import BadassSpec
 from badass.utils.utils import dered, log_rebin
 
-class DefaultReader(BadassInput):
+class DefaultReader(BadassSpec):
     def __init__(self, input_data, options):
         if not isinstance(input_data, dict):
             raise Exception('Default user data input should be dict')

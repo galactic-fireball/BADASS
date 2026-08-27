@@ -38,6 +38,7 @@ def test_single():
     if test_old:
         badass.run_BADASS(test_file, run_dir=output_dir, options_file=options_file, sdss_spec=True)
     else:
+        print(options_file)
         badass.run_BADASS(test_file, options_file=options_file)
 
 
@@ -46,6 +47,8 @@ def test_survey():
     test_files = [
         EX_SPEC_DIR.joinpath('0-test', 'spec-1087-52930-0084.fits'),
         EX_SPEC_DIR.joinpath('1-test', 'spec-7748-58396-0782.fits'),
+        EX_SPEC_DIR.joinpath('2-test', 'spec-2756-54508-0579.fits'),
+        # pathlib.Path('/Users/sara/Dropbox/research/bgc/bgc-research/spectra_samples/nls1/spectra/spec-8740-57367-0232.fits'),
     ]
 
     options_file = OPTIONS_DIR.joinpath('sdss_single.py')
@@ -180,7 +183,6 @@ def test_nirspec_aperture():
     if output_dir.exists():
         shutil.rmtree(str(output_dir))
 
-    badass.target_check(test_file, options_file=options_file)
     badass.run_BADASS(test_file, options_file=options_file)
 
 
@@ -211,6 +213,75 @@ def create_line_json():
         'abs': ('absorp', 450.0, (0.1,2500.0), 0.0, (-0.5,0.5), 0.0, (0.0,1.0),),
         'out': ('outflow', 100.0, (0.0,800.0), 0.0, (-0.5,0.5), 0.0, (0.0,1.0),),
     }
+
+
+def sdss_simple_example():
+
+    cfg = {
+        'io': {
+            'infmt': 'sdss',
+            'output_dir': 'sdss_example',
+        },
+        'fit': {
+            'fit_reg': (4700, 5200),
+        }
+    }
+
+    spec_file = EX_SPEC_DIR.joinpath('5-test', 'spec-0519-52283-0280.fits')
+    badass.run_BADASS(spec_file, options=cfg)
+
+
+def sdss_lines_example():
+
+    from badass.components.spectral_lines.line_lists.common_lines import H_BETA, OIII_4960, OIII_5007
+
+    cfg = {
+        'io': {
+            'infmt': 'sdss',
+            'output_dir': 'sdss_example',
+        },
+        'fit': {
+            'fit_reg': (4700, 5200),
+        },
+        'user_lines': [H_BETA, OIII_4960, OIII_5007],
+    }
+
+    spec_file = EX_SPEC_DIR.joinpath('5-test', 'spec-0519-52283-0280.fits')
+    badass.run_BADASS(spec_file, options=cfg)
+
+
+def nirspec_aperture_example():
+    cfg = {
+        'io': {
+            'infmt': 'nirspec',
+            'output_dir': 'nirspec_example',
+            'filter': '290',
+            'disperser': 'h',
+        },
+        'fit': {
+            'fit_reg': (36400,40000),
+            'redshift': 0.002336,
+            'fit_area': {
+                'type':'aperture',
+                'apertures': [{'shape':'circular', 'center':(30,27), 'radius':8},],
+                'plot_input':True,
+            },
+        },
+        'comp': {
+            'fit_losvd': False,
+            'fit_feii': False,
+        },
+    }
+
+    spec_file = EX_SPEC_DIR.joinpath('JWST_NIRSpec', 'NGC4051_nirspec_290_s3d.fits')
+    badass.run_BADASS(spec_file, options=cfg)
+
+
+def doc_examples():
+    # sdss_simple_example()
+    # sdss_lines_example()
+    nirspec_aperture_example()
+
 
 
 
@@ -244,6 +315,8 @@ def main():
     # test_kcwi_single()
 
     # test_random()
+
+    # doc_examples()
 
 
 if __name__ == '__main__':

@@ -10,16 +10,18 @@ fit = {
     'fit_reg': (4800,5200),
     'redshift': 0.00348372,
     'fit_area': {
-        'type': 'spaxels',
-        'spaxels': [(20,30),(24,33),(30,39)],
+        'type': 'bins',
+        # 'spaxels': [(20,30),(24,33),(30,39)],
         # 'bins': {'side_length':3},
-        # 'bins': {'side_length':3, 'x': (10,40), 'y':(10,35), 'method': 'mean'},
+        'bins': {'side_length':3, 'x': (20,35), 'y':(9,20), 'method': 'mean'},
         # 'spaxels': {'x': (20,30), 'y': (15,30)},
         # 'spaxels': [(20,30),(24,33),(30,39)],
         # 'spaxels': 'all',
-        # 'plot_input': True,
+        'plot_input': True,
+        # 'aperture': {'shape':'rectangular', 'center':(20,20), 'width':4},
+        # 'aperture': {'shape':'circular', 'center':(25,20), 'radius':8},
     },
-    'n_basinhop': 15, # Number of consecutive basinhopping thresholds before solution achieved
+    'n_basinhop': 5, # Number of consecutive basinhopping thresholds before solution achieved
 }
 
 
