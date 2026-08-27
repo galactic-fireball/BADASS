@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import List
 
 from badass.input.input import BadassSpec
 from badass.runner.runner import BadassResult
@@ -16,7 +17,7 @@ class BadassPipeline:
     sources: BadassSpec = None
     cfg: BadassConfig = None
     single: bool = True
-    result: BadassResult = None
+    results: List[BadassResult] = field(default_factory=list)
 
 
     def __post_init__(self):
@@ -60,10 +61,10 @@ class BadassPipeline:
                 return None
             runner.run()
             runner.finalize()
-            self.result = runner.result
+            self.results.append(runner.result)
 
         if not self.cfg.mcmc.mcmc_fit:
-            return self.result
+            return self.results
 
         # run mcmc
         runner = MCMCRunner(source=self.sources, cfg=self.cfg)
@@ -72,15 +73,16 @@ class BadassPipeline:
             return None
         runner.run()
         runner.finalize()
-        self.result = runner.result
-        return self.result
+        self.results.append(runner.result)
+        return self.results
 
 
     def finalize(self):
         print('BadassPipeline finalize')
         if self.single:
-            plotting.plot_ml_results(self.result, self.sources)
-
-
-
+            for result in self.results:
+                if result.PLOT_FUNC is None:
+                    continue
+                result.PLOT_FUNC(self.sources)
+            # plotting.plot_ml_results(self.result, self.sources)
 

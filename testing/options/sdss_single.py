@@ -15,10 +15,11 @@ fit = {
 mcmc = {
     'mcmc_fit': True,
     'burn_in': 0,
-    'min_iter': 5,
-    'max_iter': 20,
+    'min_iter': 1,
+    'max_iter': 5,
     'write_iter': 5,
     'write_thresh': 5,
+    'auto_stop': False,
 }
 
 comp = {

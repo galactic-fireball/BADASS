@@ -1,14 +1,23 @@
+from astropy.io import fits
 from dataclasses import dataclass
 import emcee
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 from badass.badass_utils import badass_test_suite
 from badass.runner import BadassResult, BadassRunContext
+from badass.utils import plotting
+import badass.utils.utils as ba_utils
 
 
 class MCMCResult(BadassResult):
     OUT_NAME = 'mcmc_result'
+
+    PLOT_FUNC = plotting.plot_mcmc_results
+
+    result_attrs = ['best_fit', 'ci_68_low', 'ci_68_upp', 'ci_95_low', 'ci_95_upp',
+                    'mean', 'std_dev', 'median', 'med_abs_dev', 'flag']
 
 
     def __init__(self, ctx, name):
@@ -21,8 +30,13 @@ class MCMCResult(BadassResult):
         self.chain_df.loc[len(self.chain_df)] = chain_dict
         self.chain_file = self.out_dir.joinpath('MCMC_chain.csv')
 
+        self.components = {}
+        self.meta_components = {}
+
         # TODO: do we need both of these?
         self.mcmc_result_chains = {'chains':{}, 'flat_chains':{}}
+
+        self.mcmc_results_dict = {}
 
 
     def add_chain(self, ctx, sampler):
@@ -64,17 +78,152 @@ class MCMCResult(BadassResult):
             chain[~np.isfinite(chain)] = 0
             return chain[:,burn_in:].flatten()
 
+
+        def get_key_chain(chain, param):
+            # Loop through each iteration of the chain and grab the parameter value
+            with np.nditer([chain, None], flags=['refs_ok', 'multi_index', 'buffered'], op_flags=[['readonly'], ['writeonly', 'allocate', 'no_broadcast']]) as it:
+                for x, y in it:
+                    y[...] = x.item()[param]
+                return it.operands[1]
+
+
         for param in ctx.param_reg.get_free_parameters():
             self.mcmc_result_chains['chains'][param.name] = sampler.chain[:,:,param.idx]
+            self.mcmc_result_chains['flat_chains'][param.name] = flatten_chain(sampler.chain[:,:,param.idx])
 
-        full_blob = sampler.get_blobs()['full_blob']
+        full_blob = np.swapaxes(sampler.get_blobs()['full_blob'],0,1)
         keys = full_blob[0][0].keys()
-        self.mcmc_result_chains['chains'].update(
-            {key: np.array([[sample[key] for sample in row] for row in full_blob]) for key in keys}
-        )
 
-        for pname, chain in self.mcmc_result_chains['chains'].items():
-            self.mcmc_result_chains['flat_chains'][pname] = flatten_chain(chain)
+        # self.mcmc_result_chains['chains'].update(
+        #     {key: np.array([[sample[key] for sample in row] for row in full_blob]) for key in keys}
+        # )
+        # for pname, chain in self.mcmc_result_chains['chains'].items():
+        #     self.mcmc_result_chains['flat_chains'][pname] = flatten_chain(chain)
+
+
+        for key in keys:
+            val = get_key_chain(full_blob, key).astype(float)
+            self.mcmc_result_chains['chains'][key] = val
+            self.mcmc_result_chains['flat_chains'][key] = flatten_chain(val)
+
+
+        # TODO: create a flag_behavior function in the Parameter class
+        for key, chain, in self.mcmc_result_chains['flat_chains'].items():
+            if len(chain) == 0:
+                self.mcmc_results_dict[key] = {k.np.nan for k in MCMCResult.result_attrs}
+                continue
+
+            par_results = {}
+
+            if key.split('_')[-1] == 'AMP':
+                chain *= ctx.source.fit_norm
+
+            post_med = np.nanmedian(chain)
+            par_results['best_fit'] = post_med
+
+            # 68% confidence interval
+            lo, hi = ba_utils.compute_HDI(chain, 0.68)
+            par_results['ci_68_low'] = post_med - lo
+            par_results['ci_68_upp'] = hi - post_med
+
+            # 95% confidence interval
+            lo, hi = ba_utils.compute_HDI(chain, 0.95)
+            par_results['ci_95_low'] = post_med - lo
+            par_results['ci_95_upp'] = hi - post_med
+
+            # TODO: this sometimes fails if the values in the chain are too close
+            #   to create adequate bins. Another way to handle this case?
+            try:
+                hist, bin_edges = np.histogram(chain, bins='doane', density=False)
+                par_results['post_max'] = bin_edges[hist.argmax()]
+            except:
+                par_results['post_max'] = np.nan
+
+            par_results['mean'] = np.nanmean(chain)
+            par_results['std_dev'] = np.nanstd(chain)
+            par_results['median'] = post_med
+            par_results['med_abs_dev'] = stats.median_abs_deviation(chain)
+            par_results['flat_chain'] = chain
+
+            par_results['flag'] = 0
+
+            self.mcmc_results_dict[key] = par_results
+
+        # TODO: hack for now, fix!
+        self.params = self.mcmc_results_dict
+        self.line_list = ctx.line_list
+
+        # update params for final model fit
+        med_values = [v['best_fit'] for p,v in self.params.items() if ctx.param_reg.is_free(p)]
+        ctx.param_reg.update_vals(med_values)
+        ctx.fit_model()
+
+
+        self.components = {k:comp*ctx.source.fit_norm for k,comp in ctx.comps.items()}
+
+        self.meta_components['wave'] = ctx.fit_wave.copy()
+        meta_comps_dict = {'data':ctx.fit_flux.copy(),'noise':ctx.fit_err.copy(),'model':ctx.model.copy(),}
+        for comp, comp_arr in meta_comps_dict.items():
+            self.meta_components[comp] = comp_arr * ctx.source.fit_norm
+        self.meta_components['resid'] = (ctx.fit_flux-ctx.model) * ctx.source.fit_norm
+        self.meta_components['mask'] = ctx.source.fit_mask.copy()
+
+        self.mcmc_output(ctx)
+
+
+    def mcmc_output(self, ctx):
+        # Write chains
+        # if self.cfg.out.write_chain:
+        #     cols = []
+        #     for key, chain in self.mcmc_result_chains['chains'].items():
+        #         cols.append(fits.Column(name=key, format='%dD'%(chain.shape[0]*chain.shape[1]), dim='(%d,%d)'%(chain.shape[1],chain.shape[0]), array=[chain]))
+        #     cols = fits.ColDefs(cols)
+        #     hdu = fits.BinTableHDU.from_columns(cols)
+        #     hdu.writeto(self.target.outdir.joinpath('log', 'MCMC_chains.fits'), overwrite=True)
+        #     hdu.close()
+
+
+        # TODO: remove redundancy with ml bmc.fits
+        # Write best-fit components
+        cols = []
+        for key, value in self.components.items():
+            cols.append(fits.Column(name=key.upper(), format='E', array=value))
+        for key, value in self.meta_components.items():
+            cols.append(fits.Column(name=key.upper(), format='E', array=value))
+
+        cols = fits.ColDefs(cols)
+        hdu = fits.BinTableHDU.from_columns(cols)
+        hdu.writeto(self.out_dir.joinpath('best_model_components.fits'), overwrite=True)
+
+
+        # TODO: remove redundancy with ml pt.fits
+        # Write parameter table
+        hdr = fits.Header()
+        hdr['z'] = ctx.source.target.z
+        hdr['med_noise'] = np.nanmedian(ctx.fit_err)
+        hdr['velscale'] = ctx.source.velscale
+        hdr['fit_norm'] = ctx.source.fit_norm
+        hdr['flux_norm'] = ctx.source.flux_norm
+        primary = fits.PrimaryHDU(header=hdr)
+
+        cols_dict = {'parameter': []}
+        cols_dict.update({k:[] for k in MCMCResult.result_attrs})
+        for key, result_dict in self.mcmc_results_dict.items():
+            cols_dict['parameter'].append(key)
+            for attr in MCMCResult.result_attrs:
+                cols_dict[attr].append(result_dict[attr])
+
+        cols = []
+        for key, values in cols_dict.items():
+            fmt = 'E' if key != 'parameter' else '30A'
+            cols.append(fits.Column(name=key, format=fmt, array=values))
+        cols = fits.ColDefs(cols)
+        table = fits.BinTableHDU.from_columns(cols)
+
+        hdu = fits.HDUList([primary, table])
+        hdu.writeto(self.out_dir.joinpath('par_table.fits'), overwrite=True)
+        hdu.close()
+
 
 
 @dataclass
@@ -130,7 +279,7 @@ class MCMCRunner(BadassRunContext):
         for param in free_params:
             for w in range(self.nwalkers):
                 while (walkers[w][param.idx] < param.plim[0]) or (walkers[w][param.idx] > param.plim[1]):
-                    walkers[w][param.idx] = param.value + 1e-3 * np.random.randn(1)
+                    walkers[w][param.idx] = param.value + 1e-3 * np.random.randn(1)[0]
 
         # TODO: soft constraints
 

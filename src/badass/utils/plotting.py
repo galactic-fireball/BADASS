@@ -205,6 +205,12 @@ def plot_ml_results(mlresult, source):
     #     plotly_best_fit(mlstore)
 
 
+def plot_mcmc_results(mcmc_result, source):
+    mcmc_fig = plot_best_model(mcmc_result, source)
+    mcmc_fig.savefig(mcmc_result.out_dir.joinpath('best_fit_model.png'))
+    return mcmc_fig
+
+
 def plot_best_model(mlresult, source):
     plt.style.use('dark_background')
 

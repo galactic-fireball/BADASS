@@ -37,9 +37,14 @@ def make_logger(name, log_file=None):
 class BadassResult:
     OUT_NAME = 'badass_result'
 
+    PLOT_FUNC = None
+
     def __init__(self, ctx, name):
         self.name = name
         self.out_dir = ctx.cfg.io.output_dir.joinpath(BadassResult.OUT_NAME)
+        if not type(self) is BadassResult:
+            self.out_dir = self.out_dir.joinpath(self.OUT_NAME)
+
         self.out_dir.mkdir(parents=True, exist_ok=True)
 
     def compile_results(self, ctx):

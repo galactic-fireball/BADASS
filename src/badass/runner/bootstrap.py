@@ -6,6 +6,7 @@ from tabulate import tabulate
 
 from badass.badass_utils import badass_test_suite
 from badass.runner import BadassResult, BadassRunContext
+from badass.utils import plotting
 
 
 class BasinhopResult(BadassResult):
@@ -20,16 +21,18 @@ class BasinhopResult(BadassResult):
 class MLResult(BadassResult):
 
     OUT_NAME = 'ml_result'
+    PLOT_FUNC = plotting.plot_ml_results
+
 
     def __init__(self, ctx, name):
         super().__init__(ctx, name)
         # TODO: remove, should be in parent class
-        self.out_dir = self.out_dir.joinpath(self.OUT_NAME)
-        self.out_dir.mkdir(parents=True, exist_ok=True)
+        # self.out_dir = self.out_dir.joinpath(self.OUT_NAME)
+        # self.out_dir.mkdir(parents=True, exist_ok=True)
 
         self.bh_result = BasinhopResult(ctx, name)
-        self.bh_result.out_dir = self.out_dir.joinpath(BasinhopResult.OUT_NAME)
-        self.bh_result.out_dir.mkdir(parents=True, exist_ok=True)
+        # self.bh_result.out_dir = self.out_dir.joinpath(BasinhopResult.OUT_NAME)
+        # self.bh_result.out_dir.mkdir(parents=True, exist_ok=True)
 
         self.params_chain = {}
         self.blobs_chain = {}
@@ -185,6 +188,7 @@ class MLResult(BadassResult):
         primary = fits.PrimaryHDU(header=hdr)
         hdu = fits.HDUList([primary, table_hdu])
         hdu.writeto(self.out_dir.joinpath('par_table.fits'), overwrite=True)
+        hdu.close()
 
         cols = []
         for key, val in self.components.items():
