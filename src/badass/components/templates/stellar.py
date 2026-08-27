@@ -72,7 +72,7 @@ class StellarTemplate(BadassTemplate):
 
         lam_temp = np.array(h2['CRVAL1'] + h2['CDELT1']*np.arange(h2['NAXIS1']))
         # By cropping the templates we save some fitting time
-        mask_temp = ( (lam_temp > (ctx.fit_wave[0]-100.0)) & (lam_temp < (ctx.fit_wave[-1]+100.0)) )
+        mask_temp = (lam_temp >= ctx.fit_wave[0]) & (lam_temp <= ctx.fit_wave[-1])
         ssp = ssp[mask_temp]
         lam_temp = lam_temp[mask_temp]
 
@@ -109,7 +109,7 @@ class StellarTemplate(BadassTemplate):
         for j, fname in enumerate(temp_list):
             hdu = fits.open(fname)
             ssp = hdu[0].data
-            # ssp = ssp[mask_temp]
+            ssp = ssp[mask_temp]
             ssp = gaussian_filter1d(ssp, sigma)  # perform convolution with variable sigma
             sspNew = log_rebin(lamRange_temp, ssp, velscale=ctx.source.velscale, oversample=ctx.cfg.fit.log_rebin_oversample)[0]
             if sspNew.shape[0] < self.ctx.fit_wave.shape[0]:

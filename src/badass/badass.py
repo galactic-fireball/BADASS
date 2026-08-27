@@ -97,6 +97,7 @@ def run_BADASS(inputs, **kwargs):
     pipeline = BadassPipeline.init(sources, cfg)
     pipeline.run()
     pipeline.finalize()
+    return pipeline.result
 
 
     skip_comps = ['DATA','WAVE','MODEL','NOISE','RESID','POWER','HOST_GALAXY','BALMER_CONT','APOLY','MPOLY',]

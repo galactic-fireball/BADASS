@@ -4,12 +4,12 @@ import numpy as np
 from spark.io.readers.jwst import DJASpec
 from spark.utils import deredden
 
-from badass.input.input import LogRebinMixin
+from badass.input.input import LogRebinMixin, BadassSpec
 from badass.input.jwst_common import JWSTReader
 from badass.input.nirspec_reader import inst_data_dir, FILT_GRAT
 
 @dataclass
-class DJAReader(LogRebinMixin, DJASpec):
+class DJAReader(BadassSpec, DJASpec, LogRebinMixin):
 
     def __post_init__(self):
         super().__post_init__()

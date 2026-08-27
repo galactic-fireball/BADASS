@@ -54,7 +54,7 @@ class BadassPipeline:
         if not self.cfg.fit.skip_bootstrap:
             runner = MLRunner(source=self.sources, cfg=self.cfg)
             if not runner.source.valid:
-                runner.log.error('Invalid source! Skipping!')
+                runner.log.error('Invalid source! Skipping! [%s]'%runner.source.err_log)
                 return None
             runner.run()
             runner.finalize()
