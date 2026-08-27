@@ -1,3 +1,4 @@
+import astropy.units as u
 import importlib
 import importlib.util
 import json
@@ -125,6 +126,9 @@ class ApSpec(CustomBaseModel):
     width: float = -1.0
     height: float = -1.0
     radius: float = -1.0
+    a: float = -1.0
+    b: float = -1.0
+    theta: u.Quantity | float = 1.0
 
 
 class FitArea(CustomBaseModel):

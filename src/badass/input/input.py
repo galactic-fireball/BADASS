@@ -8,7 +8,7 @@ import pathlib
 import prodict
 from typing import NamedTuple
 
-from spark.io.models import Coord, SparkSpec, SparkCube, SparkSpaxel, SparkCircularAperture, SparkRectangularAperture
+from spark.io.models import Coord, SparkSpec, SparkCube, SparkSpaxel, SparkCircularAperture, SparkEllipticalAperture, SparkRectangularAperture
 from spark.utils import redden, deredden
 
 from badass.utils.config import BadassConfig
@@ -295,6 +295,11 @@ class BadassCircularAperture(BadassSpec, SparkCircularAperture):
 
 
 @dataclass
+class BadassEllipticalAperture(BadassSpec, SparkEllipticalAperture):
+    pass
+
+
+@dataclass
 class BadassRectangularAperture(BadassSpec, SparkRectangularAperture):
     pass
 
@@ -305,13 +310,14 @@ class BadassCube(BadassSpec, SparkCube):
 
     ap_shapes = {
         'circular': BadassCircularAperture,
+        'elliptical': BadassEllipticalAperture,
         'rectangular': BadassRectangularAperture,
     }
 
 
 # TODO: there's probably a better way than making these...
 @dataclass
-class LogRebinMixin(BadassSpec):
+class LogRebinMixin():
 
     def log_rebin(self):
         lam_range = (np.min(self.wave),np.max(self.wave))
@@ -328,6 +334,11 @@ class LogRebinSpaxel(BadassSpaxel, LogRebinMixin):
 
 @dataclass
 class LogRebinCircularAperture(BadassCircularAperture, LogRebinMixin):
+    pass
+
+
+@dataclass
+class LogRebinEllipticalAperture(BadassEllipticalAperture, LogRebinMixin):
     pass
 
 
