@@ -79,7 +79,7 @@ class MLResult(BadassResult):
 
 
     def save_iter(self, ctx, i, result):
-        ctx.param_reg.update_vals(result['x'])
+        ctx.param_reg.update(result['x'])
         ctx.fit_model()
         ctx.blob_reg.compute_all()
 
@@ -94,7 +94,7 @@ class MLResult(BadassResult):
 
         self.metrics_chain['LOG_LIKE'][i] = result['fun']
         self.metrics_chain['R_SQUARED'][i] = badass_test_suite.r_squared(ctx.fit_flux, ctx.model)
-        self.metrics_chain['RCHI_SQUARED'][i] = badass_test_suite.r_chi_squared(ctx.fit_flux, ctx.model, ctx.fit_err, len(ctx.param_reg.get_free_parameters()))
+        self.metrics_chain['RCHI_SQUARED'][i] = badass_test_suite.r_chi_squared(ctx.fit_flux, ctx.model, ctx.fit_err, ctx.param_reg.free_count)
 
         # TODO: copy needed? option to turn off saving these
         for comp, val in ctx.comps.items():
@@ -129,7 +129,7 @@ class MLResult(BadassResult):
 
         # update params for final model fit
         med_values = [v['med'] for p,v in self.params.items() if ctx.param_reg.is_free(p)]
-        ctx.param_reg.update_vals(med_values)
+        ctx.param_reg.update(med_values)
         ctx.fit_model()
 
         for key, vals in self.blobs_chain.items():
@@ -222,7 +222,7 @@ class MLRunner(BadassRunContext):
     def run(self):
         self.log.info('MLStage run')
 
-        if len(self.param_reg.get_free_parameters()) == 0:
+        if self.param_reg.free_count == 0:
             self.log.warn('No parameters to fit!')
             return
 
@@ -298,7 +298,7 @@ class MLRunner(BadassRunContext):
         result = op.basinhopping(func=self.lnprob_wrapper, x0=self.param_reg.fit_vector(), stepsize=1.0, interval=1, niter=2500, minimizer_kwargs=minimizer_args,
                                  disp=False, niter_success=n_basinhop, callback=callback_ftn)
 
-        self.param_reg.update_vals(result['x'])
+        self.param_reg.update(result['x'])
         self.result.bh_result.params = self.param_reg.get_param_dict().copy()
         self.result.bh_result.blobs = self.blob_reg.compute_all()
 

@@ -54,7 +54,7 @@ class StageStore:
     # TODO: better place for this?
     def update_metrics(self):
         self.metrics['R_SQUARED'] = badass_test_suite.r_squared(self.meta_comps.data, self.meta_comps.model)
-        self.metrics['RCHI_SQUARED'] = badass_test_suite.r_chi_squared(self.meta_comps.data, self.meta_comps.model, self.ctx.fit_err, len(self.ctx.param_reg.get_free_parameters()))
+        self.metrics['RCHI_SQUARED'] = badass_test_suite.r_chi_squared(self.meta_comps.data, self.meta_comps.model, self.ctx.fit_err, self.ctx.param_reg.free_count)
 
 
     def save_iter(self):

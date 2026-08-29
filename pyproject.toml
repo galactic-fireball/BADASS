@@ -32,7 +32,6 @@ dependencies = [
     "jinja2 (>=3.1.6,<4.0.0)",
     # "spark @ git+https://github.com/galactic-fireball/SPARK.git"
     "spark @ file:///Users/sara/Dropbox/side_quests/portfolio/spark",
-    "networkx (>=3.6.1,<4.0.0)"
 ]
 
 [tool.poetry]

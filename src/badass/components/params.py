@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field, fields
-import networkx as nx
+from graphlib import TopologicalSorter, CycleError
 import numexpr as ne
 import numpy as np
 import scipy.optimize as op
@@ -18,29 +18,34 @@ prior_map = {'gaussian': lnprior_gaussian, 'halfnorm': lnprior_halfnorm, 'jeffre
 # MetricParameter
 
 
-# TODO: blobs are parameters as well, handle their own stuff:
-#   class BlobParameter(Parameter)
+
+def unfit_norm_finalize():
+    pass
 
 
+def unflux_norm_finalize():
+    pass
 
 
-class PLim(NamedTuple):
-    min: int | float
-    max: int | float
+def log_finalize():
+    pass
 
 
+def redden_finalize():
+    pass
+
+
+def deredden_finalize():
+    pass
 
 
 @dataclass
 class Parameter:
     name: str
     source: str
-    finalize_behavior: Callable | None = None
+    finalize_behavior: List[Callable] | Callable | None = None
 
     value: [float,int] = np.nan # the current value being used in the model
-
-    # names of parameters whose value depends on self
-    dependents: List[str] = field(default_factory=list)
 
 
     @property
@@ -54,14 +59,21 @@ class Parameter:
         if expr is None:
             return None
 
+        # dict containing and init and plim values -> FreeParameter
         if isinstance(expr, dict):
             kwargs.update(expr)
             return FreeParameter.from_dict(**kwargs)
+
+        # str expression to evaluate -> ExprParameter
         if isinstance(expr, str):
             return ExprParameter.from_dict(**kwargs)
-        if isinstance(expr, (int,float)):
-            kwargs['value'] = expr
+
+        # known, constant value -> ConstParameter
+        if isinstance(expr, (int,float,np.floating)):
+            kwargs['value'] = float(expr)
             return ConstParameter.from_dict(**kwargs)
+
+        return None
 
 
     @classmethod
@@ -71,8 +83,8 @@ class Parameter:
         return cls(**cls_data)
 
 
-    def initialize(self, comp_args, all_params):
-        pass
+    def initialize(self, expr_dict, params):
+        return True
 
 
     def finalize(self):
@@ -81,36 +93,62 @@ class Parameter:
         self.finalize_behavior()
 
 
+class PLim(NamedTuple):
+    min: int | float
+    max: int | float
+
+
 @dataclass
 class FreeParameter(Parameter):
     idx: int = -1 # index into theta
 
     init: str | float | int = None
-    plim: List[str | float | int] = field(default_factory=list)
-    prior: Dict = field(default_factory=dict)
+    plim: PLim | List[str | float | int] = field(default_factory=list)
+    prior: Dict = None
     has_prior: bool = False
 
 
-    def initialize(self, comp_args, all_params):
-        self.init = ne.evaluate(self.init, comp_args).item()
-        mi = ne.evaluate(self.plim[0], comp_args).items()
-        ma = ne.evaluate(self.plim[1], comp_args).items()
-        self.plim = PLim(min=mi, max=ma)
+    def initialize(self, expr_dict, params):
+        if isinstance(self.init, str):
+            self.init = ne.evaluate(self.init, expr_dict).item()
+
+        if not isinstance(self.plim, PLim):
+            mi, ma = self.plim
+            if isinstance(mi, str):
+                mi = ne.evaluate(mi, expr_dict).item()
+            if isinstance(ma, str):
+                ma = ne.evaluate(ma, expr_dict).item()
+            self.plim = PLim(min=mi, max=ma)
 
         self.value = self.init
+        return True
 
 
+@dataclass
 class ConstParameter(Parameter):
     pass
 
 
+@dataclass
 class ExprParameter(Parameter):
     expr: str = None
 
+    # names of parameters needed for expression resolution
+    dependencies: List[str] = field(default_factory=list)
+
+    def initialize(self, expr_dict, params):
+        self.dependencies = ne.necompiler.getExprNames(self.expr, {})[0]
+        for dep in self.dependencies:
+            if not dep in params:
+                print('Unknown dependency parameter: [%s], removing parameter: %s'%(dep,self.name))
+                return False
+        return True
 
 
-class BlobParameter(Parameter):
-    pass
+    def update(self, params):
+        param_dict = {pname:params[pname].value for pname in self.dependencies}
+        self.value = ne.evaluate(self.expr, param_dict).item()
+
 
 
 class ParameterRegistry:
@@ -119,13 +157,15 @@ class ParameterRegistry:
         super().__init__()
 
         self.ctx = ctx
-
         self.params = {}
+
         self.free_params = {}
         self.theta = []
+        self.free_count = 0
 
-        self.free_count = 0 # TODO: actually update and use this
-        self.expr_dict = {}
+        self.expr_params = {}
+        self.expr_order = []
+
         self.constraints = []
 
 
@@ -137,6 +177,12 @@ class ParameterRegistry:
             return self.params[param_name]
 
         param = Parameter.create(**kwargs)
+        if param is None:
+            print('Parameter creation failed')
+            return None
+
+        print('Adding parameter: %s'%param)
+
         self.params[param.name] = param
 
         if param.is_free:
@@ -144,25 +190,58 @@ class ParameterRegistry:
             self.free_params[param.name] = param
             self.free_count += 1
 
+        if isinstance(param, ExprParameter):
+            self.expr_params[param.name] = param
+
         return param
 
 
-    def init_values(self, expr_dict):
-        for pname, pval in expr_dict.items():
-            self.add_param(**{'name':pname,'expr':pval,'source':self})
+    def initialize(self, expr_dict):
+        invalid = []
+        for p in self.params.values():
+            if not p.initialize(expr_dict, self.params):
+                invalid.append(p.name)
+        [self.params.pop(pname,None) for pname in invalid]
 
-        tmp_dict = {k:0 for k in self.params.keys()}
-        for p in self.params:
-            p.initialize(tmp_dict)
+        expr_param_deps = {p.name:p.dependencies for p in self.expr_params.values()}
+        ts = TopologicalSorter(expr_param_deps)
+        try:
+            self.expr_order = list(ts.static_order())
+        except CycleError as e:
+            print(e)
+            return False
+
+        # make sure only ExprParameters are in here
+        self.expr_order = [ep for ep in self.expr_order if ep in self.expr_params]
+        for pname in self.expr_order:
+            self.params[pname].update(self.params)
+
+        self.validate_constraints()
 
 
-    def get_free_parameters(self) -> list[FreeParameter]:
-        return [p for p in self.params.values() if p.is_free]
+    def update(self, theta):
+        for p in self.free_params.values():
+            p.value = theta[p.idx]
+
+        for pname in self.expr_order:
+            self.params[pname].update(self.params)
 
 
-    @property
-    def free_param_count(self):
-        return len(self.get_free_parameters())
+    def fit_vector(self) -> np.ndarray:
+        theta = np.zeros(self.free_count)
+        for p in self.free_params.values():
+            theta[p.idx] = p.value
+        return theta
+
+
+    def get_fit_bounds(self):
+        lo = [p.plim.min for p in self.free_params.values()]
+        hi = [p.plim.max for p in self.free_params.values()]
+        return op.Bounds(lo, hi, keep_feasible=True)
+
+
+    def get_param_dict(self):
+        return {param.name:param.value for param in self.params.values()}
 
 
     @property
@@ -170,149 +249,8 @@ class ParameterRegistry:
         return list(self.params.keys())
 
 
-    def get_prior_parameters(self) -> list[FreeParameter]:
-        return [p for p in self.params.values() if p.has_prior]
-
-
-    def is_free(self, param_name) -> bool:
-        if not param_name in self.params:
-            return False
-        return self.params[param_name].is_free
-
-
-    @property
-    def ntotal(self):
-        return len(self.params)
-
-
-    def _update_all(self, todo=[]) -> None:
-        rerun = [] # if we find an expr that can't be fulfilled yet, rerun
-
-        self.expr_dict.update({v.name:v.value for v in self.params.values() if not v.value is None})
-
-        for param in self.params.values():
-            if (len(todo) > 0) and (not param.name in todo):
-                continue
-
-            if param.expr is None:
-                # param has already been resolved, skip
-                pass
-
-            elif isinstance(param.expr, (int,float)): # const parameter
-                param.value = param.expr
-                self.expr_dict[param.name] = param.value
-                continue
-
-            elif isinstance(param.expr, dict): # free parameter
-                if isinstance(param.init, (int,float)):
-                    # set value to the init hyperpar
-                    param.value = param.init
-                    self.expr_dict[param.name] = param.init
-                    param.expr = None # no longer need to evaluate
-
-                elif isinstance(param.init, str):
-                    if ne.validate(param.init, local_dict=self.expr_dict):
-                        # a term in the expression hasn't been resolved yet
-                        rerun.append(param.name)
-                        continue
-
-                    param.init = ne.evaluate(param.init, local_dict=self.expr_dict).item()
-                    param.value = param.init
-                    self.expr_dict[param.name] = param.value
-                    param.expr = None # no longer need to evaluate
-
-            elif isinstance(param.expr, str): # parameter that needs to be evaluated
-                if ne.validate(param.expr, local_dict=self.expr_dict):
-                    # a term in the expression hasn't been resolved yet
-                    rerun.append(param.name)
-                    continue
-
-                param.value = ne.evaluate(param.expr, local_dict=self.expr_dict).item()
-                self.expr_dict[param.name] = param.value
-                if param.is_free:
-                    param.expr = None # no longer need to evaluate
-
-            if not param.is_free:
-                continue
-
-            for i in [0,1]:
-                if isinstance(param.plim[i], str):
-                    if ne.validate(param.plim[i], local_dict=self.expr_dict):
-                        rerun.append(param.name)
-                        continue
-
-                    param.plim[i] = ne.evaluate(param.plim[i], local_dict=self.expr_dict).item()
-
-            # TODO: need to numexpr any prior values?
-
-        if len(rerun) == 0:
-            # all params have been evaluated successfully
-            return
-
-        self._update_all(todo=rerun)
-
-
-    def old_init_values(self, expr_dict:dict) -> None:
-        self.expr_dict = expr_dict
-        valid_dict = self.expr_dict.copy()
-        valid_dict.update({k:0 for k in self.params.keys()})
-
-        for param in self.params.values():
-            if (isinstance(param.expr, str)) and (ne.validate(param.expr, local_dict=valid_dict)):
-                self.ctx.log.error('Parameter [%s] expr value: %s is invalid!'%(param.name,param.expr))
-                param.expr = param.init
-                # TODO: something more drastic? make free parameter?
-
-            if not param.is_free:
-                continue
-
-            if (isinstance(param.init, str)) and (ne.validate(param.init, local_dict=valid_dict)):
-                breakpoint()
-                self.ctx.log.error('Parameter [%s] init value: %s is invalid!'%(param.name,param.init))
-                param.init = 0.0
-                param.expr = 0.0
-                param.value = 0.0
-
-            for i in [0,1]:
-                if (isinstance(param.plim[i], str)) and (ne.validate(param.plim[i], local_dict=valid_dict)):
-                    self.ctx.log.error('Parameter [%s] plim %d value: %s is invalid!'%(param.name,i,param.plim[i]))
-                    param.plim[i] = 0.0
-
-        self._update_all()
-
-        for idx, p in enumerate(self.get_free_parameters()):
-            p.idx = idx
-
-
-    def fit_vector(self) -> np.ndarray:
-        fp = self.get_free_parameters()
-        theta = np.zeros(len(fp))
-        for p in fp:
-            theta[p.idx] = p.value
-        return theta
-
-
-    def update_vals(self, theta:np.ndarray) -> None:
-        for param in self.params.values():
-            param.value = None
-
-        fp = self.get_free_parameters()
-        for p in fp:
-            p.value = theta[p.idx]
-
-        self._update_all()
-
-
-    def get_fit_bounds(self):
-        fp = self.get_free_parameters()
-        lo = [p.plim[0] for p in fp]
-        hi = [p.plim[1] for p in fp]
-        return op.Bounds(lo, hi, keep_feasible=True)
-
-
     def get_lnpriors(self):
-        fp = self.get_free_parameters()
-        lp_arr = [0.0 if p.plim[0] <= p.value <= p.plim[1] else -np.inf for p in fp]
+        lp_arr = [0.0 if p.plim[0] <= p.value <= p.plim[1] else -np.inf for p in self.free_params.values()]
 
         # Loop through soft constraints
         local_dict = self.get_param_dict()
@@ -321,7 +259,10 @@ class ParameterRegistry:
             lp_arr.append(0.0 if con_pass else -np.inf)
 
         # Loop through parameters with priors on them
-        for param in self.get_prior_parameters():
+        for param in self.free_params.values():
+            if param.prior is None:
+                continue
+
             prior_type = param.prior['type']
             if not prior_type in prior_map: # TODO: validate elsewhere
                 continue
@@ -331,22 +272,24 @@ class ParameterRegistry:
         return np.sum(lp_arr)
 
 
+    def is_free(self, param_name) -> bool:
+        return param_name in self.free_params
+
+
     def get_param(self, param_name):
-        if not param_name in self.params:
-            return None
-        return self.params[param_name]
+        return self.params.get(param_name, None)
 
 
     def get_param_val(self, param_name):
-        param = self.get_param(param_name)
+        param = self.params.get(param_name, None)
         if (param is None) or (param.value is None):
             return np.nan
         return param.value
 
 
     def get_param_hyperdict(self, param_name):
-        param = self.get_param(param_name)
-        if (param is None) or (not param.is_free):
+        param = self.free_params.get(param_name, None)
+        if param is None:
             return {}
 
         return {
@@ -354,10 +297,6 @@ class ParameterRegistry:
             'plim': param.plim,
             'prior': param.prior,
         }
-
-
-    def get_param_dict(self):
-        return {param.name:param.value for param in self.params.values()}
 
 
     def validate_constraints(self):
@@ -381,7 +320,7 @@ class ParameterRegistry:
 
     def get_constraints(self):
         def eval_con(x, self, expr1, expr2):
-            self.update_vals(x)
+            self.update(x)
             local_dict = self.get_param_dict()
             r1 = ne.evaluate(expr1, local_dict=local_dict).item()
             r2 = ne.evaluate(expr2, local_dict=local_dict).item()
@@ -399,10 +338,15 @@ class ParameterRegistry:
             row.append(param.name)
             row.append(param.source if not param.source is None else 'UNK')
             row.append('YES' if param.is_free else 'NO')
-            row.append(param.expr)
+            row.append(param.expr if isinstance(param, ExprParameter) else '')
             row.append(param.value)
 
-            if (param.is_free) and (not param.init is None):
+            if not param.is_free:
+                row.extend(['','','',])
+                table.append(row)
+                continue
+
+            if not param.init is None:
                 if isinstance(param.init, (float,int)):
                     row.append('%0.04f'%param.init)
                 elif isinstance(param.init, str):
@@ -410,7 +354,7 @@ class ParameterRegistry:
             else:
                 row.append('----')
 
-            if (param.is_free) and (not param.plim is None):
+            if not param.plim is None:
                 plimstr = '('
                 for i in [0,1]:
                     if isinstance(param.plim[i], (float,int)):
@@ -432,4 +376,5 @@ class ParameterRegistry:
             table.append(row)
 
         self.ctx.log.info('Current Parameters:\n'+tabulate(table, headers, tablefmt='grid'))
-        self.ctx.log.info('Total Free Parameters: %d'%len(self.get_free_parameters()))
+        self.ctx.log.info('Total Free Parameters: %d' % self.free_count)
+

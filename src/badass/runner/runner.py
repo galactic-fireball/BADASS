@@ -131,7 +131,7 @@ class BadassRunContext:
         self.templates = initialize_templates(self)
         self.line_list = SpectralLine.initialize_spectral_lines(self, [line.dict() for line in self.cfg.user_lines])
 
-        self.param_reg.init_values(component_args)
+        self.param_reg.initialize(component_args)
         self.param_reg.validate_constraints()
 
         self.param_reg.dump_parameters()
@@ -148,7 +148,7 @@ class BadassRunContext:
         if any([np.isnan(v) for v in fit_vals]):
             return np.inf
 
-        self.param_reg.update_vals(fit_vals)
+        self.param_reg.update(fit_vals)
         return -(self.lnprob()[0]) # only care about the first returned value
 
 

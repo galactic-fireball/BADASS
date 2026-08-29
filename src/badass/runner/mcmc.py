@@ -24,7 +24,7 @@ class MCMCResult(BadassResult):
         super().__init__(ctx, name)
 
         self.chain_df = pd.DataFrame(columns=['iter']+list(ctx.param_reg.param_names))
-        cur_params = {param.name:param.value for param in ctx.param_reg.get_free_parameters()}
+        cur_params = {param.name:param.value for param in ctx.param_reg.free_params}
         chain_dict = {'iter': 0}
         chain_dict.update(cur_params)
         self.chain_df.loc[len(self.chain_df)] = chain_dict
@@ -42,7 +42,7 @@ class MCMCResult(BadassResult):
     def add_chain(self, ctx, sampler):
         chain_dict = {'iter': sampler.iteration}
         last_iter = self.chain_df.iter.values[-1]
-        chain_vals = {param.name:np.nanmedian(sampler.chain[:,last_iter:,i]) for i, param in enumerate(ctx.param_reg.get_free_parameters())}
+        chain_vals = {param.name:np.nanmedian(sampler.chain[:,last_iter:,i]) for i, param in enumerate(ctx.param_reg.free_params)}
         chain_dict.update(chain_vals)
 
         self.chain_df.loc[len(self.chain_df)] = chain_dict
@@ -63,7 +63,7 @@ class MCMCResult(BadassResult):
 
         # TODO: add these as blob params?
         blob_dict['R_SQUARED'] = badass_test_suite.r_squared(ctx.fit_flux, ctx.model)
-        blob_dict['RCHI_SQUARED'] = badass_test_suite.r_chi_squared(ctx.fit_flux, ctx.model, ctx.fit_err, ctx.param_reg.free_param_count)
+        blob_dict['RCHI_SQUARED'] = badass_test_suite.r_chi_squared(ctx.fit_flux, ctx.model, ctx.fit_err, ctx.param_reg.free_count)
 
         return blob_dict
 
@@ -87,7 +87,7 @@ class MCMCResult(BadassResult):
                 return it.operands[1]
 
 
-        for param in ctx.param_reg.get_free_parameters():
+        for param in ctx.param_reg.free_params:
             self.mcmc_result_chains['chains'][param.name] = sampler.chain[:,:,param.idx]
             self.mcmc_result_chains['flat_chains'][param.name] = flatten_chain(sampler.chain[:,:,param.idx])
 
@@ -155,7 +155,7 @@ class MCMCResult(BadassResult):
 
         # update params for final model fit
         med_values = [v['best_fit'] for p,v in self.params.items() if ctx.param_reg.is_free(p)]
-        ctx.param_reg.update_vals(med_values)
+        ctx.param_reg.update(med_values)
         ctx.fit_model()
 
 
@@ -238,7 +238,7 @@ class MCMCRunner(BadassRunContext):
         for k,v in self.cfg.mcmc.model_dump().items():
             setattr(self,k,v)
 
-        ndim = self.param_reg.free_param_count
+        ndim = self.param_reg.free_count
         self.nwalkers = max(self.nwalkers, 2*ndim)
 
         dtype = [('full_blob',dict),]
@@ -261,7 +261,7 @@ class MCMCRunner(BadassRunContext):
         if any([np.isnan(v) for v in fit_vals]):
             return np.inf
 
-        self.param_reg.update_vals(fit_vals)
+        self.param_reg.update(fit_vals)
 
         lp, ll = self.lnprob()
         blob_dict = self.result.calc_mcmc_blob(self)
@@ -272,7 +272,7 @@ class MCMCRunner(BadassRunContext):
     def initialize_walkers(self):
         # Initializes the MCMC walkers within bounds and soft constraints
 
-        free_params = self.param_reg.get_free_parameters()
+        free_params = self.param_reg.free_params
         cur_pvals = [p.value for p in free_params]
         walkers = cur_pvals + 1e-3 * np.random.randn(self.nwalkers, len(free_params))
 
