@@ -12,6 +12,11 @@ from badass.components.spectral_lines.utils import calculate_fwhm, calculate_w80
 # components that make up the continuum
 cont_comps = ['POWER', 'HOST_GALAXY', 'BALMER_CONT', 'APOLY', 'MPOLY',]
 
+# TODO: split into blobs that needed to be computed each iteration
+#   (ie. computation involves using a component) vs. ones that can
+#   be computed from parameters only, and hence from parameter chains
+#   after the fit
+
 
 class BlobRegistry:
 
@@ -49,6 +54,17 @@ class BlobRegistry:
             if blob.name == blob_name:
                 return blob
         return None
+
+
+    def get_blobs_dict(self):
+        blobs_dict = {}
+        for blob in self.blobs:
+            if isinstance(blob.cur_val, dict):
+                for blob_name, blob_val in blob.cur_val.items():
+                    blobs_dict[blob_name] = blob_val
+            else:
+                blobs_dict[blob.name] = blob.cur_val
+        return blobs_dict
 
 
     def calc_cont(self):
@@ -323,7 +339,6 @@ class ComponentBlob(Blob):
 
         cont = kwargs['continuum']
         ew = simpson(self.comp_spec/cont, ComponentBlob.obs_wave)
-        ew = ba_utils.dered(ew, z=ctx.source.target.z)
         self.cur_val[self.name+'_EW'] = ew if np.isfinite(ew) else 0.0
 
         return self.cur_val

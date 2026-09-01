@@ -8,12 +8,12 @@ io = {
 
 fit = {
     'fit_reg': (4400,5500),
-    'max_like_niter': 1,
-    'n_basinhop': 1,
+    'max_like_niter': 2,
+    'n_basinhop': 2,
 }
 
 mcmc = {
-    'mcmc_fit': True,
+    'mcmc_fit': False,
     'burn_in': 0,
     'min_iter': 1,
     'max_iter': 5,
@@ -50,7 +50,15 @@ from badass.coronal_lines import *
 # hbeta['name'] = 'H_BETA'
 H_BETA_LAM = 4862.691
 hbeta = {'name': 'H_BETA', 'center': H_BETA_LAM, 'type': 'combined', 'children': [NA_H_BETA, BR_H_BETA,],}
-user_lines = [hbeta,]#, OIII_5007]
+# user_lines = [hbeta, OIII_5007]
+
+OIII_5007_LAM = 5008.240
+OIII_4960_LAM = 4960.295
+user_lines = [
+    {'name': 'H_BETA', 'center': H_BETA_LAM},
+    {'name': 'OIII_5007', 'center': OIII_5007_LAM, 'voff':'OIII_4960_VOFF'},
+    {'name': 'OIII_4960', 'center': OIII_4960_LAM, 'voff':'H_BETA_VOFF-H_BETA_DISP'},
+]
 
 
 # br_hbeta = common_lines.BR_H_BETA.copy()

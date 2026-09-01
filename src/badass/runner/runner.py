@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 import numpy as np
 import os
@@ -34,7 +34,50 @@ def make_logger(name, log_file=None):
     return log
 
 
+@dataclass
 class BadassResult:
+    OUT_NAME = 'badass_result'
+    PLOT_FUNC = None
+
+    ctx: None
+    name: str
+    out_dir: str | pathlib.Path = None
+
+    final_params: dict = field(default_factory=dict)
+    blobs: dict[str:dict[str:float]] = field(default_factory=dict)
+    metrics: dict[str:float] = field(default_factory=dict)
+    components: dict[str:list[float]] = field(default_factory=dict)
+    meta_components: dict[str:list[float]] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.out_dir = self.ctx.cfg.io.output_dir.joinpath(self.OUT_NAME)
+        if not type(self) is BadassResult:
+            self.out_dir = self.out_dir.joinpath(self.OUT_NAME)
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+
+
+    @classmethod
+    def from_file(cls, file_name):
+        pass
+
+
+    def dump(self):
+        pass
+
+
+    def finalize(self):
+        pass
+        # set final_params
+        # update param registry
+        # run model
+        # update blobs, components, metrics
+
+        # output
+
+
+
+
+class BadassResultOld:
     OUT_NAME = 'badass_result'
 
     PLOT_FUNC = None

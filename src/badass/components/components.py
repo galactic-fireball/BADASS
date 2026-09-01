@@ -1,4 +1,7 @@
 
+# TODO: ComponentRegistry ?
+#   handles component finalization (ie. comp * ctx.source.fit_norm)
+
 class BadassComponent:
 
     def __init__(self, ctx):
@@ -29,3 +32,14 @@ class BadassComponent:
 
     def get_param(self, param_name):
         return np.nan
+
+
+    def finalize(self):
+        pass
+
+
+# TODO:
+# has subcomponents (AGN and host) or (power, poly, balmer, etc.)
+# maintains its own blob and parameters
+class ContinuumComponent(BadassComponent):
+    pass

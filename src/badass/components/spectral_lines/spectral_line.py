@@ -10,7 +10,7 @@ import badass.utils.constants as consts
 import badass.utils.utils as ba_utils
 from badass.components.blobs import CombinedLineComponentBlob, LineComponentBlob, LineVelBlob
 from badass.components.components import BadassComponent
-from badass.components.params import ParameterRegistry
+from badass.components.params import ParameterRegistry, unfit_norm_finalize
 
 EDGE_PAD = 10
 
@@ -186,7 +186,8 @@ class SpectralLine(BadassComponent):
         # register primary parameters
         for param, param_val in param_vals.items():
             param_name = self.name + '_' + param.upper()
-            self.pr.add_param(name=param_name, expr=param_val, source=self.name)
+            fb = unfit_norm_finalize if param == 'AMP' else None
+            self.pr.add_param(name=param_name, expr=param_val, source=self.name, finalize_behavior=fb)
             self.comp_params.append(param_name)
 
         # add profile-unique parameters

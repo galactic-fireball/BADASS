@@ -1,24 +1,22 @@
 from astropy.io import fits
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import numpy as np
 import scipy.optimize as op
 from tabulate import tabulate
+from typing import NamedTuple
 
 from badass.badass_utils import badass_test_suite
 from badass.runner import BadassResult, BadassRunContext
 from badass.utils import plotting
 
 
-class BasinhopResult(BadassResult):
-    OUT_NAME = 'basinhop_result'
-
-    def __init__(self, ctx, name):
-        self.params = {}
-        self.blobs = {}
-        self.metrics = {}
+# intermediate result
+class MLState(NamedTuple):
+    params: list[float]
+    log_like: float
 
 
-class MLResult(BadassResult):
+class MLResultOld(BadassResult):
 
     OUT_NAME = 'ml_result'
     PLOT_FUNC = plotting.plot_ml_results
@@ -171,19 +169,105 @@ class MLResult(BadassResult):
         print(tabulate(table, headers, tablefmt='grid'))
 
 
-    def output(self, ctx):
-        col1 = fits.Column(name='parameter', format='30A', array=list(self.params.keys()))
-        col2 = fits.Column(name='best_fit', format='E', array=[v['med'] for v in self.params.values()])
-        col3 = fits.Column(name='sigma', format='E', array=[v['std'] for v in self.params.values()])
+@dataclass
+class ParamResult:
+    name: str
+    best_fit: float
+    sigma: float
+    flag: int = 0
+
+
+@dataclass
+class MLResult(BadassResult):
+    OUT_NAME = 'ml_result'
+    PLOT_FUNC = plotting.plot_ml_results
+
+    fp_chain: list[list[float]] = field(default_factory=list)
+    ll_chain: list[float] = field(default_factory=list)
+
+    blobs_chain: dict[str,list[float]] = field(default_factory=dict)
+
+    def save_state(self, state):
+        self.fp_chain.append(state.params)
+        self.ll_chain.append(state.log_like)
+
+        self.ctx.blob_reg.compute_all()
+        for blob_name, blob_val in self.ctx.blob_reg.get_blobs_dict().items():
+            if not blob_name in self.blobs_chain:
+                self.blobs_chain[blob_name] = []
+            self.blobs_chain[blob_name].append(blob_val)
+
+
+    def finalize(self):
+        # PARAMETERS
+
+        # transpose so fp_chain[idx] is a chain for a single param
+        self.fp_chain = np.array(self.fp_chain).T
+        param_chains = self.ctx.param_reg.evaluate_chains(self.fp_chain)
+
+        for param in self.ctx.param_reg.params.values():
+            med = np.nanmedian(param_chains[param.name])
+            if not np.isfinite(med): med = 0.0
+            std = np.nanstd(param_chains[param.name])
+            if not np.isfinite(std): std = 0.0
+
+            flag = 0
+            if param.is_free:
+                if med-std <= param.plim.min: flag += 1
+                if med+std >= param.plim.max: flag += 1
+
+            param_res = ParamResult(param.name, med, std, flag)
+            self.final_params[param.name] = param_res
+
+        # BLOBS
+        for blob in self.ctx.blob_reg.get_blobs_dict().keys():
+            med = np.nanmedian(self.blobs_chain[blob])
+            if not np.isfinite(med): med = 0.0
+            std = np.nanstd(self.blobs_chain[blob])
+            if not np.isfinite(std): std = 0.0
+            param_res = ParamResult(blob, med, std, flag)
+            self.final_params[blob] = param_res
+
+        # COMPONENTS
+        final_theta = np.zeros(self.ctx.param_reg.free_count)
+        for param in self.ctx.param_reg.free_params.values():
+            final_theta[param.idx] = self.final_params[param.name].best_fit
+
+        self.ctx.param_reg.update(final_theta)
+
+        # refit the model with the updated theta
+        self.ctx.fit_model()
+        for key, comp in self.ctx.comps.items():
+            self.components[key] = comp * self.ctx.source.fit_norm
+
+        self.meta_components['wave'] = self.ctx.fit_wave.copy()
+        meta_comps_dict = {'data':self.ctx.fit_flux.copy(),'noise':self.ctx.fit_err.copy(),'model':self.ctx.model.copy(),}
+        for comp, comp_arr in meta_comps_dict.items():
+            self.meta_components[comp] = comp_arr * self.ctx.source.fit_norm
+        self.meta_components['resid'] = (self.ctx.fit_flux-self.ctx.model) * self.ctx.source.fit_norm
+        self.meta_components['mask'] = self.ctx.source.fit_mask.copy()
+
+
+        # METRICS
+        # self.metrics = badass_test_suite.get_fit_test_results(ctx)
+
+        self.ctx.param_reg.finalize()
+        self.ctx.param_reg.dump_parameters()
+
+
+    def output(self):
+        col1 = fits.Column(name='parameter', format='30A', array=[p.name for p in self.final_params.values()])
+        col2 = fits.Column(name='best_fit', format='E', array=[p.best_fit for p in self.final_params.values()])
+        col3 = fits.Column(name='sigma', format='E', array=[p.sigma for p in self.final_params.values()])
         cols = fits.ColDefs([col1,col2,col3])
         table_hdu = fits.BinTableHDU.from_columns(cols)
 
         hdr = fits.Header()
-        hdr['z'] = ctx.source.target.z
-        hdr['med_noise'] = np.nanmedian(ctx.fit_err)
-        hdr['velscale'] = ctx.source.velscale
-        hdr['fit_norm'] = ctx.source.fit_norm
-        hdr['flux_norm'] = ctx.source.flux_norm
+        hdr['z'] = self.ctx.source.target.z
+        hdr['med_noise'] = np.nanmedian(self.ctx.fit_err)
+        hdr['velscale'] = self.ctx.source.velscale
+        hdr['fit_norm'] = self.ctx.source.fit_norm
+        hdr['flux_norm'] = self.ctx.source.flux_norm
 
         primary = fits.PrimaryHDU(header=hdr)
         hdu = fits.HDUList([primary, table_hdu])
@@ -200,6 +284,7 @@ class MLResult(BadassResult):
         cols = fits.ColDefs(cols)
         hdu = fits.BinTableHDU.from_columns(cols)
         hdu.writeto(self.out_dir.joinpath('best_model_components.fits'), overwrite=True)
+
 
 
 @dataclass
@@ -232,14 +317,8 @@ class MLRunner(BadassRunContext):
 
     def finalize(self):
         self.log.info('MLStage finalize')
-
-        self.result.bh_result.compile_results(self)
-        self.result.bh_result.dump_results(self)
-        self.result.bh_result.output(self)
-
-        self.result.compile_results(self)
-        self.result.dump_results(self)
-        self.result.output(self)
+        self.result.finalize()
+        self.result.output()
 
 
     def basinhop(self):
@@ -298,22 +377,18 @@ class MLRunner(BadassRunContext):
         result = op.basinhopping(func=self.lnprob_wrapper, x0=self.param_reg.fit_vector(), stepsize=1.0, interval=1, niter=2500, minimizer_kwargs=minimizer_args,
                                  disp=False, niter_success=n_basinhop, callback=callback_ftn)
 
-        self.param_reg.update(result['x'])
-        self.result.bh_result.params = self.param_reg.get_param_dict().copy()
-        self.result.bh_result.blobs = self.blob_reg.compute_all()
-
         self.param_reg.dump_parameters()
-        self.blob_reg.dump_blobs()
         self.log.info('Basinhopping complete')
 
-        self.fit_model()
-        self.reweight()
-        self.result.bh_result.metrics['LOG_LIKE'] = result['fun']
+        # TODO: add back in
+        # self.reweight()
 
-        return result
+        return MLState(result['x'], result['fun'])
 
 
-    def max_likelihood(self, basinhop_result):
+    def max_likelihood(self, init_state):
+
+        self.result.save_state(init_state)
 
         max_like_niter = self.cfg.fit.max_like_niter
         if max_like_niter == 0:
@@ -321,25 +396,25 @@ class MLRunner(BadassRunContext):
 
         self.log.info('Performing Monte Carlo bootstrapping')
 
+        self.param_reg.update(init_state.params)
         param_constraints = self.param_reg.get_constraints()
         param_bounds = self.param_reg.get_fit_bounds()
 
-        self.result.init_chains(self, max_like_niter)
-        self.result.save_iter(self, 0, basinhop_result)
+        # TODO: option to save all params/blobs as the fitting happens
+        # self.result.init_chains(self, max_like_niter)
 
         orig_fit_flux = self.fit_flux.copy()
 
         for n in range(1, max_like_niter+1):
             self.log.info('Bootstrap iteration %d'%n)
             # Generate a simulated galaxy spectrum with noise added at each pixel
-            mcgal = np.random.normal(self.fit_flux, np.abs(self.fit_err))
-            # Get rid of any infs or nan if there are none; this will cause scipy.optimize to fail
-            mcgal[~np.isfinite(mcgal)] = np.nanmedian(mcgal)
-            self.fit_flux = mcgal
+            sim_flux = np.random.normal(self.fit_flux, np.abs(self.fit_err))
+            sim_flux[~np.isfinite(sim_flux)] = np.nanmedian(sim_flux)
+            self.fit_flux = sim_flux
 
             result = op.minimize(fun=self.lnprob_wrapper, x0=self.param_reg.fit_vector(), method='SLSQP',
                                    bounds=param_bounds, constraints=param_constraints, options={'maxiter':1000,'disp': False})
-            self.result.save_iter(self, n, result)
+            self.result.save_state(MLState(result['x'], result['fun']))
 
             # return original spectrum
             self.fit_flux = orig_fit_flux

@@ -19,23 +19,25 @@ prior_map = {'gaussian': lnprior_gaussian, 'halfnorm': lnprior_halfnorm, 'jeffre
 
 
 
-def unfit_norm_finalize():
+def unfit_norm_finalize(ctx, val):
+    return val * ctx.source.fit_norm
+
+
+def unflux_norm_finalize(ctx, val):
+    return val * ctx.source.flux_norm
+
+
+def log_finalize(ctx, val):
+    if val == 0.0:
+        return val
+    return np.log10(val)
+
+
+def redden_finalize(ctx, val):
     pass
 
 
-def unflux_norm_finalize():
-    pass
-
-
-def log_finalize():
-    pass
-
-
-def redden_finalize():
-    pass
-
-
-def deredden_finalize():
+def deredden_finalize(ctx, val):
     pass
 
 
@@ -87,10 +89,10 @@ class Parameter:
         return True
 
 
-    def finalize(self):
+    def finalize(self, ctx):
         if not self.finalize_behavior:
             return
-        self.finalize_behavior()
+        self.value = self.finalize_behavior(ctx, self.value)
 
 
 class PLim(NamedTuple):
@@ -149,6 +151,9 @@ class ExprParameter(Parameter):
         param_dict = {pname:params[pname].value for pname in self.dependencies}
         self.value = ne.evaluate(self.expr, param_dict).item()
 
+
+    def evaluate_chains(self, param_chains):
+        return ne.evaluate(self.expr, param_chains)
 
 
 class ParameterRegistry:
@@ -242,6 +247,25 @@ class ParameterRegistry:
 
     def get_param_dict(self):
         return {param.name:param.value for param in self.params.values()}
+
+
+    def evaluate_chains(self, fp_chains):
+        param_chains = {p.name:fp_chains[p.idx] for p in self.free_params.values()}
+        for pname in self.expr_order:
+            param_chains[pname] = self.params[pname].evaluate_chains(param_chains)
+
+        for param in self.params.values():
+            if param.name in param_chains:
+                continue
+            # should only be ConstParameters at this point
+            param_chains[param.name] = np.full(len(fp_chains[0]), param.value)
+
+        return param_chains
+
+
+    def finalize(self):
+        for param in self.params.values():
+            param.finalize(self.ctx)
 
 
     @property

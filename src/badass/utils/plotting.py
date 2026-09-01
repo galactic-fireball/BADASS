@@ -224,8 +224,8 @@ def plot_best_model(mlresult, source):
     linestyle_default = '-'
 
     ordinal = lambda n: '%d%s' % (n, 'tsnrhtdd'[(n//10%10!=1)*(n%10<4)*n%10::4])
-    apoly_label = ordinal(len([p for p in mlresult.params.keys() if p.startswith('APOLY_')])-1)
-    mpoly_label = ordinal(len([p for p in mlresult.params.keys() if p.startswith('MPOLY_')])-1)
+    apoly_label = ordinal(len([p for p in mlresult.final_params.keys() if p.startswith('APOLY_')])-1)
+    mpoly_label = ordinal(len([p for p in mlresult.final_params.keys() if p.startswith('MPOLY_')])-1)
 
     wave = mlresult.meta_components['wave']
     fit_mask = mlresult.meta_components['mask']
@@ -279,7 +279,7 @@ def plot_best_model(mlresult, source):
         label, color, linewidth, linestyle = line_params[line.prefix.lower()]
         ax1.plot(wave, mlresult.components[line.name], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
 
-    for line in mlresult.line_list:
+    for line in mlresult.ctx.line_list:
         add_line(line)
 
     ibad = [i for i in range(len(wave)) if i not in fit_mask]
