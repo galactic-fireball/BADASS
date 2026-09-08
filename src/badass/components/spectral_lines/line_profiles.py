@@ -102,7 +102,7 @@ class LorentzianProfile(LineProfile):
 
         gamma = 0.5*fwhm_pix
         # construct lorenzian
-        l = amp*((gamma**2) / (gamma**2+(x_pix-center_pix)**2))
+        l = line.get_param('amp')*((gamma**2) / (gamma**2+(x_pix-center_pix)**2))
         l = np.sum(l, axis=1)
 
         # Make sure edges of lorenzian are zero to avoid wierd things
