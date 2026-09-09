@@ -63,7 +63,7 @@ class BadassSpec(SparkSpec):
         for attr,unit in {'wave':TARGET_WAVE_UNIT, 'obs_wave':TARGET_WAVE_UNIT, 'flux':TARGET_FLUX_UNIT_AA, 'err':TARGET_FLUX_UNIT_AA}.items():
             attr_val = getattr(self, attr)
             if isinstance(attr_val, u.Quantity):
-                setattr(self, attr, attr_val.to(unit).value)
+                setattr(self, attr, attr_val.to_value(unit))
         self.wave_unit = TARGET_WAVE_UNIT
         self.flux_unit = TARGET_FLUX_UNIT_AA
 

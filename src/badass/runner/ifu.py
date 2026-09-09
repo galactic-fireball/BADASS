@@ -46,8 +46,8 @@ class SpaxelsPipeline(IFUPipeline):
 
         # TODO: 'exclude' option
         self.spaxels = self.cfg.fit.fit_area.spaxels
-        nx = self.sources.flux.shape[2]
-        ny = self.sources.flux.shape[1]
+        nx = self.source.flux.shape[2]
+        ny = self.source.flux.shape[1]
 
         if isinstance(self.spaxels, str):
             if self.spaxels.lower() != 'all':
@@ -74,9 +74,9 @@ class SpaxelsPipeline(IFUPipeline):
         for spaxel in self.spaxels:
             # TODO: different cfg (user lines) for each spaxel
             spaxel_cfg = copy.deepcopy(self.cfg)
-            source_spax = self.sources.spax(*spaxel)
+            source_spax = self.source.spax(*spaxel)
 
-            spaxel_out_dir = spaxel_cfg.io.output_dir.joinpath(self.sources.name, source_spax.name)
+            spaxel_out_dir = spaxel_cfg.io.output_dir.joinpath(self.source.name, source_spax.name)
             if skip_existing(spaxel_out_dir, spaxel_cfg.io.overwrite):
                 continue
 
@@ -98,7 +98,7 @@ class SpaxelsPipeline(IFUPipeline):
     def make_parameter_maps(self):
         maps = {}
         for param_name in list(self.source_results.values())[0].params.keys():
-            maps[param_name] = np.zeros(shape=self.sources.shape)
+            maps[param_name] = np.zeros(shape=self.source.shape)
 
         for name, res in self.source_results.items():
             x, y = [int(v) for v in name.split('_')[1:]]
@@ -124,12 +124,12 @@ class BinsPipeline(IFUPipeline):
         plot = self.cfg.fit.fit_area.plot_input
 
         if plot:
-            cube_ax, spec_ax = IFUPipeline.setup_map_spec_axes(self.sources)
+            cube_ax, spec_ax = IFUPipeline.setup_map_spec_axes(self.source)
 
         sx,ex = self.cfg.fit.fit_area.bins.x
-        if ex < 0: ex = self.sources.flux.shape[2]
+        if ex < 0: ex = self.source.flux.shape[2]
         sy,ey = self.cfg.fit.fit_area.bins.y
-        if ey < 0: ey = self.sources.flux.shape[1]
+        if ey < 0: ey = self.source.flux.shape[1]
 
         bxs_r = range(sx, ex, slength)
         bys_r = range(sy, ey, slength)
@@ -146,9 +146,9 @@ class BinsPipeline(IFUPipeline):
                 bin_cfg = copy.deepcopy(self.cfg)
                 center = (bxs+(width/2), bys+(height/2))
                 bin_name = 'bin_%d_%d'%(bnx,bny)
-                source_bin = self.sources.aperture('rectangular', center, width=width, height=height, name=bin_name)
+                source_bin = self.source.aperture('rectangular', center, width=width, height=height, name=bin_name)
 
-                bin_out_dir = bin_cfg.io.output_dir.joinpath(self.sources.name, source_bin.name)
+                bin_out_dir = bin_cfg.io.output_dir.joinpath(self.source.name, source_bin.name)
                 if skip_existing(bin_out_dir, bin_cfg.io.overwrite):
                     continue
 
@@ -181,7 +181,7 @@ class AperturesPipeline(IFUPipeline):
         plot = self.cfg.fit.fit_area.plot_input
 
         if plot:
-            cube_ax, spec_ax = IFUPipeline.setup_map_spec_axes(self.sources)
+            cube_ax, spec_ax = IFUPipeline.setup_map_spec_axes(self.source)
 
         for i, ap in enumerate(aps):
             # TODO: different cfg (user lines) for each aperture
@@ -189,9 +189,9 @@ class AperturesPipeline(IFUPipeline):
             ap_name = 'ap_%d'%i
             kwargs = {k:v for k,v in ap.model_dump().items() if k in ['width','height','radius','a','b','theta']}
             kwargs['name'] = ap_name
-            source_ap = self.sources.aperture(ap.shape, ap.center, **kwargs)
+            source_ap = self.source.aperture(ap.shape, ap.center, **kwargs)
 
-            ap_out_dir = ap_cfg.io.output_dir.joinpath(self.sources.name, source_ap.name)
+            ap_out_dir = ap_cfg.io.output_dir.joinpath(self.source.name, source_ap.name)
             if skip_existing(ap_out_dir, ap_cfg.io.overwrite):
                 continue
 

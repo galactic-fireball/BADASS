@@ -30,7 +30,7 @@ def test_single():
     if test_old:
         output_dir = test_file.parent.joinpath('sdss_test_oldrepo_ml')
     else:
-        output_dir = test_file.parent.joinpath('sdss_test')
+        output_dir = TESTING_DIR.parent.joinpath('sdss_test')
 
     if output_dir.exists():
         shutil.rmtree(str(output_dir))

@@ -13,7 +13,7 @@ fit = {
 }
 
 mcmc = {
-    'mcmc_fit': False,
+    'mcmc_fit': True,
     'burn_in': 0,
     'min_iter': 1,
     'max_iter': 5,

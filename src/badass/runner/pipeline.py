@@ -6,7 +6,6 @@ from badass.runner.runner import BadassResult
 # from badass.runner.tests import TestResult, TestRunner
 from badass.runner.bootstrap import MLRunner
 from badass.runner.mcmc import MCMCRunner
-# from badass.runner.mcmc import MCMCContext, MCMCResult, MCMCStage
 from badass.utils.config import BadassConfig
 
 from badass.utils import plotting
@@ -14,20 +13,14 @@ from badass.utils import plotting
 @dataclass
 class BadassPipeline:
 
-    sources: BadassSpec = None
+    source: BadassSpec = None
     cfg: BadassConfig = None
     single: bool = True
     results: List[BadassResult] = field(default_factory=list)
 
 
-    def __post_init__(self):
-        pass
-
-
     @staticmethod
-    def init(sources, cfg):
-        print('BadassPipeline init')
-
+    def init(source, cfg):
         # Batch run IFU areas
         test_cfg = cfg
         if isinstance(test_cfg, list): test_cfg = test_cfg[0]
@@ -37,17 +30,16 @@ class BadassPipeline:
             if pipeline_cls is None:
                 raise Exception('Unexpected area type: %s'%test_cfg.fit.fit_area.type)
 
-            return pipeline_cls(sources=sources, cfg=cfg)
+            return pipeline_cls(source=source, cfg=cfg)
 
         # Multiple non-IFU source
-        if isinstance(sources, list):
+        if isinstance(source, list):
             from badass.runner.survey import SurveyPipeline
-            return SurveyPipeline(sources=sources, cfg=cfg)
+            return SurveyPipeline(source=source, cfg=cfg)
 
         # Single source fitting, no tests
-        print('Single source')
         if isinstance(cfg, list): cfg = cfg[0]
-        return BadassPipeline(sources=sources, cfg=cfg)
+        return BadassPipeline(source=source, cfg=cfg)
 
 
     def run(self):
@@ -55,7 +47,7 @@ class BadassPipeline:
         # TODO: just set up a list of runners to run
 
         if not self.cfg.fit.skip_bootstrap:
-            runner = MLRunner(source=self.sources, cfg=self.cfg)
+            runner = MLRunner(source=self.source, cfg=self.cfg)
             if not runner.source.valid:
                 runner.log.error('Invalid source! Skipping! [%s]'%runner.source.err_log)
                 return None
@@ -67,10 +59,12 @@ class BadassPipeline:
             return self.results
 
         # run mcmc
-        runner = MCMCRunner(source=self.sources, cfg=self.cfg)
+        initial_theta = runner.result.final_theta
+        runner = MCMCRunner(source=self.source, cfg=self.cfg)
         if not runner.source.valid:
             runner.log.error('Invalid source! Skipping!')
             return None
+        runner.init(initial_theta)
         runner.run()
         runner.finalize()
         self.results.append(runner.result)
@@ -78,11 +72,9 @@ class BadassPipeline:
 
 
     def finalize(self):
-        print('BadassPipeline finalize')
         if self.single:
             for result in self.results:
                 if result.PLOT_FUNC is None:
                     continue
-                result.PLOT_FUNC(self.sources)
-            # plotting.plot_ml_results(self.result, self.sources)
+                result.PLOT_FUNC(self.source)
 

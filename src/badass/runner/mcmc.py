@@ -24,7 +24,7 @@ class MCMCResult(BadassResult):
         super().__init__(ctx, name)
 
         self.chain_df = pd.DataFrame(columns=['iter']+list(ctx.param_reg.param_names))
-        cur_params = {param.name:param.value for param in ctx.param_reg.free_params}
+        cur_params = {param.name:param.value for param in ctx.param_reg.free_params.values()}
         chain_dict = {'iter': 0}
         chain_dict.update(cur_params)
         self.chain_df.loc[len(self.chain_df)] = chain_dict
@@ -42,7 +42,7 @@ class MCMCResult(BadassResult):
     def add_chain(self, ctx, sampler):
         chain_dict = {'iter': sampler.iteration}
         last_iter = self.chain_df.iter.values[-1]
-        chain_vals = {param.name:np.nanmedian(sampler.chain[:,last_iter:,i]) for i, param in enumerate(ctx.param_reg.free_params)}
+        chain_vals = {param.name:np.nanmedian(sampler.chain[:,last_iter:,i]) for i, param in enumerate(ctx.param_reg.free_params.values())}
         chain_dict.update(chain_vals)
 
         self.chain_df.loc[len(self.chain_df)] = chain_dict
@@ -87,7 +87,7 @@ class MCMCResult(BadassResult):
                 return it.operands[1]
 
 
-        for param in ctx.param_reg.free_params:
+        for param in ctx.param_reg.free_params.values():
             self.mcmc_result_chains['chains'][param.name] = sampler.chain[:,:,param.idx]
             self.mcmc_result_chains['flat_chains'][param.name] = flatten_chain(sampler.chain[:,:,param.idx])
 
@@ -115,8 +115,8 @@ class MCMCResult(BadassResult):
 
             par_results = {}
 
-            if key.split('_')[-1] == 'AMP':
-                chain *= ctx.source.fit_norm
+            # if key.split('_')[-1] == 'AMP':
+            #     chain *= ctx.source.fit_norm
 
             post_med = np.nanmedian(chain)
             par_results['best_fit'] = post_med
@@ -158,6 +158,7 @@ class MCMCResult(BadassResult):
         ctx.param_reg.update(med_values)
         ctx.fit_model()
 
+        ctx.param_reg.dump_parameters()
 
         self.components = {k:comp*ctx.source.fit_norm for k,comp in ctx.comps.items()}
 
@@ -248,6 +249,10 @@ class MCMCRunner(BadassRunContext):
         self.autocorr = None
 
 
+    def init(self, initial_theta):
+        self.param_reg.update(initial_theta)
+
+
     def run(self):
         self.log.info('MCMCRunner run')
         self.run_mcmc()
@@ -272,7 +277,7 @@ class MCMCRunner(BadassRunContext):
     def initialize_walkers(self):
         # Initializes the MCMC walkers within bounds and soft constraints
 
-        free_params = self.param_reg.free_params
+        free_params = self.param_reg.free_params.values()
         cur_pvals = [p.value for p in free_params]
         walkers = cur_pvals + 1e-3 * np.random.randn(self.nwalkers, len(free_params))
 

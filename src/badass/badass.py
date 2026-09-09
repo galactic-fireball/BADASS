@@ -81,21 +81,15 @@ def target_check(inputs, **kwargs):
     print('Fitting %d targets'%len(targets))
 
 
-class FitStage:
-    INIT = 1
-    BOOTSTRAP = 2
-    MCMC = 3
-
-
 from badass.runner.pipeline import BadassPipeline
 
 
 def run_BADASS(inputs, **kwargs):
     cfg = BadassConfig.get_config_from_args(kwargs)
-    sources = BadassSpec.get_inputs(inputs, cfg)
+    source = BadassSpec.get_inputs(inputs, cfg)
 
-    pipeline = BadassPipeline.init(sources, cfg)
-    pipeline.run()
+    pipeline = BadassPipeline.init(source, cfg)
+    results = pipeline.run()
     pipeline.finalize()
 
 

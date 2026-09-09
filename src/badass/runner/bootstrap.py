@@ -186,6 +186,7 @@ class MLResult(BadassResult):
     ll_chain: list[float] = field(default_factory=list)
 
     blobs_chain: dict[str,list[float]] = field(default_factory=dict)
+    final_theta: np.ndarray = None
 
     def save_state(self, state):
         self.fp_chain.append(state.params)
@@ -199,6 +200,13 @@ class MLResult(BadassResult):
 
 
     def finalize(self):
+        def get_chain_result(chain):
+            med = np.nanmedian(chain)
+            std = np.nanstd(chain)
+            if not np.isfinite(med): med = 0.0
+            if not np.isfinite(std): std = 0.0
+            return med, std
+
         # PARAMETERS
 
         # transpose so fp_chain[idx] is a chain for a single param
@@ -206,34 +214,26 @@ class MLResult(BadassResult):
         param_chains = self.ctx.param_reg.evaluate_chains(self.fp_chain)
 
         for param in self.ctx.param_reg.params.values():
-            med = np.nanmedian(param_chains[param.name])
-            if not np.isfinite(med): med = 0.0
-            std = np.nanstd(param_chains[param.name])
-            if not np.isfinite(std): std = 0.0
+            med, std = get_chain_result(param_chains[param.name])
 
             flag = 0
             if param.is_free:
                 if med-std <= param.plim.min: flag += 1
                 if med+std >= param.plim.max: flag += 1
 
-            param_res = ParamResult(param.name, med, std, flag)
-            self.final_params[param.name] = param_res
+            self.final_params[param.name] = ParamResult(param.name, med, std, flag)
 
         # BLOBS
         for blob in self.ctx.blob_reg.get_blobs_dict().keys():
-            med = np.nanmedian(self.blobs_chain[blob])
-            if not np.isfinite(med): med = 0.0
-            std = np.nanstd(self.blobs_chain[blob])
-            if not np.isfinite(std): std = 0.0
-            param_res = ParamResult(blob, med, std, flag)
-            self.final_params[blob] = param_res
+            med, std = get_chain_result(self.blobs_chain[blob])
+            self.final_params[blob] = ParamResult(blob, med, std)
 
         # COMPONENTS
-        final_theta = np.zeros(self.ctx.param_reg.free_count)
+        self.final_theta = np.zeros(self.ctx.param_reg.free_count)
         for param in self.ctx.param_reg.free_params.values():
-            final_theta[param.idx] = self.final_params[param.name].best_fit
+            self.final_theta[param.idx] = self.final_params[param.name].best_fit
 
-        self.ctx.param_reg.update(final_theta)
+        self.ctx.param_reg.update(self.final_theta)
 
         # refit the model with the updated theta
         self.ctx.fit_model()
@@ -248,9 +248,10 @@ class MLResult(BadassResult):
         self.meta_components['mask'] = self.ctx.source.fit_mask.copy()
 
 
-        # METRICS
+        # METRICS - TODO
         # self.metrics = badass_test_suite.get_fit_test_results(ctx)
 
+        # TODO: finalize currently not affecting self.final_params
         self.ctx.param_reg.finalize()
         self.ctx.param_reg.dump_parameters()
 

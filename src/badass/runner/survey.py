@@ -79,7 +79,7 @@ class SurveyPipeline(BadassPipeline):
         if isinstance(self.cfg, list):
             self.cfg = copy.deepcopy(self.cfg[0])
 
-        for i, source in enumerate(self.sources):
+        for i, source in enumerate(self.source):
             print('Running %s'%source.name)
 
             if isinstance(source_cfgs, list):
