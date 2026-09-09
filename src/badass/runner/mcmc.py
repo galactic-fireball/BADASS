@@ -1,9 +1,11 @@
 from astropy.io import fits
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import emcee
 import numpy as np
 import pandas as pd
+import pathlib
 from scipy import stats
+from typing import Callable, List, Union
 
 from badass.badass_utils import badass_test_suite
 from badass.runner import BadassResult, BadassRunContext
@@ -11,32 +13,33 @@ from badass.utils import plotting
 import badass.utils.utils as ba_utils
 
 
+@dataclass
 class MCMCResult(BadassResult):
     OUT_NAME = 'mcmc_result'
-
     PLOT_FUNC = plotting.plot_mcmc_results
 
     result_attrs = ['best_fit', 'ci_68_low', 'ci_68_upp', 'ci_95_low', 'ci_95_upp',
                     'mean', 'std_dev', 'median', 'med_abs_dev', 'flag']
 
 
-    def __init__(self, ctx, name):
-        super().__init__(ctx, name)
+    chain_df: pd.DataFrame = None
+    chain_file: pathlib.Path = None
+    mcmc_result_chains: dict = field(default_factory=dict)
+    mcmc_results_dict: dict = field(default_factory=dict)
 
-        self.chain_df = pd.DataFrame(columns=['iter']+list(ctx.param_reg.param_names))
-        cur_params = {param.name:param.value for param in ctx.param_reg.free_params.values()}
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        self.chain_df = pd.DataFrame(columns=['iter']+list(self.ctx.param_reg.params.keys()))
         chain_dict = {'iter': 0}
-        chain_dict.update(cur_params)
+        chain_dict.update(self.ctx.param_reg.get_param_dict())
         self.chain_df.loc[len(self.chain_df)] = chain_dict
         self.chain_file = self.out_dir.joinpath('MCMC_chain.csv')
 
-        self.components = {}
-        self.meta_components = {}
-
         # TODO: do we need both of these?
-        self.mcmc_result_chains = {'chains':{}, 'flat_chains':{}}
-
-        self.mcmc_results_dict = {}
+        self.mcmc_result_chains['chains'] = {}
+        self.mcmc_result_chains['flat_chains'] = {}
 
 
     def add_chain(self, ctx, sampler):
@@ -68,15 +71,16 @@ class MCMCResult(BadassResult):
         return blob_dict
 
 
-    def collect_mcmc_results(self, ctx, sampler, autocorr):
-        nwalkers, niters, nparams = sampler.chain.shape
-        burn_in = autocorr.burn_in if autocorr else ctx.burn_in
-        if burn_in >= niters: burn_in = int(niters/2)
+    def collect_mcmc_results(self):
+        ctx = self.ctx
+        chain = ctx.sampler.chain
+        nwalkers, niters, nparams = chain.shape
+        if self.ctx.burn_in >= niters: ctx.burn_in = int(niters/2)
 
         def flatten_chain(chain):
             # TODO: zero-trim if converged before max iters
             chain[~np.isfinite(chain)] = 0
-            return chain[:,burn_in:].flatten()
+            return chain[:,ctx.burn_in:].flatten()
 
 
         def get_key_chain(chain, param):
@@ -86,12 +90,11 @@ class MCMCResult(BadassResult):
                     y[...] = x.item()[param]
                 return it.operands[1]
 
-
         for param in ctx.param_reg.free_params.values():
-            self.mcmc_result_chains['chains'][param.name] = sampler.chain[:,:,param.idx]
-            self.mcmc_result_chains['flat_chains'][param.name] = flatten_chain(sampler.chain[:,:,param.idx])
+            self.mcmc_result_chains['chains'][param.name] = ctx.sampler.chain[:,:,param.idx]
+            self.mcmc_result_chains['flat_chains'][param.name] = flatten_chain(ctx.sampler.chain[:,:,param.idx])
 
-        full_blob = np.swapaxes(sampler.get_blobs()['full_blob'],0,1)
+        full_blob = np.swapaxes(ctx.sampler.get_blobs()['full_blob'],0,1)
         keys = full_blob[0][0].keys()
 
         # self.mcmc_result_chains['chains'].update(
@@ -100,12 +103,10 @@ class MCMCResult(BadassResult):
         # for pname, chain in self.mcmc_result_chains['chains'].items():
         #     self.mcmc_result_chains['flat_chains'][pname] = flatten_chain(chain)
 
-
         for key in keys:
             val = get_key_chain(full_blob, key).astype(float)
             self.mcmc_result_chains['chains'][key] = val
             self.mcmc_result_chains['flat_chains'][key] = flatten_chain(val)
-
 
         # TODO: create a flag_behavior function in the Parameter class
         for key, chain, in self.mcmc_result_chains['flat_chains'].items():
@@ -226,10 +227,25 @@ class MCMCResult(BadassResult):
         hdu.close()
 
 
-
-@dataclass
+@dataclass(kw_only=True)
 class MCMCRunner(BadassRunContext):
     result_cls = MCMCResult
+
+    initial_theta: np.ndarray
+
+    times: List[np.ndarray] = field(default_factory=list)
+    tolerances: List[np.ndarray] = field(default_factory=list)
+    prev_tau: np.ndarray = None
+
+    min_samp: int = 0
+    ncor_times: int = 0
+    conv_type: Union[str,tuple] = ''
+    conv_func: Callable = None
+    conv_tau: np.ndarray = None
+
+    stop_iter: int = 0
+    burn_in: int = 0
+    converged: bool = False
 
     def __post_init__(self):
         super().__post_init__()
@@ -239,18 +255,33 @@ class MCMCRunner(BadassRunContext):
         for k,v in self.cfg.mcmc.model_dump().items():
             setattr(self,k,v)
 
+        self.param_reg.update(self.initial_theta)
+
         ndim = self.param_reg.free_count
         self.nwalkers = max(self.nwalkers, 2*ndim)
 
         dtype = [('full_blob',dict),]
         self.sampler = emcee.EnsembleSampler(self.nwalkers, ndim, self.lnprob_wrapper, blobs_dtype=dtype)#, backend=backend)
 
-        # TODO
-        self.autocorr = None
+        if self.auto_stop:
+            self.prev_tau = np.full(len(self.ctx.param_reg.params), np.inf)
+            self.conv_tau = np.full(len(self.ctx.param_reg.params), np.inf)
 
+            conv_types = {
+                'mean': self.mean_conv,
+                'median': self.median_conv,
+                'all': self.all_conv,
+            }
 
-    def init(self, initial_theta):
-        self.param_reg.update(initial_theta)
+            if isinstance(self.conv_type,tuple):
+                self.conv_func = self.param_conv
+                self.conv_idx = np.array([i for i, key in enumerate(self.ctx.cur_params.keys()) if key in self.conv_type])
+            elif self.conv_type in conv_types:
+                self.conv_func = conv_types[self.conv_type]
+            else:
+                self.conv_func = self.all_conv
+
+            self.stop_iter = self.max_iter
 
 
     def run(self):
@@ -259,7 +290,7 @@ class MCMCRunner(BadassRunContext):
 
 
     def finalize(self):
-        self.result.collect_mcmc_results(self, self.sampler, self.autocorr)
+        self.result.collect_mcmc_results()
 
 
     def lnprob_wrapper(self, fit_vals):
@@ -299,4 +330,105 @@ class MCMCRunner(BadassRunContext):
             if (it >= self.write_thresh) and (it % self.write_iter == 0):
                 self.log.info('MCMC iteration: %d' % it)
                 self.result.add_chain(self, self.sampler)
+
+                if self.auto_stop and self.check_convergence():
+                    break
+
+
+    def mean_conv(self, sampler, tau, tol):
+        par_conv = np.array([x for x in range(len(tau)) if round(tau[x],1) > 1.0]) # TODO: print converged params
+        return (par_conv.size > 0) and (sampler.iteration > (np.nanmean(tau[par_conv]) * self.ncor_times) and (np.nanmean(tol[par_conv]) < self.autocorr_tol))
+
+    def median_conv(self, sampler, tau, tol):
+        par_conv = np.array([x for x in range(len(tau)) if round(tau[x],1) > 1.0]) # TODO: print converged params
+        return (par_conv.size > 0) and (sampler.iteration > (np.nanmedian(tau[par_conv]) * self.ncor_times) and (np.nanmedian(tol[par_conv]) < self.autocorr_tol))
+
+    def all_conv(self, sampler, tau, tol):
+        return (all(sampler.iteration > tau*self.ncor_times)) and (all(tau > 1.0)) and (all(tol < self.autocorr_tol))
+
+    def param_conv(self, sampler, tau, tol):
+        return (all(sampler.iteration > tau[self.conv_idx]*self.ncor_times)) and (all(tau[self.conv_idx] > 1.0)) and (all(tol[self.conv_idx] < self.autocorr_tol))
+
+
+    def check_convergence(self):
+        it = self.sampler.iteration
+        self.past_miniter = ((it >= self.write_thresh) and (it >= self.min_iter))
+        if not self.past_miniter:
+            return False
+
+        tau = autocorr_convergence(self.sampler.chain) # autocorr time for each parameter
+        self.times.append(tau)
+        tol = (np.abs(tau-self.prev_tau)/self.prev_tau) * 100 # tolerances
+        self.tolerances.append(tol)
+
+        if (not self.converged) and (self.conv_func(self.sampler, tau, tol)):
+            self.ctx.log.info('Converged at %d iterations\nPerforming %d iterations of sampling'%(it, self.min_samp))
+            self.burn_in = it
+            self.stop_iter = it+self.min_samp
+            self.conv_tau = tau
+            self.converged = True
+
+        elif (self.converged) and (not self.conv_func(self.sampler, tau, tol)):
+            self.ctx.log.info('Iteration: %d - Jumped out of convergence, resetting burn_in and max_iter'%it)
+            self.burn_in = self.ctx.cfg.mcmc.burn_in
+            self.stop_iter = self.ctx.cfg.mcmc.max_iter
+            self.converged = False
+
+        if it == self.stop_iter:
+            return True
+
+        self.prev_tau = tau
+        return False
+
+
+def autocorr_convergence(sampler_chain, c=5.0):
+    """
+    Estimates the autocorrelation times using the
+    methods outlined on the Autocorrelation page
+    on the emcee website:
+    https://emcee.readthedocs.io/en/stable/tutorials/autocorr/
+    """
+
+    npar = np.shape(sampler_chain)[2]
+
+    tau_est = np.empty(npar)
+    for p in range(npar):
+        y = sampler_chain[:,:,p]
+        f = np.zeros(y.shape[1])
+        for yy in y:
+            f += autocorr_func_1d(yy)
+        f /= len(y)
+        taus = 2.0 * np.cumsum(f) - 1.0
+        window = auto_window(taus, c)
+        tau_est[p] = taus[window]
+    return tau_est
+
+
+def autocorr_func_1d(x, norm=True):
+    # Estimates the 1d autocorrelation function for a chain.
+
+    x = np.atleast_1d(x)
+    if len(x.shape) != 1:
+        raise ValueError('invalid dimensions for 1D autocorrelation function')
+    n = next_pow_two(len(x))
+
+    # Compute the FFT and then (from that) the auto-correlation function
+    f = np.fft.fft(x - np.nanmean(x), n=2 * n)
+    acf = np.fft.ifft(f * np.conjugate(f))[: len(x)].real
+    acf /= 4 * n
+
+    # Optionally normalize
+    if norm:
+        acf /= acf[0]
+
+    return acf
+
+
+def auto_window(taus, c):
+    # Automated windowing procedure following Sokal (1989)
+    m = np.arange(len(taus)) < c * taus
+    if np.any(m):
+        return np.argmin(m)
+    return len(taus) - 1
+
 

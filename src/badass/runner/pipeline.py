@@ -59,12 +59,10 @@ class BadassPipeline:
             return self.results
 
         # run mcmc
-        initial_theta = runner.result.final_theta
-        runner = MCMCRunner(source=self.source, cfg=self.cfg)
+        runner = MCMCRunner(source=self.source, cfg=self.cfg, initial_theta=runner.result.final_theta)
         if not runner.source.valid:
             runner.log.error('Invalid source! Skipping!')
             return None
-        runner.init(initial_theta)
         runner.run()
         runner.finalize()
         self.results.append(runner.result)
