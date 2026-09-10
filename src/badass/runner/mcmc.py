@@ -19,9 +19,6 @@ class ConfidenceInterval:
     lo: float = np.nan
     hi: float = np.nan
 
-    def calc(self):
-        pass
-
 
 @dataclass
 class MCMCParamResult(ParamResult):
