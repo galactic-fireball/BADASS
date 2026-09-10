@@ -1,12 +1,16 @@
 from astropy.table import Table
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 import logging
+import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pathlib
 import shutil
+from tabulate import tabulate
 import time
 from typing import Any
+
+from spark.plot import add_ax_labels
 
 from badass.components.params import ParameterRegistry
 from badass.components.blobs import BlobRegistry
@@ -48,7 +52,7 @@ class ParamResult:
             if isinstance(res_dict[k], dict):
                 for kk, v in res_dict[k].items():
                     res_dict[k+'_'+kk] = v
-                del res_dict[k]
+                res_dict.pop(k)
         return res_dict
 
 
@@ -59,6 +63,11 @@ class ParamResult:
         if not np.isfinite(med): med = 0.0
         if not np.isfinite(std): std = 0.0
         return cls(name,med,std,0)
+
+
+    @classmethod
+    def from_data(cls, data):
+        return cls(**data)
 
 
 @dataclass
@@ -85,6 +94,9 @@ class MetaComponents:
 class BadassResult:
     OUT_NAME = 'badass_result'
     PLOT_FUNC = None
+    param_cls = ParamResult
+    parameter_file = 'par_table.fits'
+    components_file = 'best_model_components.fits'
 
     ctx: None
     name: str
@@ -97,27 +109,62 @@ class BadassResult:
     meta_components: MetaComponents = None
 
     def __post_init__(self):
-        self.out_dir = self.ctx.cfg.io.output_dir.joinpath(self.OUT_NAME)
-        self.out_dir.mkdir(parents=True, exist_ok=True)
+        if self.out_dir is None:
+            self.out_dir = self.ctx.cfg.io.output_dir.joinpath(self.OUT_NAME)
+            self.out_dir.mkdir(parents=True, exist_ok=True)
 
 
-    # TODO
     @classmethod
-    def from_file(cls, ctx, file_name):
-        pass
+    def from_output(cls, out_dir, ctx=None):
+        out_dir = pathlib.Path(out_dir).joinpath(cls.OUT_NAME)
+        if not out_dir.exists():
+            print('Failed to find output directory: %s'%str(out_dir))
+            return None
 
+        data = {'name':'','ctx':None,'out_dir':out_dir}
+        pt_file = out_dir.joinpath(cls.parameter_file)
+        if not pt_file.exists():
+            print('Failed to find parameter output file: %s'%str(pt_file))
+            return None
 
-    # TODO
-    def to_file(self):
-        pass
+        comp_file = out_dir.joinpath(cls.components_file)
+        if not comp_file.exists():
+            print('Failed to find components file: %s'%str(comp_file))
+            return None
+
+        pt = Table.read(pt_file)
+        data['final_params'] = {param['name']:cls.param_cls.from_data(dict(param)) for param in pt}
+        # TODO: metrics
+        metrics = {}
+
+        comps = Table.read(comp_file)
+        meta_names = [f.name for f in fields(MetaComponents)]
+        data['components'] = {c:np.asarray(comps[c]) for c in comps.colnames if not c in meta_names}
+        data['meta_components'] = MetaComponents(**{c:np.asarray(comps[c]) for c in comps.colnames if c in meta_names})
+
+        return cls(**data)
 
 
     def dump(self):
-        headers = ['Name', 'Value', 'STD', 'Flag']
-        table = []
-        for p in self.final_params.values():
-            table.append([p.name, p.best_fit, p.sigma, p.flag])
+        params = list(self.final_params.values())
+        if len(params) == 0:
+            return
+        headers = [k for k in params[0].to_dict()]
+        table = [list(p.to_dict().values()) for p in params]
         print(tabulate(table, headers, tablefmt='grid'))
+
+
+    def quick_view(self):
+        fig, ax = plt.subplots()
+
+        ax.step(self.meta_components.wave, self.meta_components.data, color='black', label='Data')
+        ax.plot(self.meta_components.wave, self.meta_components.model, color='red', label='Model')
+
+        for label, comp in self.components.items():
+            ax.plot(self.meta_components.wave, comp, label=label)
+        ax.legend()
+        add_ax_labels(ax, 'AA')#, yscale=int(np.log10(flux_norm)))
+        plt.show()
 
 
     def finalize(self):
@@ -163,12 +210,12 @@ class BadassResult:
             'flux_norm': self.ctx.source.flux_norm,
         })
 
-        table.write(self.out_dir.joinpath('par_table.fits'), overwrite=True)
+        table.write(self.out_dir.joinpath(self.parameter_file), overwrite=True)
 
 
     def output_comps(self):
         table = Table(self.components | asdict(self.meta_components))
-        table.write(self.out_dir.joinpath('best_model_components.fits'), overwrite=True)
+        table.write(self.out_dir.joinpath(self.components_file), overwrite=True)
 
 
 @dataclass

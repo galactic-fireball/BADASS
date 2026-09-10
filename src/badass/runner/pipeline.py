@@ -58,7 +58,6 @@ class BadassPipeline:
         if not self.cfg.mcmc.mcmc_fit:
             return self.results
 
-        # run mcmc
         runner = MCMCRunner(source=self.source, cfg=self.cfg, initial_theta=runner.result.final_theta)
         if not runner.source.valid:
             runner.log.error('Invalid source! Skipping!')

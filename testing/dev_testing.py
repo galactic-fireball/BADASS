@@ -284,6 +284,19 @@ def doc_examples():
 
 
 
+def test_output():
+    from badass.runner.bootstrap import MLResult
+    from badass.runner.mcmc import MCMCResult
+
+    output_dir = TESTING_DIR.parent.joinpath('sdss_test')
+
+    # res = MLResult.from_output(output_dir)
+    res = MCMCResult.from_output(output_dir)
+
+    res.dump()
+    res.quick_view()
+
+
 
 # TO TEST:
 # - all components
@@ -298,7 +311,7 @@ def doc_examples():
 
 
 def main():
-    test_single()
+    # test_single()
     # test_schema()
     # test_line()
     # test_config()
@@ -315,6 +328,8 @@ def main():
     # test_kcwi_single()
 
     # test_random()
+
+    test_output()
 
     # doc_examples()
 

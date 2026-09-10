@@ -1,5 +1,5 @@
 from astropy.io import fits
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 import emcee
 import numpy as np
 import pandas as pd
@@ -53,11 +53,22 @@ class MCMCParamResult(ParamResult):
         return cls(name, best_fit, np.nanstd(chain), 0, ci68, ci95, np.nanmean(chain), stats.median_abs_deviation(chain), post_max)
 
 
+    @classmethod
+    def from_data(cls, data):
+        for conf in ['68', '95']:
+            prefix = 'ci_'+conf+'_'
+            ci = ConfidenceInterval(**{f.name:data[prefix+f.name] for f in fields(ConfidenceInterval)})
+            for f in fields(ConfidenceInterval): data.pop(prefix+f.name)
+            data[prefix[:-1]] = ci
+        return cls(**data)
+
+
 
 @dataclass
 class MCMCResult(BadassResult):
     OUT_NAME = 'mcmc_result'
     PLOT_FUNC = plotting.plot_mcmc_results
+    param_cls = MCMCParamResult
 
     backend_file: pathlib.Path = None
     backend: emcee.backends.HDFBackend = None
@@ -86,7 +97,7 @@ class MCMCResult(BadassResult):
             self.final_params[pname] = MCMCParamResult.from_chain(pname, chain)
 
         for idx, bname in enumerate(self.ctx.blob_order):
-            self.final_params[pname] = MCMCParamResult.from_chain(bname, blob_chains[bname])
+            self.final_params[bname] = MCMCParamResult.from_chain(bname, blob_chains[bname])
 
 
 @dataclass(kw_only=True)
