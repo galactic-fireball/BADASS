@@ -46,7 +46,14 @@ class BlobRegistry:
 
 
     def get_blob_names(self):
-        return [blob.name for blob in self.blobs]
+        bnames = []
+        for blob in self.blobs:
+            if isinstance(blob.cur_val, dict):
+                for bname in blob.cur_val.keys():
+                    bnames.append(bname)
+            else:
+                bnames.append(blob.name)
+        return bnames
 
 
     def get_blob(self, blob_name):

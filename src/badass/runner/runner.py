@@ -1,4 +1,5 @@
-from dataclasses import dataclass, field
+from astropy.table import Table
+from dataclasses import asdict, dataclass, field
 import logging
 import numpy as np
 import os
@@ -35,6 +36,52 @@ def make_logger(name, log_file=None):
 
 
 @dataclass
+class ParamResult:
+    name: str
+    best_fit: float
+    sigma: float
+    flag: int
+
+    def to_dict(self):
+        res_dict = asdict(self)
+        for k in list(res_dict.keys()):
+            if isinstance(res_dict[k], dict):
+                for kk, v in res_dict[k].items():
+                    res_dict[k+'_'+kk] = v
+                del res_dict[k]
+        return res_dict
+
+
+    @classmethod
+    def from_chain(cls, name, chain):
+        med = np.nanmedian(chain)
+        std = np.nanstd(chain)
+        if not np.isfinite(med): med = 0.0
+        if not np.isfinite(std): std = 0.0
+        return cls(name,med,std,0)
+
+
+@dataclass
+class MetaComponents:
+    wave: np.ndarray
+    data: np.ndarray
+    noise: np.ndarray
+    model: np.ndarray
+    mask: np.ndarray
+    resid: np.ndarray = None
+
+    def __post_init__(self):
+        self.resid = self.data - self.model
+
+
+    def rescale(self, fit_norm):
+        self.data *= fit_norm
+        self.noise *= fit_norm
+        self.model *= fit_norm
+        self.resid *= fit_norm
+
+
+@dataclass
 class BadassResult:
     OUT_NAME = 'badass_result'
     PLOT_FUNC = None
@@ -43,61 +90,85 @@ class BadassResult:
     name: str
     out_dir: str | pathlib.Path = None
 
-    final_params: dict = field(default_factory=dict)
-    blobs: dict[str:dict[str:float]] = field(default_factory=dict)
+    final_theta: np.ndarray = None
+    final_params: dict[str:ParamResult] = field(default_factory=dict)
     metrics: dict[str:float] = field(default_factory=dict)
     components: dict[str:list[float]] = field(default_factory=dict)
-    meta_components: dict[str:list[float]] = field(default_factory=dict)
+    meta_components: MetaComponents = None
 
     def __post_init__(self):
         self.out_dir = self.ctx.cfg.io.output_dir.joinpath(self.OUT_NAME)
-        if not type(self) is BadassResult:
-            self.out_dir = self.out_dir.joinpath(self.OUT_NAME)
         self.out_dir.mkdir(parents=True, exist_ok=True)
 
 
+    # TODO
     @classmethod
-    def from_file(cls, file_name):
+    def from_file(cls, ctx, file_name):
+        pass
+
+
+    # TODO
+    def to_file(self):
         pass
 
 
     def dump(self):
-        pass
+        headers = ['Name', 'Value', 'STD', 'Flag']
+        table = []
+        for p in self.final_params.values():
+            table.append([p.name, p.best_fit, p.sigma, p.flag])
+        print(tabulate(table, headers, tablefmt='grid'))
 
 
     def finalize(self):
-        pass
-        # set final_params
-        # update param registry
-        # run model
-        # update blobs, components, metrics
-
-        # output
+        self.collect_final_parameters()
+        self.finalize_components()
+        self.perform_metrics()
+        self.output()
 
 
-
-
-class BadassResultOld:
-    OUT_NAME = 'badass_result'
-
-    PLOT_FUNC = None
-
-    def __init__(self, ctx, name):
-        self.name = name
-        self.out_dir = ctx.cfg.io.output_dir.joinpath(BadassResult.OUT_NAME)
-        if not type(self) is BadassResult:
-            self.out_dir = self.out_dir.joinpath(self.OUT_NAME)
-
-        self.out_dir.mkdir(parents=True, exist_ok=True)
-
-    def compile_results(self, ctx):
+    def set_final_theta(self):
         pass
 
-    def dump_results(self, ctx):
+
+    def collect_final_parameters(self):
         pass
 
-    def output(self, ctx):
+
+    def finalize_components(self):
+        for key, comp in self.ctx.comps.items():
+            self.components[key] = comp * self.ctx.source.fit_norm
+
+        self.meta_components = MetaComponents(self.ctx.fit_wave, self.ctx.fit_flux, self.ctx.fit_err, self.ctx.model, self.ctx.source.fit_mask)
+        self.meta_components.rescale(self.ctx.source.fit_norm)
+
+
+    def perform_metrics(self):
+        # METRICS - TODO
+        # self.metrics = badass_test_suite.get_fit_test_results(ctx)
         pass
+
+
+    def output(self):
+        self.output_par_table()
+        self.output_comps()
+
+
+    def output_par_table(self):
+        table = Table([param.to_dict() for param in self.final_params.values()], meta={
+            'z': self.ctx.source.target.z,
+            'med_noise': np.nanmedian(self.ctx.fit_err),
+            'velscale': self.ctx.source.velscale,
+            'fit_norm': self.ctx.source.fit_norm,
+            'flux_norm': self.ctx.source.flux_norm,
+        })
+
+        table.write(self.out_dir.joinpath('par_table.fits'), overwrite=True)
+
+
+    def output_comps(self):
+        table = Table(self.components | asdict(self.meta_components))
+        table.write(self.out_dir.joinpath('best_model_components.fits'), overwrite=True)
 
 
 @dataclass
@@ -185,6 +256,15 @@ class BadassRunContext:
         self.model = np.zeros_like(self.fit_flux)
 
         self.result = self.result_cls(self, self.source.name)
+
+
+    def finalize(self):
+        # refit the model with the best fit theta
+        self.result.set_final_theta()
+        self.param_reg.update(self.result.final_theta)
+        self.fit_model()
+
+        self.result.finalize()
 
 
     def lnprob_wrapper(self, fit_vals):

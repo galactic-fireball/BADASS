@@ -89,10 +89,14 @@ class Parameter:
         return True
 
 
-    def finalize(self, ctx):
+    def finalize(self, ctx, val=None):
         if not self.finalize_behavior:
-            return
-        self.value = self.finalize_behavior(ctx, self.value)
+            return val
+        print('finalizing: %s'%self.name)
+        if val is None:
+            self.value = self.finalize_behavior(ctx, self.value)
+        else:
+            return self.finalize_behavior(ctx, val)
 
 
 class PLim(NamedTuple):
@@ -249,7 +253,7 @@ class ParameterRegistry:
         return {param.name:param.value for param in self.params.values()}
 
 
-    def evaluate_chains(self, fp_chains):
+    def evaluate_chains(self, fp_chains, finalize=False):
         param_chains = {p.name:fp_chains[p.idx] for p in self.free_params.values()}
         for pname in self.expr_order:
             param_chains[pname] = self.params[pname].evaluate_chains(param_chains)
@@ -259,6 +263,10 @@ class ParameterRegistry:
                 continue
             # should only be ConstParameters at this point
             param_chains[param.name] = np.full(len(fp_chains[0]), param.value)
+
+        if finalize:
+            for pname, chain in param_chains.items():
+                param_chains[pname] = self.params[pname].finalize(self.ctx,val=chain)
 
         return param_chains
 

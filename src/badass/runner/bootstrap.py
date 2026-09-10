@@ -6,7 +6,7 @@ from tabulate import tabulate
 from typing import NamedTuple
 
 from badass.badass_utils import badass_test_suite
-from badass.runner import BadassResult, BadassRunContext
+from badass.runner import BadassResult, BadassRunContext, ParamResult
 from badass.utils import plotting
 
 
@@ -14,167 +14,6 @@ from badass.utils import plotting
 class MLState(NamedTuple):
     params: list[float]
     log_like: float
-
-
-class MLResultOld(BadassResult):
-
-    OUT_NAME = 'ml_result'
-    PLOT_FUNC = plotting.plot_ml_results
-
-
-    def __init__(self, ctx, name):
-        super().__init__(ctx, name)
-        # TODO: remove, should be in parent class
-        # self.out_dir = self.out_dir.joinpath(self.OUT_NAME)
-        # self.out_dir.mkdir(parents=True, exist_ok=True)
-
-        self.bh_result = BasinhopResult(ctx, name)
-        # self.bh_result.out_dir = self.out_dir.joinpath(BasinhopResult.OUT_NAME)
-        # self.bh_result.out_dir.mkdir(parents=True, exist_ok=True)
-
-        self.params_chain = {}
-        self.blobs_chain = {}
-        self.metrics_chain = {
-            'LOG_LIKE': None,
-            'R_SQUARED': None,
-            'RCHI_SQUARED': None,
-        }
-
-        self.comps_chain = {}
-        self.meta_comps_chain = {
-            'wave': None,
-            'data': None,
-            'noise': None,
-            'model': None,
-            'resid': None,
-        }
-
-        self.params = {}
-        self.components = {}
-        self.meta_components = {}
-        self.line_list = []
-        self.figures = {}
-
-
-    def init_chains(self, ctx, niter):
-        for param in ctx.param_reg.get_param_dict().keys():
-            self.params_chain[param] = np.zeros(niter+1)
-
-        for blob in ctx.blob_reg.get_blobs():
-            if isinstance(blob.cur_val, dict):
-                for key in blob.cur_val.keys():
-                    self.blobs_chain[key] = np.zeros(niter+1)
-            else:
-                self.blobs_chain[blob.name] = np.zeros(niter+1)
-
-        for metric in self.metrics_chain.keys():
-            self.metrics_chain[metric] = np.zeros(niter+1)
-
-        for comp, val in ctx.comps.items():
-            self.comps_chain[comp] = np.zeros((niter+1,len(val)))
-        for comp in self.meta_comps_chain.keys():
-            self.meta_comps_chain[comp] = np.zeros((niter+1,len(ctx.fit_wave)))
-
-
-    def save_iter(self, ctx, i, result):
-        ctx.param_reg.update(result['x'])
-        ctx.fit_model()
-        ctx.blob_reg.compute_all()
-
-        for name, value in ctx.param_reg.get_param_dict().items():
-            self.params_chain[name][i] = value
-        for blob in ctx.blob_reg.get_blobs():
-            if isinstance(blob.cur_val, dict):
-                for key, val in blob.cur_val.items():
-                    self.blobs_chain[key][i] = val
-            else:
-                self.blobs_chain[blob.name][i] = blob.cur_val
-
-        self.metrics_chain['LOG_LIKE'][i] = result['fun']
-        self.metrics_chain['R_SQUARED'][i] = badass_test_suite.r_squared(ctx.fit_flux, ctx.model)
-        self.metrics_chain['RCHI_SQUARED'][i] = badass_test_suite.r_chi_squared(ctx.fit_flux, ctx.model, ctx.fit_err, ctx.param_reg.free_count)
-
-        # TODO: copy needed? option to turn off saving these
-        for comp, val in ctx.comps.items():
-            self.comps_chain[comp][i] = val.copy()
-
-        meta_comps_dict = {'wave':ctx.fit_wave.copy(),'data':ctx.fit_flux.copy(),'noise':ctx.fit_err.copy(),'model':ctx.model.copy()}
-        for comp, comp_arr in meta_comps_dict.items():
-            self.meta_comps_chain[comp][i] = comp_arr
-        self.meta_comps_chain['resid'][i] = ctx.fit_flux-ctx.model
-
-
-    def compile_results(self, ctx):
-        def add_param_result(key, vals):
-            med = np.nanmedian(vals)
-            std = np.nanstd(vals)
-            if not np.isfinite(med): med = 0.0
-            if not np.isfinite(std): std = 0.0
-            self.params[key] = {'med':med, 'std':std}
-            return med, std
-
-        for key, vals in self.params_chain.items():
-            med, std = add_param_result(key, vals)
-
-            param = ctx.param_reg.get_param(key)
-            if not param.is_free:
-                continue
-
-            flag = 0
-            if med-std <= param.plim[0]: flag += 1
-            if med+std >= param.plim[1]: flag += 1
-            self.params[key]['flag'] = flag
-
-        # update params for final model fit
-        med_values = [v['med'] for p,v in self.params.items() if ctx.param_reg.is_free(p)]
-        ctx.param_reg.update(med_values)
-        ctx.fit_model()
-
-        for key, vals in self.blobs_chain.items():
-            add_param_result(key, vals)
-
-        self.params.update(ctx.blob_reg.get_postfits(self.params))
-
-        for key, vals in self.metrics_chain.items():
-            add_param_result(key, vals)
-
-        # Rescale amplitudes
-        for pname, param_dict in self.params.items():
-            if pname[-4:] != '_AMP':
-                continue
-            param_dict['med'] *= ctx.source.fit_norm
-            param_dict['std'] *= ctx.source.fit_norm
-
-        # updated with final model fit
-        for key, comp in ctx.comps.items():
-            self.components[key] = comp * ctx.source.fit_norm
-
-        self.meta_components['wave'] = ctx.fit_wave.copy()
-        meta_comps_dict = {'data':ctx.fit_flux.copy(),'noise':ctx.fit_err.copy(),'model':ctx.model.copy(),}
-        for comp, comp_arr in meta_comps_dict.items():
-            self.meta_components[comp] = comp_arr * ctx.source.fit_norm
-        self.meta_components['resid'] = (ctx.fit_flux-ctx.model) * ctx.source.fit_norm
-        self.meta_components['mask'] = ctx.source.fit_mask.copy()
-
-        self.line_list = ctx.line_list
-
-
-    def dump_results(self, ctx):
-        headers = ['Name', 'Value', 'STD', 'Flag']
-        table = []
-
-        for param, param_dict in self.params.items():
-            row = [param, param_dict['med'], param_dict['std'], param_dict.get('flag', '--')]
-            table.append(row)
-        print(tabulate(table, headers, tablefmt='grid'))
-
-
-@dataclass
-class ParamResult:
-    name: str
-    best_fit: float
-    sigma: float
-    flag: int = 0
 
 
 @dataclass
@@ -199,93 +38,30 @@ class MLResult(BadassResult):
             self.blobs_chain[blob_name].append(blob_val)
 
 
-    def finalize(self):
-        def get_chain_result(chain):
-            med = np.nanmedian(chain)
-            std = np.nanstd(chain)
-            if not np.isfinite(med): med = 0.0
-            if not np.isfinite(std): std = 0.0
-            return med, std
+    def set_final_theta(self):
+        chains = np.array(self.fp_chain).T
+        self.final_theta = [np.nanmedian(c) for c in chains]
 
-        # PARAMETERS
 
+    def collect_final_parameters(self):
         # transpose so fp_chain[idx] is a chain for a single param
         self.fp_chain = np.array(self.fp_chain).T
-        param_chains = self.ctx.param_reg.evaluate_chains(self.fp_chain)
+        param_chains = self.ctx.param_reg.evaluate_chains(self.fp_chain, finalize=True)
 
         for param in self.ctx.param_reg.params.values():
-            med, std = get_chain_result(param_chains[param.name])
+            pr = ParamResult.from_chain(param.name, param_chains[param.name])
 
-            flag = 0
             if param.is_free:
-                if med-std <= param.plim.min: flag += 1
-                if med+std >= param.plim.max: flag += 1
+                if pr.best_fit-pr.sigma <= param.plim.min: pr.flag += 1
+                if pr.best_fit+pr.sigma >= param.plim.max: pr.flag += 1
 
-            self.final_params[param.name] = ParamResult(param.name, med, std, flag)
+            self.final_params[param.name] = pr
 
         # BLOBS
+        # TODO: calculate all blob chains in finalize as ufuncs
+        # TODO: don't calculate blobs if bootstrapping is not the last runner
         for blob in self.ctx.blob_reg.get_blobs_dict().keys():
-            med, std = get_chain_result(self.blobs_chain[blob])
-            self.final_params[blob] = ParamResult(blob, med, std)
-
-        # COMPONENTS
-        self.final_theta = np.zeros(self.ctx.param_reg.free_count)
-        for param in self.ctx.param_reg.free_params.values():
-            self.final_theta[param.idx] = self.final_params[param.name].best_fit
-
-        self.ctx.param_reg.update(self.final_theta)
-
-        # refit the model with the updated theta
-        self.ctx.fit_model()
-        for key, comp in self.ctx.comps.items():
-            self.components[key] = comp * self.ctx.source.fit_norm
-
-        self.meta_components['wave'] = self.ctx.fit_wave.copy()
-        meta_comps_dict = {'data':self.ctx.fit_flux.copy(),'noise':self.ctx.fit_err.copy(),'model':self.ctx.model.copy(),}
-        for comp, comp_arr in meta_comps_dict.items():
-            self.meta_components[comp] = comp_arr * self.ctx.source.fit_norm
-        self.meta_components['resid'] = (self.ctx.fit_flux-self.ctx.model) * self.ctx.source.fit_norm
-        self.meta_components['mask'] = self.ctx.source.fit_mask.copy()
-
-
-        # METRICS - TODO
-        # self.metrics = badass_test_suite.get_fit_test_results(ctx)
-
-        # TODO: finalize currently not affecting self.final_params
-        self.ctx.param_reg.finalize()
-        self.ctx.param_reg.dump_parameters()
-
-
-    def output(self):
-        col1 = fits.Column(name='parameter', format='30A', array=[p.name for p in self.final_params.values()])
-        col2 = fits.Column(name='best_fit', format='E', array=[p.best_fit for p in self.final_params.values()])
-        col3 = fits.Column(name='sigma', format='E', array=[p.sigma for p in self.final_params.values()])
-        cols = fits.ColDefs([col1,col2,col3])
-        table_hdu = fits.BinTableHDU.from_columns(cols)
-
-        hdr = fits.Header()
-        hdr['z'] = self.ctx.source.target.z
-        hdr['med_noise'] = np.nanmedian(self.ctx.fit_err)
-        hdr['velscale'] = self.ctx.source.velscale
-        hdr['fit_norm'] = self.ctx.source.fit_norm
-        hdr['flux_norm'] = self.ctx.source.flux_norm
-
-        primary = fits.PrimaryHDU(header=hdr)
-        hdu = fits.HDUList([primary, table_hdu])
-        hdu.writeto(self.out_dir.joinpath('par_table.fits'), overwrite=True)
-        hdu.close()
-
-        cols = []
-        for key, val in self.components.items():
-            cols.append(fits.Column(name=key.upper(), format='E', array=val))
-
-        for key, val in self.meta_components.items():
-            cols.append(fits.Column(name=key.upper(), format='E', array=val))
-
-        cols = fits.ColDefs(cols)
-        hdu = fits.BinTableHDU.from_columns(cols)
-        hdu.writeto(self.out_dir.joinpath('best_model_components.fits'), overwrite=True)
-
+            self.final_params[blob] = ParamResult.from_chain(blob, self.blobs_chain[blob])
 
 
 @dataclass
@@ -314,12 +90,6 @@ class MLRunner(BadassRunContext):
 
         basinhop_result = self.basinhop()
         self.max_likelihood(basinhop_result)
-
-
-    def finalize(self):
-        self.log.info('MLStage finalize')
-        self.result.finalize()
-        self.result.output()
 
 
     def basinhop(self):
