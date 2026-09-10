@@ -340,12 +340,11 @@ class ComponentBlob(Blob):
         flux = simpson(self.comp_spec, ComponentBlob.obs_wave)
         flux = np.abs(flux)*ctx.source.flux_norm*ctx.source.fit_norm
         self.cur_val[self.name+'_FLUX'] = np.log10(flux) if flux != 0.0 else flux
-        # TODO multiply by 1+z
 
         self.cur_val[self.name+'_LUM'] = np.log10(ba_utils.flux_to_lum(flux, ctx.cfg.fit.cosmology, ctx.source.target.z)) if flux != 0.0 else 0.0
 
         cont = kwargs['continuum']
-        ew = simpson(self.comp_spec/cont, ComponentBlob.obs_wave)
+        ew = simpson(self.comp_spec/cont, ctx.fit_wave)
         self.cur_val[self.name+'_EW'] = ew if np.isfinite(ew) else 0.0
 
         return self.cur_val
