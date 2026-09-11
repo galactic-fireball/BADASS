@@ -9,6 +9,7 @@ from typing import Callable, Dict, List, NamedTuple
 from badass.components.priors import lnprior_gaussian, lnprior_halfnorm, lnprior_jeffreys, lnprior_flat
 prior_map = {'gaussian': lnprior_gaussian, 'halfnorm': lnprior_halfnorm, 'jeffreys': lnprior_jeffreys, 'flat': lnprior_flat}
 
+from badass.components.finalize import Finalizable
 
 # TODO: handle all parameter finalization here (such as adjusting for fit_norm, etc.)
 #   include mixin classes for various functionality
@@ -17,38 +18,10 @@ prior_map = {'gaussian': lnprior_gaussian, 'halfnorm': lnprior_halfnorm, 'jeffre
 # Each class handles its own, initialization (class flag for "satisfied"), updating, etc.
 # MetricParameter
 
-
-
-def unfit_norm_finalize(ctx, val):
-    return val * ctx.source.fit_norm
-
-
-def unflux_norm_finalize(ctx, val):
-    return val * ctx.source.flux_norm
-
-
-def log_finalize(ctx, val):
-    if val == 0.0:
-        return val
-    return np.log10(val)
-
-
-def redden_finalize(ctx, val):
-    pass
-
-
-def deredden_finalize(ctx, val):
-    pass
-
-
 @dataclass
-class Parameter:
-    name: str
-    source: str
-    finalize_behavior: List[Callable] | Callable | None = None
-
+class Parameter(Finalizable):
+    source: str = ''
     value: [float,int] = np.nan # the current value being used in the model
-
 
     @property
     def is_free(self):
@@ -60,6 +33,10 @@ class Parameter:
         expr = kwargs.get('expr', None)
         if expr is None:
             return None
+
+        if not 'finalizers' in kwargs:
+            pname = kwargs.get('name', None)
+            kwargs['finalizers'] = Finalizable.get_finalizers(pname)
 
         # dict containing and init and plim values -> FreeParameter
         if isinstance(expr, dict):
@@ -90,13 +67,11 @@ class Parameter:
 
 
     def finalize(self, ctx, val=None):
-        if not self.finalize_behavior:
-            return val
-        print('finalizing: %s'%self.name)
+        tval = val if val is None else self.value
+        res_val = super().finalize(ctx,val=tval)
         if val is None:
-            self.value = self.finalize_behavior(ctx, self.value)
-        else:
-            return self.finalize_behavior(ctx, val)
+            self.value = res_val
+        return res_val
 
 
 class PLim(NamedTuple):
