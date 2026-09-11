@@ -5,7 +5,7 @@ from importlib import import_module
 import matplotlib.pyplot as plt
 import numpy as np
 import pathlib
-import prodict
+import time
 from typing import NamedTuple
 
 from spark.io.models import Coord, SparkSpec, SparkCube, SparkSpaxel, SparkCircularAperture, SparkEllipticalAperture, SparkRectangularAperture
@@ -17,13 +17,13 @@ from badass.utils.logger import BadassLogger
 from badass.utils.pca import pca_reconstruction
 from badass.utils.utils import ccm_unred, get_ebv, emline_masker, log_rebin, metal_masker
 
+import spark.constants as sc
+
 # TODO: use a dataclass to explicitly define expected attrs and make sure all input classes have consistent attrs
 # TODO: set up pre-input creation logger
 
-TARGET_WAVE_UNIT = u.AA
-TARGET_FLUX_UNIT_AA = u.erg / u.s / (u.cm**2) / u.AA
 
-
+# TODO: move to runner ctx
 class FitReg(NamedTuple):
     min: float
     max: float
@@ -40,16 +40,17 @@ class FitReg(NamedTuple):
 class BadassSpec(SparkSpec):
     name: str = None
     cfg: BadassConfig = None
-    obs_wave: np.ndarray = None
-    fit_reg: FitReg = None
-    flux_norm: float = None
+    log: BadassLogger = BadassLogger()
+
+    obs_wave: np.ndarray = None # TODO: move to the runner context
+    fit_reg: FitReg = None # TODO: move to the runner context
+    flux_norm: float = None # TODO: move to the runner context
     disp_res: int | float | np.ndarray = None
     velscale: float = None
     valid: bool = True
     err_log: str = ''
 
     def __post_init__(self):
-        print('BadassSpec __post_init__')
         super().__post_init__()
 
         if self.name is None:
@@ -60,12 +61,15 @@ class BadassSpec(SparkSpec):
             else:
                 self.name = 'spec-%d'%int(time.time() * 1000)
 
-        for attr,unit in {'wave':TARGET_WAVE_UNIT, 'obs_wave':TARGET_WAVE_UNIT, 'flux':TARGET_FLUX_UNIT_AA, 'err':TARGET_FLUX_UNIT_AA}.items():
+        self.log = BadassLogger(name=self.name, level=self.cfg.io.log_level)
+        self.log.debug('Created %s'%self.__class__.__name__)
+
+        for attr,unit in {'wave':sc.WAVE_UNIT_AA, 'obs_wave':sc.WAVE_UNIT_AA, 'flux':sc.FLUX_UNIT_AA, 'err':sc.FLUX_UNIT_AA}.items():
             attr_val = getattr(self, attr)
             if isinstance(attr_val, u.Quantity):
                 setattr(self, attr, attr_val.to_value(unit))
-        self.wave_unit = TARGET_WAVE_UNIT
-        self.flux_unit = TARGET_FLUX_UNIT_AA
+        self.wave_unit = sc.WAVE_UNIT_AA
+        self.flux_unit = sc.FLUX_UNIT_AA
 
         if self.wave_is_rest:
             self.obs_wave = redden(self.wave, z=self.target.z)
@@ -77,7 +81,10 @@ class BadassSpec(SparkSpec):
             self.disp_res = np.full(len(self.wave), self.disp_res)
 
 
+    # TODO: this should probably be in the runner context
     def postinit(self):
+
+        self.log.info('input postinit')
 
         self.set_fit_region()
         if self.fit_reg is None:
@@ -134,6 +141,7 @@ class BadassSpec(SparkSpec):
             IrsaDust.cache_location = str(dust_cache)
 
 
+    # TODO: this should be in the runner context
     def set_fit_region(self):
         # Determines the fitting region for an input spectrum and fit options
         # Fitting region initially the edges of wavelength vector
@@ -184,15 +192,13 @@ class BadassSpec(SparkSpec):
 
 
     @classmethod
-    def from_dict(cls, input_data, cfg=prodict.Prodict({})):
-        # if (len(cfg) == 0) and (not input_data.get('cfg', None) is None):
-        #     cfg = prodict.Prodict(input_data['cfg'])
+    def from_dict(cls, input_data, cfg):
+        # TODO: should have a general dict handler instead of depending on the readers
         return cls.from_format(input_data, cfg)
 
 
     @classmethod
     def parse(cls, input_data, cfg):
-        print('BadassSpec parse')
         return cls.from_fits(input_data, cfg=cfg, z=cfg.fit.redshift)
 
 
@@ -278,10 +284,6 @@ class BadassSpec(SparkSpec):
                 return cls.from_path(input_data, cfg)
 
         return cls.from_format(input_data, cfg)
-
-
-    def set_new_logger(self):
-        self.log = BadassLogger(self)
 
 
 @dataclass

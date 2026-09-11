@@ -8,7 +8,6 @@ import os
 import pathlib
 import shutil
 from tabulate import tabulate
-import time
 from typing import Any
 
 from spark.plot import add_ax_labels
@@ -19,25 +18,7 @@ from badass.components.templates.common import initialize_templates
 from badass.components.spectral_lines.spectral_line import SpectralLine
 from badass.input.input import BadassSpec
 from badass.utils.config import BadassConfig
-
-
-# TODO: move to BadassLogger class
-def make_logger(name, log_file=None):
-    log = logging.getLogger('badass.%s'%name)
-    log.setLevel(logging.INFO)
-
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-    sh = logging.StreamHandler()
-    sh.setFormatter(formatter)
-    log.addHandler(sh)
-
-    if not log_file is None:
-        fh = logging.FileHandler(log_file, mode='a', encoding='utf-8')
-        fh.setFormatter(formatter)
-        log.addHandler(fh)
-
-    return log
+from badass.utils.logger import BadassLogger
 
 
 @dataclass
@@ -101,7 +82,7 @@ class BadassResult:
 
     ctx: None
     name: str
-    out_dir: str | pathlib.Path = None
+    outdir: str | pathlib.Path = None
 
     final_theta: np.ndarray = None
     final_params: dict[str:ParamResult] = field(default_factory=dict)
@@ -110,25 +91,27 @@ class BadassResult:
     meta_components: MetaComponents = None
 
     def __post_init__(self):
-        if self.out_dir is None:
-            self.out_dir = self.ctx.cfg.io.output_dir.joinpath(self.OUT_NAME)
-            self.out_dir.mkdir(parents=True, exist_ok=True)
+        if self.outdir is None:
+            self.outdir = self.ctx.cfg.io.output_dir
+        self.outdir = self.outdir.joinpath(self.OUT_NAME)
+        self.outdir.mkdir(parents=True, exist_ok=True)
+        self.ctx.outdir = self.outdir
 
 
     @classmethod
-    def from_output(cls, out_dir, ctx=None):
-        out_dir = pathlib.Path(out_dir).joinpath(cls.OUT_NAME)
-        if not out_dir.exists():
-            print('Failed to find output directory: %s'%str(out_dir))
+    def from_output(cls, outdir, ctx=None):
+        outdir = pathlib.Path(outdir).joinpath(cls.OUT_NAME)
+        if not outdir.exists():
+            print('Failed to find output directory: %s'%str(outdir))
             return None
 
-        data = {'name':'','ctx':None,'out_dir':out_dir}
-        pt_file = out_dir.joinpath(cls.parameter_file)
+        data = {'name':'','ctx':None,'outdir':outdir}
+        pt_file = outdir.joinpath(cls.parameter_file)
         if not pt_file.exists():
             print('Failed to find parameter output file: %s'%str(pt_file))
             return None
 
-        comp_file = out_dir.joinpath(cls.components_file)
+        comp_file = outdir.joinpath(cls.components_file)
         if not comp_file.exists():
             print('Failed to find components file: %s'%str(comp_file))
             return None
@@ -152,7 +135,7 @@ class BadassResult:
             return
         headers = [k for k in params[0].to_dict()]
         table = [list(p.to_dict().values()) for p in params]
-        print(tabulate(table, headers, tablefmt='grid'))
+        self.log.debug(tabulate(table, headers, tablefmt='grid'))
 
 
     def quick_view(self):
@@ -211,12 +194,12 @@ class BadassResult:
             'flux_norm': self.ctx.source.flux_norm,
         })
 
-        table.write(self.out_dir.joinpath(self.parameter_file), overwrite=True)
+        table.write(self.outdir.joinpath(self.parameter_file), overwrite=True)
 
 
     def output_comps(self):
         table = Table(self.components | asdict(self.meta_components))
-        table.write(self.out_dir.joinpath(self.components_file), overwrite=True)
+        table.write(self.outdir.joinpath(self.components_file), overwrite=True)
 
 
 @dataclass
@@ -225,7 +208,7 @@ class BadassRunContext:
 
     source: BadassSpec
     cfg: BadassConfig
-    # log: BadassLogger = None
+    log: BadassLogger = None
     outdir: pathlib.Path = None
 
     fit_wave: np.ndarray = None
@@ -247,37 +230,6 @@ class BadassRunContext:
 
 
     def __post_init__(self):
-        self.start_time = time.time()
-
-        if self.outdir is None:
-            if not self.cfg.io.output_dir is None:
-                self.outdir = self.cfg.io.output_dir
-            elif not source.file is None:
-                self.outdir = source.file.with_suffix('')
-            else:
-                self.outdir = pathlib.Path(os.getcwd()).resolve().joinpath(self.source.name)
-        if not self.outdir.is_absolute():
-            self.outdir = pathlib.Path(os.getcwd()).resolve().joinpath(self.outdir)
-
-        # TODO: implement fit status files
-        if self.outdir.joinpath('results', 'mc_result', 'par_table.fits').exists():
-            if self.cfg.io.overwrite:
-                # TODO: set up tmp logger
-                print('Removing old output directory: [%s]'%str(self.outdir))
-                shutil.rmtree(str(self.outdir))
-            else:
-                self.source.valid = False
-                self.source.err_log = 'Output directory [%s] already exists, not overwriting'%str(self.outdir)
-                print(self.err_log)
-                return
-
-        self.outdir.mkdir(parents=True, exist_ok=True)
-        log_dir = self.outdir.joinpath('log')
-        log_dir.mkdir(parents=True, exist_ok=True) # TODO: 'log' mkdir eventually happens in separate output class
-
-        self.log = make_logger(self.source.name, log_file=log_dir.joinpath('log.txt'))
-        self.source.log = self.log # TODO: separate logger for source?
-
         self.cosmology = LambdaCDM(**self.cfg.fit.cosmology.dict())
 
         self.source.postinit()
@@ -315,7 +267,7 @@ class BadassRunContext:
 
         self.model = np.zeros_like(self.fit_flux)
 
-        self.result = self.result_cls(self, self.source.name)
+        self.result = self.result_cls(self, self.source.name, outdir=self.outdir)
 
 
     def finalize(self):

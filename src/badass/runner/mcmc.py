@@ -77,7 +77,7 @@ class MCMCResult(BadassResult):
     def __post_init__(self):
         super().__post_init__()
 
-        self.backend_file = self.out_dir.joinpath('mcmc_chains.h5')
+        self.backend_file = self.outdir.joinpath('mcmc_chains.h5')
         self.backend = emcee.backends.HDFBackend(self.backend_file)
 
 
@@ -238,7 +238,6 @@ class MCMCRunner(BadassRunContext):
 
         tau = self.sampler.get_autocorr_time(quiet=True)
         tol = (np.abs(tau-self.prev_tau)/self.prev_tau) * 100
-        print(tol)
         self.taus.append(tau)
         self.tolerances.append(tol)
 

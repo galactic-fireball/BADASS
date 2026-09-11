@@ -49,7 +49,7 @@ REPORT_HTML_FOOTER = '''
 
 
 def pipeline_run(source, source_cfg):
-    return BadassPipeline(source, source_cfg, single=False).run()
+    return BadassPipeline(source, source_cfg, primary=False).run()
 
 
 def skip_existing(outdir, overwrite):
@@ -73,14 +73,17 @@ class SurveyPipeline(BadassPipeline):
     source_results: dict = field(default_factory=dict)
 
     def __post_init__(self):
-        print('SurveyPipeline __post_init__')
+        super().__post_init__()
+
+        if not isinstance(self.source,list):
+            self.source = [self.source,]
 
         source_cfgs = self.cfg
-        if isinstance(self.cfg, list):
-            self.cfg = copy.deepcopy(self.cfg[0])
+        if not isinstance(source_cfgs,list):
+            source_cfgs = [copy.deepcopy(self.cfg) for _ in range(len(self.source))]
 
         for i, source in enumerate(self.source):
-            print('Running %s'%source.name)
+            self.log.info('Running %s'%source.name)
 
             if isinstance(source_cfgs, list):
                 source_cfg = source_cfgs[i]
@@ -97,7 +100,6 @@ class SurveyPipeline(BadassPipeline):
 
 
     def run(self):
-        print('SurveyPipeline run')
         if self.cfg.io.nprocesses == 1:
             for source, source_cfg in list(self.single_sources.values()):
                 res = pipeline_run(source, source_cfg)
@@ -114,6 +116,9 @@ class SurveyPipeline(BadassPipeline):
 
 
     def finalize(self):
+        return
+        # TODO: fix these
+        pd.DataFrame().to_csv(self.outdir.joinpath('survey_results.csv'), index=False)
         self.make_source_plots()
         self.make_survey_csv()
         self.make_report_html()
@@ -160,7 +165,7 @@ class SurveyPipeline(BadassPipeline):
                     row_data = {'Parameter':param, 'Best Fit':param_dict['med'], 'Std. Dev.':param_dict['std']}
                 df.loc[len(df)] = row_data
 
-            plot_src = res.out_dir.joinpath('max_likelihood_fit.png').relative_to(self.cfg.io.output_dir)
+            plot_src = res.outdir.joinpath('max_likelihood_fit.png').relative_to(self.cfg.io.output_dir)
 
             table_data = ''
             num_rows = int(np.ceil(len(df) / table_cols))

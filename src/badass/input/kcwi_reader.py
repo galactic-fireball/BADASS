@@ -33,7 +33,6 @@ def get_R(grating):
     for grating_name, R in GRATING_TO_R.items():
         if grating_name in grating:
             return R
-    print('No matching grating found in STATENAM')
     return None
 
 

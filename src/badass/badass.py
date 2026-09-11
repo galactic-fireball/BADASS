@@ -24,22 +24,33 @@ warnings.filterwarnings('ignore', category=RuntimeWarning)
 warnings.filterwarnings('ignore', category=UserWarning) 
 
 
-from badass.utils.config import BadassConfig
 from badass.input.input import BadassSpec
 from badass.runner.pipeline import BadassPipeline
+from badass.utils.config import BadassConfig
+from badass.utils.logger import BadassLogger
 
 
 def run_BADASS(inputs, **kwargs):
+    logger = BadassLogger()
+    logger.info('STARTING BADASS')
+
     cfg = BadassConfig.get_config_from_args(kwargs)
+    logger.set_level(cfg.io.log_level)
+    logger.debug('configuration parsed')
     source = BadassSpec.get_inputs(inputs, cfg)
 
     pipeline = BadassPipeline.init(source, cfg)
     results = pipeline.run()
     pipeline.finalize()
+
+    logger.info('BADASS COMPLETE')
     return results
 
 
 def target_check(inputs, **kwargs):
+    logger = BadassLogger()
     cfg = BadassConfig.get_config_from_args(kwargs)
     targets = BadassSpec.get_inputs(inputs, cfg)
-    print('Fitting %d targets'%len(targets))
+    logger.info('Fitting %d targets'%len(targets))
+
+

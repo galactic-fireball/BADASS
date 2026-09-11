@@ -198,7 +198,7 @@ def create_test_plot(source, fit_results, label_A, label_B, test_title=None):
 
 def plot_ml_results(mlresult, source):
     ml_fig = plot_best_model(mlresult, source)
-    ml_fig.savefig(mlresult.out_dir.joinpath('max_likelihood_fit.png'))
+    ml_fig.savefig(mlresult.outdir.joinpath('max_likelihood_fit.png'))
     return ml_fig
 
     # if (not mlstore.ctx.cfg.mcmc.mcmc_fit) and (mlstore.ctx.cfg.plot.html):
@@ -207,7 +207,7 @@ def plot_ml_results(mlresult, source):
 
 def plot_mcmc_results(mcmc_result, source):
     mcmc_fig = plot_best_model(mcmc_result, source)
-    mcmc_fig.savefig(mcmc_result.out_dir.joinpath('best_fit_model.png'))
+    mcmc_fig.savefig(mcmc_result.outdir.joinpath('best_fit_model.png'))
     return mcmc_fig
 
 

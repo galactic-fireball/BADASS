@@ -45,6 +45,6 @@ class Finalizable:
         res_val = val
         for finalizer in self.finalizers:
             res_val = finalizer(ctx, val)
-        print('finalizing: %s [%f -> %f]'%(self.name,val,res_val))
+        ctx.log.debug('Finalizing: %s [%f -> %f]'%(self.name,val,res_val))
         return res_val
 

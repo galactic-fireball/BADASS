@@ -11,15 +11,10 @@ prior_map = {'gaussian': lnprior_gaussian, 'halfnorm': lnprior_halfnorm, 'jeffre
 
 from badass.components.finalize import Finalizable
 
-# TODO: handle all parameter finalization here (such as adjusting for fit_norm, etc.)
-#   include mixin classes for various functionality
-#   include a staticmethod to determine the parameter's class
-#   Parameter -> FreeParameter, ConstParameter, ExprParameter, FitNormMixin, ReddenMixin, etc.
-# Each class handles its own, initialization (class flag for "satisfied"), updating, etc.
-# MetricParameter
 
 @dataclass
 class Parameter(Finalizable):
+    pr: 'ParameterRegistry' = None
     source: str = ''
     value: [float,int] = np.nan # the current value being used in the model
 
@@ -121,7 +116,7 @@ class ExprParameter(Parameter):
         self.dependencies = ne.necompiler.getExprNames(self.expr, {})[0]
         for dep in self.dependencies:
             if not dep in params:
-                print('Unknown dependency parameter: [%s], removing parameter: %s'%(dep,self.name))
+                self.pr.ctx.log.error('Unknown dependency parameter: [%s], removing parameter: %s'%(dep,self.name))
                 return False
         return True
 
@@ -160,13 +155,12 @@ class ParameterRegistry:
             self.ctx.log.info('%s already in parameter registry, not adding'%param_name)
             return self.params[param_name]
 
-        param = Parameter.create(**kwargs)
+        param = Parameter.create(pr=self, **kwargs)
         if param is None:
-            print('Parameter creation failed')
+            self.ctx.log.error('Parameter creation failed')
             return None
 
-        print('Adding parameter: %s'%param)
-
+        self.ctx.log.debug('Adding parameter: %s'%param)
         self.params[param.name] = param
 
         if param.is_free:
@@ -192,7 +186,7 @@ class ParameterRegistry:
         try:
             self.expr_order = list(ts.static_order())
         except CycleError as e:
-            print(e)
+            self.ctx.error(e)
             return False
 
         # make sure only ExprParameters are in here
