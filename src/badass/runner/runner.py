@@ -1,3 +1,4 @@
+from astropy.cosmology import LambdaCDM
 from astropy.table import Table
 from dataclasses import asdict, dataclass, field, fields
 import logging
@@ -222,15 +223,27 @@ class BadassResult:
 class BadassRunContext:
     result_cls = BadassResult
 
-    source: BadassSpec = None
-    cfg: BadassConfig = None
+    source: BadassSpec
+    cfg: BadassConfig
     # log: BadassLogger = None
     outdir: pathlib.Path = None
 
-    # TODO: type should by numpy arrays?
-    fit_wave: Any = None
-    fit_flux: Any = None
-    fit_err: Any = None
+    fit_wave: np.ndarray = None
+    fit_flux: np.ndarray = None
+    fit_err: np.ndarray = None
+    model: np.ndarray = None
+
+    # current model components
+    comps: dict = field(default_factory=dict)
+
+    cosmology: LambdaCDM = None
+
+    param_reg: ParameterRegistry = field(init=False)
+    blob_reg: BlobRegistry = field(init=False)
+    templates: dict = field(default_factory=dict)
+    line_list: list = field(default_factory=list)
+
+    result: BadassResult = field(init=False)
 
 
     def __post_init__(self):
@@ -263,7 +276,9 @@ class BadassRunContext:
         log_dir.mkdir(parents=True, exist_ok=True) # TODO: 'log' mkdir eventually happens in separate output class
 
         self.log = make_logger(self.source.name, log_file=log_dir.joinpath('log.txt'))
-        self.source.log = self. log # TODO: separate logger for source?
+        self.source.log = self.log # TODO: separate logger for source?
+
+        self.cosmology = LambdaCDM(**self.cfg.fit.cosmology.dict())
 
         self.source.postinit()
         if not self.source.valid:
@@ -298,8 +313,6 @@ class BadassRunContext:
         self.param_reg.dump_parameters()
         self.blob_reg.dump_blobs()
 
-        # current model components
-        self.comps = {}
         self.model = np.zeros_like(self.fit_flux)
 
         self.result = self.result_cls(self, self.source.name)

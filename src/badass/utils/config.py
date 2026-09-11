@@ -108,6 +108,7 @@ def dict_to_prodict(v:dict|prodict.Prodict) -> prodict.Prodict:
 class Cosmology(CustomBaseModel):
     H0: float = 70.0
     Om0: float = 0.30
+    Ode0: float = 0.70
 
 
 # 'bins': {'side_length':3, 'x': (10,40), 'y':(10,35), 'method': 'mean'},
