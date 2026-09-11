@@ -7,6 +7,8 @@ import pathlib
 from badass.input.cube_reader import CubeReader
 from badass.utils.utils import dered
 
+from spark.utils import deredden
+
 KCWI_FLUX_NORM = 1e-16
 
 GRATING_TO_R = {
@@ -86,8 +88,8 @@ class KCWIReader(CubeReader):
             cube_data['velscale'] = np.log(obs_wave[1] / obs_wave[0]) * const.c.to(u.km/u.s).value # Constant velocity scale in km/s per pixel
 
             cube_data['obs_wave'] = obs_wave
-            cube_data['wave'] = dered(obs_wave, cube_data['z'])
-            cube_data['disp_res'] = dered(disp_res, cube_data['z'])
+            cube_data['wave'] = deredden(obs_wave, z=cube_data['z'])
+            cube_data['disp_res'] = deredden(disp_res, z=cube_data['z'])
 
             cube_data['splitable'] = ['spec', 'noise']
 

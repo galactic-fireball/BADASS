@@ -11,31 +11,6 @@ import scipy.optimize as op
 from badass.utils.constants import *
 
 
-def dered(wave, z=0.0):
-    return wave / (1 + z)
-
-
-def redden(wave, z=0.0):
-    return wave * (1 + z)
-
-
-def flux_to_lum(flux, cosmology, z):
-    # TODO: calc and store elsewhere
-    cosmo = FlatLambdaCDM(cosmology.H0, cosmology.Om0)
-    d_mpc = cosmo.luminosity_distance(z).value
-    # TODO: use astropy units
-    d_cm = d_mpc * 3.086E+24 # 1 Mpc = 3.086e+24 cm
-    return 4*np.pi*(d_cm**2)*flux
-
-
-def valid_expression(expr, local_dict):
-    try:
-        val = ne.evaluate(expr, local_dict=local_dict).item()
-        return True
-    except KeyError:
-        return False
-
-
 def find_nearest(array, value):
     """
     This function finds the nearest value in an array and returns the 
@@ -57,11 +32,6 @@ def time_convert(seconds):
     seconds %= 60.
       
     return "%d:%02d:%02d" % (hour, minutes, seconds)
-
-
-# TODO: implement generating numbered output diretories
-def get_default_outdir(infile):
-    return infile.parent.joinpath(DEFAULT_OUTDIR)
 
 
 def nan_helper(y):

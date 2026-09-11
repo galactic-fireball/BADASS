@@ -8,6 +8,8 @@ from typing import Callable, ClassVar, Dict, List
 import badass.utils.utils as ba_utils
 from badass.components.spectral_lines.utils import calculate_fwhm, calculate_w80
 
+from spark.utils import flux_to_lum, redden
+
 
 # components that make up the continuum
 cont_comps = ['POWER', 'HOST_GALAXY', 'BALMER_CONT', 'APOLY', 'MPOLY',]
@@ -267,9 +269,9 @@ class ContinuumBlob(Blob):
             'F_CONT_HOST_%d'%self.wave: conts['HOST']*ctx.source.flux_norm*ctx.source.fit_norm,
         })
         self.cur_val.update({
-            'L_CONT_TOT_%d'%self.wave: ba_utils.flux_to_lum(self.cur_val['F_CONT_TOT_%d'%self.wave], ctx.cfg.fit.cosmology, ctx.source.target.z),
-            'L_CONT_AGN_%d'%self.wave: ba_utils.flux_to_lum(self.cur_val['F_CONT_AGN_%d'%self.wave], ctx.cfg.fit.cosmology, ctx.source.target.z),
-            'L_CONT_HOST_%d'%self.wave: ba_utils.flux_to_lum(self.cur_val['F_CONT_HOST_%d'%self.wave], ctx.cfg.fit.cosmology, ctx.source.target.z),
+            'L_CONT_TOT_%d'%self.wave: flux_to_lum(self.cur_val['F_CONT_TOT_%d'%self.wave], ctx.source.target.z, cosmo=ctx.cosmology),
+            'L_CONT_AGN_%d'%self.wave: flux_to_lum(self.cur_val['F_CONT_AGN_%d'%self.wave], ctx.source.target.z, cosmo=ctx.cosmology),
+            'L_CONT_HOST_%d'%self.wave: flux_to_lum(self.cur_val['F_CONT_HOST_%d'%self.wave], ctx.source.target.z, cosmo=ctx.cosmology),
         })
         return self.cur_val
 
@@ -327,7 +329,7 @@ class ComponentBlob(Blob):
 
     def compute(self, ctx, kwargs):
         # if ComponentBlob.obs_wave is None:
-        ComponentBlob.obs_wave = ba_utils.redden(ctx.fit_wave, z=ctx.source.target.z)
+        ComponentBlob.obs_wave = redden(ctx.fit_wave, z=ctx.source.target.z)
 
         self.comp_spec = BlobRegistry.get_component(ctx, self.name)
 
@@ -341,7 +343,7 @@ class ComponentBlob(Blob):
         flux = np.abs(flux)*ctx.source.flux_norm*ctx.source.fit_norm
         self.cur_val[self.name+'_FLUX'] = np.log10(flux) if flux != 0.0 else flux
 
-        self.cur_val[self.name+'_LUM'] = np.log10(ba_utils.flux_to_lum(flux, ctx.cfg.fit.cosmology, ctx.source.target.z)) if flux != 0.0 else 0.0
+        self.cur_val[self.name+'_LUM'] = np.log10(flux_to_lum(flux, ctx.source.target.z, cosmo=ctx.cosmology)) if flux != 0.0 else 0.0
 
         cont = kwargs['continuum']
         ew = simpson(self.comp_spec/cont, ctx.fit_wave)

@@ -3,7 +3,9 @@ import numpy as np
 import spectres
 
 from badass.input.input import BadassSpec
-from badass.utils.utils import dered, log_rebin
+from badass.utils.utils import log_rebin
+
+from spark.utils import deredden
 
 class DefaultReader(BadassSpec):
     def __init__(self, input_data, options):
@@ -51,8 +53,8 @@ class DefaultReader(BadassSpec):
         else:
             self.disp_res = np.full(self.wave.shape, fill_value=self.fwhm_res/2.3548)
 
-        self.wave = dered(self.wave, self.z)
-        self.disp_res = dered(self.disp_res, self.z)
+        self.wave = deredden(self.wave, z=self.z)
+        self.disp_res = deredden(self.disp_res, z=self.z)
 
         # TODO: add?
         # Mask pixels exactly equal to zero (but not negative pixels)
