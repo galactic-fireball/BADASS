@@ -5,6 +5,7 @@ io = {
     'log_level': 'info',
     'filter': '290',
     'disperser': 'h',
+    'nprocesses': 2,
 }
 
 fit = {
@@ -15,6 +16,16 @@ fit = {
         {'shape':'rectangular', 'center':(25,25), 'width':5}
     ],
     'plot_input':True,},
+}
+
+mcmc = {
+    'mcmc_fit': True,
+    'burn_in': 2,
+    'min_iter': 3,
+    'max_iter': 5,
+    'write_iter': 1,
+    'write_thresh': 1,
+    'auto_stop': True,
 }
 
 

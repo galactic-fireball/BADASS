@@ -18,7 +18,7 @@ from badass.components.templates.common import initialize_templates
 from badass.components.spectral_lines.spectral_line import SpectralLine
 from badass.input.input import BadassSpec
 from badass.utils.config import BadassConfig
-from badass.utils.logger import BadassLogger
+from badass.utils.logger import BadassLogger, LogObjMixin
 
 
 @dataclass
@@ -203,7 +203,7 @@ class BadassResult:
 
 
 @dataclass
-class BadassRunContext:
+class BadassRunContext(LogObjMixin):
     result_cls = BadassResult
 
     source: BadassSpec

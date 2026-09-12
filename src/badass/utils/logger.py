@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import json
 import logging
 import sys
@@ -128,7 +129,25 @@ class BadassLogger:
     def critical(self, msg, *args, **kwargs): self._logger.critical(msg, *args, **kwargs)
 
 
-    
+@dataclass(kw_only=True)
+class LogObjMixin:
+    log_name: str = None
+
+    def __getstate__(self) -> dict:
+        state = self.__dict__.copy()
+        if 'log' in state:
+            state['log_name'] = state['log'].name
+            state['log'] = None
+        return state
+
+    def __setstate__(self, state:dict) -> None:
+        self.__dict__.update(state)
+        if not self.log_name is None:
+            self.log = logging.getLogger(self.log_name)
+            self.log_name = None
+
+
+
 # TODO: implement, fix, remove, etc:
 
 # def log_title(self):

@@ -13,7 +13,7 @@ from spark.utils import redden, deredden
 
 from badass.utils.config import BadassConfig
 import badass.utils.constants as constants
-from badass.utils.logger import BadassLogger
+from badass.utils.logger import BadassLogger, LogObjMixin
 from badass.utils.pca import pca_reconstruction
 from badass.utils.utils import ccm_unred, get_ebv, emline_masker, log_rebin, metal_masker
 
@@ -37,7 +37,7 @@ class FitReg(NamedTuple):
 
 
 @dataclass
-class BadassSpec(SparkSpec):
+class BadassSpec(SparkSpec, LogObjMixin):
     name: str = None
     cfg: BadassConfig = None
     log: BadassLogger = BadassLogger()

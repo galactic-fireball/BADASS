@@ -8,12 +8,12 @@ from badass.runner.runner import BadassRunContext, BadassResult
 from badass.runner.bootstrap import MLRunner
 from badass.runner.mcmc import MCMCRunner
 from badass.utils.config import BadassConfig
-from badass.utils.logger import BadassLogger
+from badass.utils.logger import BadassLogger, LogObjMixin
 
 from badass.utils import plotting
 
 @dataclass
-class BadassPipeline:
+class BadassPipeline(LogObjMixin):
 
     source: BadassSpec = None
     cfg: BadassConfig = None

@@ -18,11 +18,6 @@ class IFUPipeline(SurveyPipeline):
     single_sources: dict = field(default_factory=dict)
     source_results: dict = field(default_factory=dict)
 
-
-    def __post_init__(self):
-        pass
-
-
     @staticmethod
     def setup_map_spec_axes(cube):
         fig = plt.figure(figsize=(18,10))
@@ -34,16 +29,13 @@ class IFUPipeline(SurveyPipeline):
         return cube_ax, spec_ax
 
 
-
 @dataclass
 class SpaxelsPipeline(IFUPipeline):
     area_types = ['spaxel','spaxels']
 
     spaxels: list = field(default_factory=list)
 
-    def __post_init__(self):
-        super().__post_init__()
-
+    def initialize_sources(self):
         # TODO: 'exclude' option
         self.spaxels = self.cfg.fit.fit_area.spaxels
         nx = self.source.flux.shape[2]
@@ -114,10 +106,11 @@ class SpaxelsPipeline(IFUPipeline):
         result_fits.writeto(outfile, overwrite=True)
 
 
+@dataclass
 class BinsPipeline(IFUPipeline):
     area_types = ['bin','bins',]
 
-    def __post_init__(self):
+    def initialize_sources(self):
         # TODO: voronoi binning
         slength = self.cfg.fit.fit_area.bins.side_length
         method = self.cfg.fit.fit_area.bins.method
@@ -172,10 +165,11 @@ class BinsPipeline(IFUPipeline):
             plt.show()
 
 
+@dataclass
 class AperturesPipeline(IFUPipeline):
     area_types = ['aperture','apertures',]
 
-    def __post_init__(self):
+    def initialize_sources(self):
         aps = self.cfg.fit.fit_area.apertures
         if not isinstance(aps, list): aps = [aps,]
         plot = self.cfg.fit.fit_area.plot_input

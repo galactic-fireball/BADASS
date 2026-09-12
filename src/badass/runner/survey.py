@@ -74,7 +74,10 @@ class SurveyPipeline(BadassPipeline):
 
     def __post_init__(self):
         super().__post_init__()
+        self.initialize_sources()
 
+
+    def initialize_sources(self):
         if not isinstance(self.source,list):
             self.source = [self.source,]
 
@@ -112,7 +115,10 @@ class SurveyPipeline(BadassPipeline):
 
             for res in run_results:
                 if not res is None:
-                    self.source_results[res.name] = res
+                    if isinstance(res,list):
+                        self.source_results[res[0].name] = res
+                    else:
+                        self.source_results[res.name] = [res,]
 
 
     def finalize(self):
