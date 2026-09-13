@@ -1,6 +1,6 @@
 
 # TODO: ComponentRegistry ?
-#   handles component finalization (ie. comp * ctx.source.fit_norm)
+#   handles component finalization (ie. comp * ctx.fit_norm)
 
 class BadassComponent:
 

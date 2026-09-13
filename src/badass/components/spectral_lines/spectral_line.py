@@ -49,6 +49,7 @@ primary_pars = ['AMP', 'DISP', 'VOFF']
 hyperpars = ['INIT', 'PLIM', 'PRIOR']
 
 
+# TODO: create a spectral line registry analogous to the ParameterRegistry
 class SpectralLine(BadassComponent):
 
     ctx = None
@@ -83,7 +84,7 @@ class SpectralLine(BadassComponent):
             line_dict['CENTER'] = parent.center
 
         # make sure line is in the fitting region
-        if (line_dict['CENTER'] <= SpectralLine.ctx.source.wave[0]+EDGE_PAD) or (line_dict['CENTER'] >= SpectralLine.ctx.source.wave[-1]-EDGE_PAD):
+        if (line_dict['CENTER'] <= SpectralLine.ctx.fit_reg.min+EDGE_PAD) or (line_dict['CENTER'] >= SpectralLine.ctx.fit_reg.max-EDGE_PAD):
             SpectralLine.ctx.log.warn('Not fitting line %s (out of fit region)'%(line_dict['NAME']))
             return None
 
@@ -251,6 +252,7 @@ class SpectralLine(BadassComponent):
         # We will use this to determine the dispersion resolution as a function of wavelength for each
         # emission line so we can correct for the resolution at every iteration.
         # TODO: make this common
+        # TODO: is this correct? should be over the observed wave?
         disp_res_ftn = interp1d(SpectralLine.ctx.source.wave,SpectralLine.ctx.source.disp_res,kind='linear',bounds_error=False,fill_value=(1.e-10,1.e-10))
         # Interpolation function that maps x (in angstroms) to pixels so we can get the exact
         # location in pixel space of the emission line.

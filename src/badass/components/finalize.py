@@ -3,7 +3,7 @@ from typing import Callable, List
 
 
 def scale_fit_norm_finalize(ctx, val):
-    return val * ctx.source.fit_norm
+    return val * ctx.fit_norm
 
 
 def scale_flux_norm_finalize(ctx, val):

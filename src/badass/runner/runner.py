@@ -8,7 +8,7 @@ import os
 import pathlib
 import shutil
 from tabulate import tabulate
-from typing import Any
+from typing import NamedTuple
 
 from spark.plot import add_ax_labels
 
@@ -18,7 +18,9 @@ from badass.components.templates.common import initialize_templates
 from badass.components.spectral_lines.spectral_line import SpectralLine
 from badass.input.input import BadassSpec
 from badass.utils.config import BadassConfig
+import badass.utils.constants as bc
 from badass.utils.logger import BadassLogger, LogObjMixin
+from badass.utils.utils import ccm_unred, get_ebv, emline_masker, log_rebin, metal_masker
 
 
 @dataclass
@@ -75,7 +77,6 @@ class MetaComponents:
 @dataclass
 class BadassResult:
     OUT_NAME = 'badass_result'
-    PLOT_FUNC = None
     param_cls = ParamResult
     parameter_file = 'par_table.fits'
     components_file = 'best_model_components.fits'
@@ -168,10 +169,10 @@ class BadassResult:
 
     def finalize_components(self):
         for key, comp in self.ctx.comps.items():
-            self.components[key] = comp * self.ctx.source.fit_norm
+            self.components[key] = comp * self.ctx.fit_norm
 
-        self.meta_components = MetaComponents(self.ctx.fit_wave, self.ctx.fit_flux, self.ctx.fit_err, self.ctx.model, self.ctx.source.fit_mask)
-        self.meta_components.rescale(self.ctx.source.fit_norm)
+        self.meta_components = MetaComponents(self.ctx.fit_wave, self.ctx.fit_flux, self.ctx.fit_err, self.ctx.model, self.ctx.fit_mask)
+        self.meta_components.rescale(self.ctx.fit_norm)
 
 
     def perform_metrics(self):
@@ -183,6 +184,7 @@ class BadassResult:
     def output(self):
         self.output_par_table()
         self.output_comps()
+        self.make_result_plots()
 
 
     def output_par_table(self):
@@ -190,7 +192,7 @@ class BadassResult:
             'z': self.ctx.source.target.z,
             'med_noise': np.nanmedian(self.ctx.fit_err),
             'velscale': self.ctx.source.velscale,
-            'fit_norm': self.ctx.source.fit_norm,
+            'fit_norm': self.ctx.fit_norm,
             'flux_norm': self.ctx.source.flux_norm,
         })
 
@@ -202,6 +204,22 @@ class BadassResult:
         table.write(self.outdir.joinpath(self.components_file), overwrite=True)
 
 
+    def make_result_plots(self):
+        pass
+
+
+class FitReg(NamedTuple):
+    min: float
+    max: float
+
+    def __str__(self):
+        return f'({self.min}, {self.max})'
+
+
+    def __repr__(self):
+        return self.__str__()
+
+
 @dataclass
 class BadassRunContext(LogObjMixin):
     result_cls = BadassResult
@@ -211,10 +229,17 @@ class BadassRunContext(LogObjMixin):
     log: BadassLogger = None
     outdir: pathlib.Path = None
 
+    fit_reg: FitReg = None
+    fit_norm: float = 1.0
+
+    # The spectral data currently being fit
     fit_wave: np.ndarray = None
     fit_flux: np.ndarray = None
     fit_err: np.ndarray = None
+    fit_mask: np.ndarray = None
     model: np.ndarray = None
+
+    err_log: str = None
 
     # current model components
     comps: dict = field(default_factory=dict)
@@ -232,17 +257,55 @@ class BadassRunContext(LogObjMixin):
     def __post_init__(self):
         self.cosmology = LambdaCDM(**self.cfg.fit.cosmology.dict())
 
-        self.source.postinit()
-        if not self.source.valid:
+        if self.fit_wave is None:
+            self.fit_wave = self.source.wave
+        if self.fit_flux is None:
+            self.fit_flux = self.source.flux
+        if self.fit_err is None:
+            self.fit_err = self.source.err
+
+        self.set_fit_region()
+
+        # Sanitize errors
+        med_err = 1.0 if all(np.isnan(self.fit_err)) else np.nanmedian(self.fit_err)
+        self.fit_err[(~np.isfinite(self.fit_flux)) | (~np.isfinite(self.fit_err))] = med_err
+        self.fit_err[self.fit_err == 0] = med_err
+
+
+        # Combine fit mask from different sources
+        self.fit_mask = np.full(len(self.fit_wave), True)
+        self.fit_mask[(~np.isfinite(self.fit_flux)) | (~np.isfinite(self.fit_err))] = False
+        for m in self.cfg.user_mask:
+            self.fit_mask[(self.fit_wave >= m[0]) & (self.fit_wave <= m[1])] = False
+        if self.cfg.fit.mask_bad_pix:
+            bad_pix = getattr(self, 'bad_pix', np.array([]))
+            self.fit_mask[bad_pix] = False
+        if self.cfg.fit.mask_emline:
+            emline_mask = emline_masker(self.fit_wave,self.fit_flux,self.fit_err)
+            self.fit_mask[emline_mask] = False
+        if self.cfg.fit.mask_metal:
+            metal_mask = metal_masker(self.fit_wave,self.fit_flux,self.fit_err)
+            self.fit_mask[metal_mask] = False
+
+        # Correct for galactic extinction
+        ebv = get_ebv(self.source.target.ra, self.source.target.dec, dust_cache=self.cfg.io.dust_cache)
+        self.fit_flux = ccm_unred(self.source.obs_wave, self.fit_flux, ebv)
+
+        # Normalize the fit flux
+        self.fit_norm = np.nanmax(self.fit_flux)
+        self.fit_flux = self.fit_flux / self.fit_norm
+        self.fit_err = self.fit_err / self.fit_norm
+
+
+        # TODO: test
+        # if self.cfg.get('pca', {}).get('do_pca',False):
+        #     pca_reconstruction(self)
+
+
+        if all(np.isnan(self.fit_flux)):
+            self.err_log = '\'flux\' array is all nans, not running fit'
             return
 
-        # The spectral data currently being fit
-        if self.fit_wave is None:
-            self.fit_wave = self.source.wave.copy()
-        if self.fit_flux is None:
-            self.fit_flux = self.source.flux.copy()
-        if self.fit_err is None:
-            self.fit_err = self.source.err.copy()
 
         max_flux = np.nanmax(self.fit_flux)*1.5
         median_flux = np.nanmedian(self.fit_flux)
@@ -268,6 +331,60 @@ class BadassRunContext(LogObjMixin):
         self.model = np.zeros_like(self.fit_flux)
 
         self.result = self.result_cls(self, self.source.name, outdir=self.outdir)
+
+
+    def set_fit_region(self):
+        self.fit_reg = FitReg(min=self.fit_wave[0], max=self.fit_wave[-1])
+        self.log.info('Initial fitting region: {fr}'.format(fr=self.fit_reg))
+
+        user_fit_reg = self.cfg.fit.fit_reg
+        if isinstance(user_fit_reg, (tuple,list)):
+            user_fit_reg = FitReg(*user_fit_reg)
+            if user_fit_reg.min > user_fit_reg.max:
+                self.log.error('Fitting boundaries overlap!')
+                self.fit_reg = None
+                return
+
+            if (user_fit_reg.min > self.fit_reg.max) or (user_fit_reg.max < self.fit_reg.min):
+                self.log.error('Fitting region not available!')
+                self.fit_reg = None
+                return
+
+            if (user_fit_reg.min < self.fit_reg.min) or (user_fit_reg.max > self.fit_reg.max):
+                self.log.warn('Input fitting region exceeds available wavelength range. BADASS will adjust your fitting range automatically...')
+                self.log.warn('Input fitting range: %s'%str(user_fit_reg))
+                self.log.warn('Available wavelength range: %s'%str(self.fit_reg))
+
+            self.fit_reg = FitReg(np.max([user_fit_reg.min, self.fit_reg.min]), np.min([user_fit_reg.max, self.fit_reg.max]))
+        elif (isinstance(user_fit_reg, str)) and (user_fit_reg == 'auto'):
+            self.log.info('Auto setting fitting region')
+            self.fit_reg = FitReg(np.max([user_fit_reg.min, self.fit_reg.min]), np.min([user_fit_reg.max, self.fit_reg.max]))
+        else:
+            self.log.error('Invalid fitting region')
+            self.fit_reg = None
+            return
+
+        # The lower limit of the spectrum must be the lower limit of our stellar templates
+        # TODO: template function to let each template affect the fitting region?
+        if self.cfg.comp.fit_losvd:
+            min_losvd = bc.LOSVD_LIBRARIES[self.cfg.losvd.library].min_losvd
+            max_losvd = bc.LOSVD_LIBRARIES[self.cfg.losvd.library].max_losvd
+            if (self.fit_reg.min < min_losvd) or (self.fit_reg.max > max_losvd):
+                self.log.warn('Warning: Fitting LOSVD requires wavelenth range between {mi} Å and {ma} Å for stellar templates. BADASS will adjust your fitting range to fit the LOSVD...'.format(mi=min_losvd, ma=max_losvd))
+                self.log.warn('Available wavelength range: ',(self.fit_reg))
+            self.fit_reg = FitReg(np.max([min_losvd, self.fit_reg.min]), np.min([max_losvd, self.fit_reg.max]))
+
+        self.log.info('New fitting region is {fr}'.format(fr=self.fit_reg))
+        if (self.fit_reg.max - self.fit_reg.min) < bc.MIN_FIT_REGION:
+            self.log.error('Fitting region too small! The fitting region must be at least {min_reg} A!'.format(min_reg=bc.MIN_FIT_REGION))
+            self.fit_reg = None
+            return
+
+        reg_mask = ((self.fit_wave >= self.fit_reg.min) & (self.fit_wave <= self.fit_reg.max))
+        self.fit_wave = self.fit_wave[reg_mask]
+        self.fit_flux = self.fit_flux[reg_mask]
+        self.fit_err = self.fit_err[reg_mask]
+        self.source.set_fit_region(self.fit_reg)
 
 
     def finalize(self):
@@ -304,12 +421,11 @@ class BadassRunContext(LogObjMixin):
         # Log-likelihood function
 
         self.fit_model()
-        fit_mask = self.source.fit_mask
         fit_stat = self.cfg.fit.fit_stat
 
-        data = self.fit_flux[fit_mask]
-        model = self.model[fit_mask]
-        err = self.fit_err[fit_mask]
+        data = self.fit_flux[self.fit_mask]
+        model = self.model[self.fit_mask]
+        err = self.fit_err[self.fit_mask]
 
         if fit_stat == 'ML':
             return -0.5*np.sum(((data-model)**2/err**2) + np.log(2*np.pi*err**2), axis=0)

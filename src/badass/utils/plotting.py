@@ -34,8 +34,8 @@ def create_input_plot(ctx):
 
     ### Un-normalized spectrum
 
-    ax1.step(ctx.fit_wave, ctx.fit_flux*ctx.source.fit_norm, label='Object Fit Region', linewidth=0.5, color='xkcd:bright aqua')
-    ax1.step(ctx.fit_wave, ctx.fit_err*ctx.source.fit_norm, label=r'$1\sigma$ Uncertainty', linewidth=0.5, color='xkcd:bright orange')
+    ax1.step(ctx.fit_wave, ctx.fit_flux*ctx.fit_norm, label='Object Fit Region', linewidth=0.5, color='xkcd:bright aqua')
+    ax1.step(ctx.fit_wave, ctx.fit_err*ctx.fit_norm, label=r'$1\sigma$ Uncertainty', linewidth=0.5, color='xkcd:bright orange')
     ax1.axhline(0.0, color='white', linewidth=0.5, linestyle='--')
 
     # TODO: change to masked_pixels

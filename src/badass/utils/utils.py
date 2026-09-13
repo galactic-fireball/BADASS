@@ -1,6 +1,7 @@
 from astropy import coordinates
 from astropy.cosmology import FlatLambdaCDM
 import astropy.units as u
+from astroquery.irsa_dust import IrsaDust
 import matplotlib.pyplot as plt
 import numexpr as ne
 import numpy as np
@@ -53,9 +54,12 @@ def nan_helper(y):
     return np.isnan(y), lambda z: z.nonzero()[0]
 
 
-def get_ebv(ra, dec):
+def get_ebv(ra, dec, dust_cache=None):
     if (ra is None) or (dec is None):
         return GALACTIC_EBV
+
+    if dust_cache != None:
+        IrsaDust.cache_location = str(dust_cache)
 
     co = coordinates.SkyCoord(ra=ra, dec=dec, unit=(u.deg, u.deg), frame='fk5')
     try:
@@ -65,7 +69,7 @@ def get_ebv(ra, dec):
         return GALACTIC_EBV
 
     # If E(B-V) is large, it can significantly affect normalization of the
-    # spectrum, in addition to changing its shape.  Re-normalizing the spectrum
+    # spectrum, in addition to changing its shape. Re-normalizing the spectrum
     # throws off the maximum likelihood fitting, so instead of re-normalizing,
     # we set an upper limit on the allowed ebv value for Galactic de-reddening.
     if ebv >= 1.0:
@@ -122,31 +126,29 @@ def ccm_unred(wave, flux, ebv, r_v=3.1):
     """
     wave = np.array(wave, float)
     flux = np.array(flux, float)
-    
-    if wave.size != flux.size: raise TypeError( 'ERROR - wave and flux vectors must be the same size')
+
+    if wave.size != flux.size: raise TypeError('ERROR - wave and flux vectors must be the same size')
 
     x = 10000.0/wave
     # Correction invalid for x>11:
     if np.any(x>11):
-        return flux 
+        return flux
 
     npts = wave.size
     a = np.zeros(npts, float)
     b = np.zeros(npts, float)
-    
+
     ###############################
-    #Infrared
-    
+    # Infrared
     good = np.where( (x > 0.3) & (x < 1.1) )
     a[good] = 0.574 * x[good]**(1.61)
     b[good] = -0.527 * x[good]**(1.61)
-    
+
     ###############################
     # Optical & Near IR
-
     good = np.where( (x  >= 1.1) & (x < 3.3) )
     y = x[good] - 1.82
-    
+
     c1 = np.array([ 1.0 , 0.104,   -0.609,  0.701,  1.137, \
                   -1.718,   -0.827, 1.647, -0.505 ])
     c2 = np.array([ 0.0,  1.952,    2.908,   -3.989, -7.985, \
@@ -157,13 +159,12 @@ def ccm_unred(wave, flux, ebv, r_v=3.1):
 
     ###############################
     # Mid-UV
-    
-    good = np.where( (x >= 3.3) & (x < 8) )   
+    good = np.where( (x >= 3.3) & (x < 8) )
     y = x[good]
     F_a = np.zeros(np.size(good),float)
     F_b = np.zeros(np.size(good),float)
-    good1 = np.where( y > 5.9 ) 
-    
+    good1 = np.where( y > 5.9 )
+
     if np.size(good1) > 0:
         y1 = y[good1] - 5.9
         F_a[ good1] = -0.04473 * y1**2 - 0.009779 * y1**3
@@ -171,11 +172,10 @@ def ccm_unred(wave, flux, ebv, r_v=3.1):
 
     a[good] =  1.752 - 0.316*y - (0.104 / ( (y-4.67)**2 + 0.341 )) + F_a
     b[good] = -3.090 + 1.825*y + (1.206 / ( (y-4.62)**2 + 0.263 )) + F_b
-    
+
     ###############################
     # Far-UV
-    
-    good = np.where( (x >= 8) & (x <= 11) )   
+    good = np.where( (x >= 8) & (x <= 11) )
     y = x[good] - 8.0
     c1 = [ -1.073, -0.628,  0.137, -0.070 ]
     c2 = [ 13.670,  4.257, -0.420,  0.374 ]
@@ -183,11 +183,10 @@ def ccm_unred(wave, flux, ebv, r_v=3.1):
     b[good] = np.polyval(c2[::-1], y)
 
     # Applying Extinction Correction
-    
     a_v = r_v * ebv
     a_lambda = a_v * (a + b/r_v)
-    
-    funred = flux * 10.0**(0.4*a_lambda)   
+
+    funred = flux * 10.0**(0.4*a_lambda)
 
     return funred
 

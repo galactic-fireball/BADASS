@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pathlib
 import time
-from typing import NamedTuple
 
 from spark.io.models import Coord, SparkSpec, SparkCube, SparkSpaxel, SparkCircularAperture, SparkEllipticalAperture, SparkRectangularAperture
 from spark.utils import redden, deredden
@@ -20,20 +19,6 @@ from badass.utils.utils import ccm_unred, get_ebv, emline_masker, log_rebin, met
 import spark.constants as sc
 
 # TODO: use a dataclass to explicitly define expected attrs and make sure all input classes have consistent attrs
-# TODO: set up pre-input creation logger
-
-
-# TODO: move to runner ctx
-class FitReg(NamedTuple):
-    min: float
-    max: float
-
-    def __str__(self):
-        return f'({self.min}, {self.max})'
-
-
-    def __repr__(self):
-        return self.__str__()
 
 
 @dataclass
@@ -42,13 +27,10 @@ class BadassSpec(SparkSpec, LogObjMixin):
     cfg: BadassConfig = None
     log: BadassLogger = BadassLogger()
 
-    obs_wave: np.ndarray = None # TODO: move to the runner context
-    fit_reg: FitReg = None # TODO: move to the runner context
-    flux_norm: float = None # TODO: move to the runner context
+    obs_wave: np.ndarray = None
+    flux_norm: float = 1.0
     disp_res: int | float | np.ndarray = None
     velscale: float = None
-    valid: bool = True
-    err_log: str = ''
 
     def __post_init__(self):
         super().__post_init__()
@@ -81,114 +63,13 @@ class BadassSpec(SparkSpec, LogObjMixin):
             self.disp_res = np.full(len(self.wave), self.disp_res)
 
 
-    # TODO: this should probably be in the runner context
-    def postinit(self):
-
-        self.log.info('input postinit')
-
-        self.set_fit_region()
-        if self.fit_reg is None:
-            self.valid = False
-            return
-
-        reg_mask = ((self.wave >= self.fit_reg.min) & (self.wave <= self.fit_reg.max))
-        self.flux = self.flux[reg_mask]
+    def set_fit_region(self, fit_reg):
+        reg_mask = ((self.wave >= fit_reg.min) & (self.wave <= fit_reg.max))
         self.wave = self.wave[reg_mask]
-        self.obs_wave = self.obs_wave[reg_mask]
+        self.flux = self.flux[reg_mask]
         self.err = self.err[reg_mask]
+        self.obs_wave = self.obs_wave[reg_mask]
         self.disp_res = self.disp_res[reg_mask]
-
-        nan_flux = np.where(~np.isfinite(self.flux))[0]
-        nan_err = np.where(~np.isfinite(self.err))[0]
-        inan = np.unique(np.concatenate([nan_flux,nan_err]))
-        # Interpolate over nans and infs if in galaxy or err
-        self.err[inan] = np.nan
-        self.err[inan] = 1.0 if all(np.isnan(self.err)) else np.nanmedian(self.err)
-
-        fit_mask_bad = []
-        if self.cfg.fit.mask_bad_pix:
-            self.bad_pix = getattr(self, 'bad_pix', np.array([]))
-            fit_mask_bad.extend(self.bad_pix)
-        if self.cfg.fit.mask_emline:
-            fit_mask_bad.extend(emline_masker(self.wave,self.flux,self.err))
-        for m in self.cfg.user_mask:
-            fit_mask_bad.extend(np.where((self.wave >= m[0]) & (self.wave <= m[1]))[0])
-        if self.cfg.fit.mask_metal:
-            fit_mask_bad.extend(metal_masker(self.wave,self.flux,self.err))
-
-        ebv = get_ebv(self.target.ra, self.target.dec)
-        self.flux = ccm_unred(self.obs_wave, self.flux, ebv)
-
-        self.fit_norm = np.nanmax(self.flux)
-        self.flux = self.flux / self.fit_norm
-        self.err = self.err / self.fit_norm
-        self.err[self.err == 0] = np.nanmedian(self.err)
-
-        if self.cfg.get('pca', {}).get('do_pca',False):
-            pca_reconstruction(self) # TODO: test
-
-        if np.isnan(self.flux).all():
-            self.valid = False
-            self.err_log = '\'flux\' array is all nans, not running fit'
-            return
-
-        fit_mask_bad.extend(np.where(np.isnan(self.flux))[0])
-        fit_mask_bad.extend(np.where(np.isnan(self.err))[0])
-        fit_mask_bad = np.sort(np.unique(fit_mask_bad))
-        self.fit_mask = np.setdiff1d(np.arange(0,len(self.wave),1,dtype=int),fit_mask_bad)
-
-        if self.cfg.io.dust_cache != None:
-            IrsaDust.cache_location = str(dust_cache)
-
-
-    # TODO: this should be in the runner context
-    def set_fit_region(self):
-        # Determines the fitting region for an input spectrum and fit options
-        # Fitting region initially the edges of wavelength vector
-        self.fit_reg = FitReg(min=self.wave[0], max=self.wave[-1])
-        self.log.info('Initial fitting region: {fr}'.format(fr=self.fit_reg))
-
-        user_fit_reg = self.cfg.fit.fit_reg
-        if isinstance(user_fit_reg, (tuple,list)):
-            user_fit_reg = FitReg(*user_fit_reg)
-            if user_fit_reg.min > user_fit_reg.max:
-                self.log.error('Fitting boundaries overlap!')
-                self.fit_reg = None
-                return
-
-            if (user_fit_reg.min > self.fit_reg.max) or (user_fit_reg.max < self.fit_reg.min):
-                self.log.error('Fitting region not available!')
-                self.fit_reg = None
-                return
-
-            if (user_fit_reg.min < self.fit_reg.min) or (user_fit_reg.max > self.fit_reg.max):
-                self.log.warn('Input fitting region exceeds available wavelength range. BADASS will adjust your fitting range automatically...')
-                self.log.warn('\t- Input fitting range: %s'%str(user_fit_reg))
-                self.log.warn('\t- Available wavelength range: %s'%str(self.fit_reg))
-
-            self.fit_reg = FitReg(np.max([user_fit_reg.min, self.fit_reg.min]), np.min([user_fit_reg.max, self.fit_reg.max]))
-        elif (isinstance(user_fit_reg, str)) and (user_fit_reg == 'auto'):
-            self.log.info('Auto setting fitting region')
-        else:
-            self.log.error('Invalid fitting region')
-            self.fit_reg = None
-            return
-
-        # The lower limit of the spectrum must be the lower limit of our stellar templates
-        # TODO: template function to let each template affect the fitting region?
-        if self.cfg.comp.fit_losvd:
-            min_losvd = constants.LOSVD_LIBRARIES[self.cfg.losvd.library].min_losvd
-            max_losvd = constants.LOSVD_LIBRARIES[self.cfg.losvd.library].max_losvd
-            if (self.fit_reg.min < min_losvd) or (self.fit_reg.max > max_losvd):
-                self.log.warn('Warning: Fitting LOSVD requires wavelenth range between {mi} Å and {ma} Å for stellar templates. BADASS will adjust your fitting range to fit the LOSVD...'.format(mi=min_losvd, ma=max_losvd))
-                self.log.warn('\t- Available wavelength range: ',(self.fit_reg))
-            self.fit_reg = FitReg(np.max([min_losvd, self.fit_reg.min]), np.min([max_losvd, self.fit_reg.max]))
-
-        self.log.info('- New fitting region is {fr}'.format(fr=self.fit_reg))
-        if (self.fit_reg.max - self.fit_reg.min) < constants.MIN_FIT_REGION:
-            self.log.error('Fitting region too small! The fitting region must be at least {min_reg} A!'.format(min_reg=constants.MIN_FIT_REGION))
-            self.fit_reg = None
-            return
 
 
     @classmethod

@@ -7,7 +7,6 @@ from typing import NamedTuple
 
 from badass.badass_utils import badass_test_suite
 from badass.runner import BadassResult, BadassRunContext, ParamResult
-from badass.utils import plotting
 
 
 # intermediate result
@@ -19,7 +18,6 @@ class MLState(NamedTuple):
 @dataclass
 class MLResult(BadassResult):
     OUT_NAME = 'ml_result'
-    PLOT_FUNC = plotting.plot_ml_results
 
     fp_chain: list[list[float]] = field(default_factory=list)
     ll_chain: list[float] = field(default_factory=list)
@@ -72,9 +70,6 @@ class MLRunner(BadassRunContext):
 
     def __post_init__(self):
         super().__post_init__()
-        if not self.source.valid:
-            return
-
         if self.force_thresh is None:
             self.force_thresh = badass_test_suite.root_mean_squared_error(self.fit_flux, np.full_like(self.fit_flux, np.nanmedian(self.fit_flux)))
         if not np.isfinite(self.force_thresh):

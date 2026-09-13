@@ -10,7 +10,6 @@ from badass.runner.mcmc import MCMCRunner
 from badass.utils.config import BadassConfig
 from badass.utils.logger import BadassLogger, LogObjMixin
 
-from badass.utils import plotting
 
 @dataclass
 class BadassPipeline(LogObjMixin):
@@ -108,8 +107,8 @@ class BadassPipeline(LogObjMixin):
 
         if not self.cfg.fit.skip_bootstrap:
             runner = MLRunner(source=self.source, cfg=self.cfg, log=self.log, outdir=self.outdir)
-            if not runner.source.valid:
-                runner.log.error('Invalid source! Skipping! [%s]'%runner.source.err_log)
+            if not runner.err_log is None:
+                runner.log.error('Invalid source! Skipping! [%s]'%runner.err_log)
                 return None
             runner.run()
             runner.finalize()
@@ -119,8 +118,8 @@ class BadassPipeline(LogObjMixin):
             return self.results
 
         runner = MCMCRunner(source=self.source, cfg=self.cfg, log=self.log, outdir=self.outdir, initial_theta=runner.result.final_theta)
-        if not runner.source.valid:
-            runner.log.error('Invalid source! Skipping!')
+        if not runner.err_log is None:
+            runner.log.error('Invalid source! Skipping! [%s]'%runner.err_log)
             return None
         runner.run()
         runner.finalize()
@@ -129,11 +128,5 @@ class BadassPipeline(LogObjMixin):
 
 
     def finalize(self):
-        if not self.primary:
-            return
-
-        for result in self.results:
-            if result.PLOT_FUNC is None:
-                continue
-            # result.PLOT_FUNC(self.source)
+        pass
 

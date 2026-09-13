@@ -26,7 +26,7 @@ class BlobRegistry:
         self.ctx = ctx
         self.blobs = []
 
-        IndexBlob.register_index_blobs(self, self.ctx.source.wave[0], self.ctx.source.wave[-1])
+        IndexBlob.register_index_blobs(self, self.ctx.fit_reg)
         ContinuumBlob.register_cont_blobs(self)
         ContFracBlob.register_contfrac_blobs(self)
 
@@ -176,7 +176,8 @@ class LineVelBlob(Blob):
         self.name = self.name + '_LINE_VEL'
 
         if (LineVelBlob.interp_ftn is None) and (not ctx is None):
-            LineVelBlob.interp_ftn = interp1d(ctx.source.wave, np.arange(len(ctx.source.wave))*ctx.source.velscale, kind='linear', bounds_error=False)
+            # TODO: is this correct given possible log rebinning?
+            LineVelBlob.interp_ftn = interp1d(ctx.fit_wave, np.arange(len(ctx.fit_wave))*ctx.source.velscale, kind='linear', bounds_error=False)
 
 
     def compute(self, ctx, kwargs):
@@ -198,9 +199,9 @@ class IndexBlob(Blob):
     WAVES: ClassVar[List] = [1350, 3000, 4000, 5100, 7000]
 
     @classmethod
-    def register_index_blobs(cls, reg, wave_min, wave_max):
+    def register_index_blobs(cls, reg, fit_reg):
         for wave in IndexBlob.WAVES:
-            if (wave < wave_min) or (wave > wave_max):
+            if (wave < fit_reg.min) or (wave > fit_reg.max):
                 continue
 
             reg.register_blob(cls(name='INDEX_%d'%wave, wave=wave))
@@ -264,9 +265,9 @@ class ContinuumBlob(Blob):
     def compute(self, ctx, kwargs):
         conts = ContinuumBlob.get_conts_at_idx(ctx, self.idx)
         self.cur_val.update({
-            'F_CONT_TOT_%d'%self.wave: conts['TOTAL']*ctx.source.flux_norm*ctx.source.fit_norm,
-            'F_CONT_AGN_%d'%self.wave: conts['AGN']*ctx.source.flux_norm*ctx.source.fit_norm,
-            'F_CONT_HOST_%d'%self.wave: conts['HOST']*ctx.source.flux_norm*ctx.source.fit_norm,
+            'F_CONT_TOT_%d'%self.wave: conts['TOTAL']*ctx.source.flux_norm*ctx.fit_norm,
+            'F_CONT_AGN_%d'%self.wave: conts['AGN']*ctx.source.flux_norm*ctx.fit_norm,
+            'F_CONT_HOST_%d'%self.wave: conts['HOST']*ctx.source.flux_norm*ctx.fit_norm,
         })
         self.cur_val.update({
             'L_CONT_TOT_%d'%self.wave: flux_to_lum(self.cur_val['F_CONT_TOT_%d'%self.wave], ctx.source.target.z, cosmo=ctx.cosmology),
@@ -340,7 +341,7 @@ class ComponentBlob(Blob):
             return self.cur_val
 
         flux = simpson(self.comp_spec, ComponentBlob.obs_wave)
-        flux = np.abs(flux)*ctx.source.flux_norm*ctx.source.fit_norm
+        flux = np.abs(flux)*ctx.source.flux_norm*ctx.fit_norm
         self.cur_val[self.name+'_FLUX'] = np.log10(flux) if flux != 0.0 else flux
 
         self.cur_val[self.name+'_LUM'] = np.log10(flux_to_lum(flux, ctx.source.target.z, cosmo=ctx.cosmology)) if flux != 0.0 else 0.0
