@@ -3,6 +3,7 @@ from astropy.stats import mad_std
 import copy
 import corner
 import importlib
+from itertools import groupby
 import matplotlib.gridspec as gridspec
 from matplotlib.patches import Patch
 import matplotlib.pyplot as plt
@@ -12,6 +13,13 @@ import numpy as np
 import badass.utils.utils as ba_utils
 
 plt.rcParams['text.usetex'] = False
+plt.rcParams.update({'font.size': 20})
+
+modes = {
+    'light': 'seaborn-v0_8-colorblind',
+    'dark': 'dark_background',
+}
+
 
 def calc_new_center(center, voff):
         return (voff*center)/const.c.to('km/s').value + center
@@ -211,52 +219,55 @@ def plot_mcmc_results(mcmc_result, source):
     return mcmc_fig
 
 
-def plot_best_model(mlresult, source):
-    plt.style.use('dark_background')
+def plot_best_model(result, outdir=None):
+    plot_opts = result.ctx.cfg.io.plots
+    plt.style.use(modes[plot_opts.style])
 
-    fig = plt.figure(figsize=(14,6))
-    gs = gridspec.GridSpec(4, 1)
+    fig = plt.figure(figsize=(16,10))
+    gs = gridspec.GridSpec(5, 1)
     gs.update(wspace=0.0, hspace=0.0) # set the spacing between axes
-    ax1 = plt.subplot(gs[0:3,0])
-    ax2 = plt.subplot(gs[3,0])
+    dm_ax = plt.subplot(gs[0:2,0])
+    line_ax = plt.subplot(gs[2:4,0])
+    resid_ax = plt.subplot(gs[4,0])
 
     linewidth_default = 0.8
     linestyle_default = '-'
 
     ordinal = lambda n: '%d%s' % (n, 'tsnrhtdd'[(n//10%10!=1)*(n%10<4)*n%10::4])
-    apoly_label = ordinal(len([p for p in mlresult.final_params.keys() if p.startswith('APOLY_')])-1)
-    mpoly_label = ordinal(len([p for p in mlresult.final_params.keys() if p.startswith('MPOLY_')])-1)
+    apoly_label = ordinal(len([p for p in result.final_params.keys() if p.startswith('APOLY_')])-1)
+    mpoly_label = ordinal(len([p for p in result.final_params.keys() if p.startswith('MPOLY_')])-1)
 
-    wave = mlresult.meta_components['wave']
-    fit_mask = mlresult.meta_components['mask']
+    wave = result.meta_components.wave
+    fit_mask = result.meta_components.mask
 
-    # (label, key, color, linewidth, linestyle)
+    # (label, key, ax, color, linewidth, linestyle)
     plot_vals = [
-       ('Host/Stellar', 'HOST_GALAXY', 'xkcd:bright green', linewidth_default, linestyle_default),
-       ('AGN Cont.', 'POWER', 'xkcd:red', linewidth_default, '--'),
-       ('%s-order Add. Poly.'%apoly_label, 'APOLY', 'xkcd:bright purple', linewidth_default, linestyle_default),
-       ('%s-order Mult. Poly.'%mpoly_label, 'MPOLY', 'xkcd:lavender', linewidth_default, linestyle_default),
-       ('Narrow FeII', 'NA_OPT_FEII_TEMPLATE', 'xkcd:yellow', linewidth_default, linestyle_default),
-       ('Broad FeII', 'BR_OPT_FEII_TEMPLATE', 'xkcd:orange', linewidth_default, linestyle_default),
-       ('F-transition FeII', 'F_OPT_FEII_TEMPLATE', 'xkcd:yellow', linewidth_default, linestyle_default),
-       ('S-transition FeII', 'S_OPT_FEII_TEMPLATE', 'xkcd:mustard', linewidth_default, linestyle_default),
-       ('G-transition FeII', 'G_OPT_FEII_TEMPLATE', 'xkcd:orange', linewidth_default, linestyle_default),
-       ('Z-transition FeII', 'Z_OPT_FEII_TEMPLATE', 'xkcd:rust', linewidth_default, linestyle_default),
-       ('UV Iron', 'UV_IRON_TEMPLATE', 'xkcd:bright purple', linewidth_default, linestyle_default),
-       ('Balmer Continuum', 'BALMER_CONT', 'xkcd:bright green', linewidth_default, '--'),
+       ('Host/Stellar', 'HOST_GALAXY', dm_ax, 'xkcd:bright green', linewidth_default, linestyle_default),
+       ('AGN Cont.', 'POWER', dm_ax, 'xkcd:red', linewidth_default, '--'),
+       ('%s-order Add. Poly.'%apoly_label, 'APOLY', dm_ax, 'xkcd:bright purple', linewidth_default, linestyle_default),
+       ('%s-order Mult. Poly.'%mpoly_label, 'MPOLY', dm_ax, 'xkcd:lavender', linewidth_default, linestyle_default),
+       ('Narrow FeII', 'NA_OPT_FEII_TEMPLATE', line_ax, 'xkcd:yellow', linewidth_default, linestyle_default),
+       ('Broad FeII', 'BR_OPT_FEII_TEMPLATE', line_ax, 'xkcd:orange', linewidth_default, linestyle_default),
+       ('F-transition FeII', 'F_OPT_FEII_TEMPLATE', line_ax, 'xkcd:yellow', linewidth_default, linestyle_default),
+       ('S-transition FeII', 'S_OPT_FEII_TEMPLATE', line_ax, 'xkcd:mustard', linewidth_default, linestyle_default),
+       ('G-transition FeII', 'G_OPT_FEII_TEMPLATE', line_ax, 'xkcd:orange', linewidth_default, linestyle_default),
+       ('Z-transition FeII', 'Z_OPT_FEII_TEMPLATE', line_ax, 'xkcd:rust', linewidth_default, linestyle_default),
+       ('UV Iron', 'UV_IRON_TEMPLATE', line_ax, 'xkcd:bright purple', linewidth_default, linestyle_default),
+       ('Balmer Continuum', 'BALMER_CONT', line_ax, 'xkcd:bright green', linewidth_default, '--'),
     ]
 
-    data = mlresult.meta_components['data']
-    model = mlresult.meta_components['model']
-    noise = mlresult.meta_components['noise']
-    resid = mlresult.meta_components['resid']
-    ax1.plot(wave, data, color='white', linewidth=2.0, linestyle=linestyle_default, label='Data')
-    ax1.plot(wave, model, color='xkcd:bright red', linewidth=1.2, linestyle=linestyle_default, label='Model')
+    data = result.meta_components.data
+    model = result.meta_components.model
+    noise = result.meta_components.noise
+    resid = result.meta_components.resid
+    data_color = 'white' if plot_opts.style == 'dark' else 'black'
+    dm_ax.step(wave, data, color=data_color, lw=0.7, linestyle=linestyle_default, label='Data')
+    dm_ax.plot(wave, model, color='xkcd:bright red', lw=1.5, linestyle=linestyle_default, label='Model')
 
-    for label, key, color, linewidth, linestyle in plot_vals:
-        if not key in mlresult.components:
+    for label, key, ax, color, linewidth, linestyle in plot_vals:
+        if not key in result.components:
             continue
-        ax1.plot(wave, mlresult.components[key], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
+        ax.plot(wave, result.components[key], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
 
     # (label, color, linewidth, linestyle)
     line_params = {
@@ -273,29 +284,36 @@ def plot_best_model(mlresult, source):
             for child in line.children:
                 add_line(child)
             return
-        if (line.prefix == '') or (not line.name in mlresult.components):
+        if (line.prefix == '') or (not line.name in result.components):
             return
 
         label, color, linewidth, linestyle = line_params[line.prefix.lower()]
-        ax1.plot(wave, mlresult.components[line.name], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
+        line_ax.plot(wave, result.components[line.name], color=color, linewidth=linewidth, linestyle=linestyle, label=label)
 
-    for line in mlresult.ctx.line_list:
+    for line in result.ctx.line_list:
         add_line(line)
 
-    ibad = [i for i in range(len(wave)) if i not in fit_mask]
-    for m in ibad:
-        ax1.axvspan(wave[m], wave[m], alpha=0.25, color='xkcd:lime green')
-    Patch(facecolor='xkcd:lime green', alpha=0.25, label='Bad pixels')
+    masks = []
+    for val, _group in groupby(enumerate(fit_mask), key=lambda x: x[1]):
+        if val: # want False vals for plotting the mask
+            continue
+        group = list(_group)
+        masks.append((group[0][0],group[-1][0]))
 
-    ax1.set_xlim(wave[0], wave[-1])
-    ax1.set_xticklabels([])
-    if source.flux_norm == 1.0:
-        ax1.set_ylabel(r'$f_\lambda$ (erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)', fontsize=10)
-    else:
-        ax1.set_ylabel(r'$f_\lambda$ ($10^{%d}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)'%int(np.log10(source.flux_norm)), fontsize=10)
-    ax1.legend(loc='upper right', fontsize=8)
-    ax1.set_title(r'%s'%source.name, fontsize=12)
+    for mask in masks:
+        dm_ax.axvspan(wave[mask[0]], wave[mask[1]], alpha=0.3, color='xkcd:cloudy blue')
+        line_ax.axvspan(wave[mask[0]], wave[mask[1]], alpha=0.3, color='xkcd:cloudy blue')
+    Patch(facecolor='xkcd:cloudy blue', alpha=0.3, label='Bad pixels')
 
+    for ax in [dm_ax, line_ax]:
+        ax.set_xlim(wave[0], wave[-1])
+        ax.set_xticklabels([])
+        if result.ctx.source.flux_norm == 1.0:
+            ax.set_ylabel(r'$f_\lambda$ (erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)')
+        else:
+            ax.set_ylabel(r'$f_\lambda$ ($10^{%d}$ erg cm$^{-2}$ s$^{-1}$ $\mathrm{\AA}^{-1}$)'%int(np.log10(result.ctx.source.flux_norm)))
+    dm_ax.legend()
+    dm_ax.set_title(r'%s'%result.ctx.source.name)
 
 
     # Residuals
@@ -303,30 +321,32 @@ def plot_best_model(mlresult, source):
     sigma_noise = np.nanstd(noise)
     noise_label = '%0.4f'%sigma_noise if abs(sigma_noise) > 1e-4 else '%0.4e'%sigma_noise
     resid_label = '%0.4f'%sigma_noise if abs(sigma_resid) > 1e-4 else '%0.4e'%sigma_resid
-    ax2.plot(wave, noise, linewidth=0.5, color='xkcd:bright orange', label=r'$\sigma_{\mathrm{noise}}=%s$'%noise_label)
-    ax2.plot(wave, resid, linewidth=0.5, color='white', label=r'$\sigma_{\mathrm{resid}}=%s$'%resid_label)
-    ax2.axhline(0.0, linewidth=1.0, color='white', linestyle='--')
+    resid_ax.plot(wave, noise, linewidth=0.5, color='xkcd:bright orange', label=r'$\sigma_{\mathrm{noise}}=%s$'%noise_label)
+    resid_ax.plot(wave, resid, linewidth=0.5, color=data_color, label=r'$\sigma_{\mathrm{resid}}=%s$'%resid_label)
+    resid_ax.axhline(0.0, linewidth=1.0, color=data_color, linestyle='--')
 
     ticks = {}
     for v in [1,-1,3,-3]:
         s = v*sigma_resid
-        ax2.axhline(s, color='grey', linestyle='--', linewidth=0.5, alpha=0.6)
+        resid_ax.axhline(s, color='grey', linestyle='--', linewidth=0.5, alpha=0.6)
         ticks[s] = r'$%d\sigma$'%v
-    ax2.set_xlim(wave[0], wave[-1])
-    ax2.set_yticks(list(ticks.keys()), list(ticks.values()))
+    resid_ax.set_xlim(wave[0], wave[-1])
+    resid_ax.set_yticks(list(ticks.keys()), list(ticks.values()))
 
     for center in line_centers:
-        ax1.axvline(center, linestyle='--', linewidth=1.0, color='grey', alpha=0.6)
-        ax2.axvline(center, linestyle='--', linewidth=1.0, color='grey', alpha=0.6)
+        for ax in [dm_ax, line_ax, resid_ax]:
+            ax.axvline(center, linestyle='--', linewidth=1.0, color='grey', alpha=0.6)
 
-    ax2.set_ylabel(r'$\Delta f_\lambda$', fontsize=12)
-    ax2.set_xlabel(r'Wavelength, $\lambda\;(\mathrm{\AA})$', fontsize=12)
-    ax2.legend(loc='upper right', fontsize=8)
+    resid_ax.set_ylabel(r'$\Delta f_\lambda$')
+    resid_ax.set_xlabel(r'Wavelength, $\lambda\;(\mathrm{\AA})$')
 
     fig.subplots_adjust(hspace=1.0)
     fig.tight_layout()
 
-    return fig
+    if not outdir is None:
+        plt.savefig(outdir.joinpath('best_fit_model.png'))
+    else:
+        return fig
 
 
 def plotly_best_fit(mlstore):

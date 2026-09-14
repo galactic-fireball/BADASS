@@ -125,15 +125,9 @@ class SurveyPipeline(BadassPipeline):
         return
         # TODO: fix these
         pd.DataFrame().to_csv(self.outdir.joinpath('survey_results.csv'), index=False)
-        self.make_source_plots()
         self.make_survey_csv()
         self.make_report_html()
         self.make_report_pdf()
-
-
-    def make_source_plots(self):
-        for res in self.source_results.values():
-            res.figures['ml_fit'] = plotting.plot_ml_results(res, self.single_sources[res.name][0])
 
 
     def make_survey_csv(self):

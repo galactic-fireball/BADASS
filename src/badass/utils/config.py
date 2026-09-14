@@ -78,6 +78,11 @@ def to_path(v:Any) -> pathlib.Path:
         raise ValueError('Could not convert %s to Path'%v)
 
 
+class PlotOptions(CustomBaseModel):
+    style: Literal['dark', 'light'] = Field('dark', description='Plotting style')
+    best_model: bool = Field(True, description='Plot the best model')
+
+
 class IOOptions(CustomBaseModel):
     infmt: Literal[*(consts.SUPPORTED_INSTRUMENTS+['default',])] = Field(None, json_schema_extra={'required':True}, description='The format of the input file. Currently supported options: `[\'sdss\', \'muse\', \'nirspec\', \'miri\']`')
     output_dir: Annotated[DirectoryPath, BeforeValidator(to_path)] = Field(None, description='The output directory of the BADASS results, logs, plots, etc.')
@@ -91,6 +96,7 @@ class IOOptions(CustomBaseModel):
     grating: str = Field(None, description='The grating of the provided NIRSpec data cube.')
     disperser: str = Field(None, description='The disperser of the provided NIRSpec data cube.')
     dust_cache: Annotated[DirectoryPath | None, BeforeValidator(to_path)] = Field(None, description='Directory path to cache of Irsa dust extinction data.')
+    plots: PlotOptions = Field(default_factory=PlotOptions)
 
 
 def validate_fitreg(v:list|str) -> list:

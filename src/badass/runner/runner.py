@@ -17,6 +17,7 @@ from badass.components.blobs import BlobRegistry
 from badass.components.templates.common import initialize_templates
 from badass.components.spectral_lines.spectral_line import SpectralLine
 from badass.input.input import BadassSpec
+from badass.utils import plotting
 from badass.utils.config import BadassConfig
 import badass.utils.constants as bc
 from badass.utils.logger import BadassLogger, LogObjMixin
@@ -205,7 +206,8 @@ class BadassResult:
 
 
     def make_result_plots(self):
-        pass
+        if self.ctx.cfg.io.plots.best_model:
+            plotting.plot_best_model(self, outdir=self.outdir)
 
 
 class FitReg(NamedTuple):
