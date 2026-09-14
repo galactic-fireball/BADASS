@@ -136,7 +136,7 @@ class FitArea(CustomBaseModel):
     # TODO: after validator to change spaxel to spaxels for consistency
     type: str = None
     spaxels: dict | list | str = Field(default=None, alias=AliasChoices('spaxels','spaxel'))
-    bins: BinSpec = Field(default=BinSpec(), alias=AliasChoices('bins','bin'))
+    bins: BinSpec = Field(default_factory=BinSpec, alias=AliasChoices('bins','bin'))
     apertures: ApSpec | list[ApSpec] = Field(default=None, alias=AliasChoices('apertures','aperture'))
     plot_input: bool = False
 
@@ -149,10 +149,10 @@ class FitOptions(CustomBaseModel):
     n_basinhop: NonNegativeInt = Field(25, description='Number of successive `niter_success` times the basinhopping algorithm needs to achieve a solution. The fit becomes much better with more success times, however this can increase the time to a solution significantly.')
     max_like_niter: NonNegativeInt = Field(10, description='Number of bootstrapping iterations to perform after the initial basinhopping fit. This is a means to obtain uncertainties on parameters without performing MCMC fitting, however, do not produce as robust uncertainties as MCMC.')
     # TODO: fit_area specific definition
-    fit_area: FitArea = Field(default=FitArea(), description='Defines the area to be fit for data cubes. See `examples/muse_examples.py` for usage.')
+    fit_area: FitArea = Field(default_factory=FitArea, description='Defines the area to be fit for data cubes. See `examples/muse_examples.py` for usage.')
     reweighting: bool = Field(False, description='If `True`, BADASS will reweight the noise vector to achieve a reduced chi-squared ~ 1. This is done after the initial basinhopping fit, and applied to any bootstrapped uncertainties and MCMC fitting performed afterward. This does not affect the chi-squared ratio metric used in line and configuration testing, but does effect the amplitude-over-noise and SNR calculations in BADASS.')
     fit_stat: str = Field('ML', description='The fit statistic used for the likelihood. Options:\n\n* `\'ML\'` for standard maximum likelihood (pixels weighted by noise with no noise scaling).\n* `\'OLS\'` for ordinary least-squares fitting (all pixels weighted by same amount).')
-    cosmology: Cosmology = Field(default=Cosmology(), description='The flat Lambda-CDM cosmology assumed for calculating luminosities from fluxes.')
+    cosmology: Cosmology = Field(default_factory=Cosmology, description='The flat Lambda-CDM cosmology assumed for calculating luminosities from fluxes.')
     test_models: bool = Field(False, description='Performs tests for lines. Options are specified in `test_options`.')
     mask_emline: bool = Field(False, description='Mask any significant absorption and emission features relative to the continuum. This uses an automated iterative moving median filter of various sizes to detect significant flux differences between window sizes. Good for continuum fitting but tends to over mask lots of features near the edges of the spectrum.')
     mask_bad_pix: bool = Field(False, description='Mask pixels which the specified instrument has flagged as bad due to sky line subtraction or cosmic rays.')
@@ -294,16 +294,6 @@ class K10_Options(OptFeIIOptions):
     temp: NonNegativeParam = {'init': 10000.0, 'plim':(2000.0, 20000.0)}
 
 
-class PlotOptions(CustomBaseModel):
-    html: bool = True
-    param_hist: bool = True
-    corner: bool = True
-
-
-class OutputOptions(CustomBaseModel):
-    write_chain: bool = True
-
-
 class SpectralLine(CustomBaseModel):
     name: str = ''
     type: Literal['narrow', 'broad', 'absorb', 'combined'] = 'narrow'
@@ -366,25 +356,22 @@ class TestOptions(CustomBaseModel):
 
 
 class BadassConfig(CustomBaseModel):
-    io: IOOptions = Field(default=IOOptions(), alias=AliasChoices('io','io_options'))
-    fit: FitOptions = Field(default=FitOptions(), alias=AliasChoices('fit','fit_options'))
-    mcmc: MCMCOptions = Field(default=MCMCOptions(), alias=AliasChoices('mcmc','mcmc_options'))
-    comp: CompOptions = Field(default=CompOptions(), alias=AliasChoices('comp','comp_options'))
+    io: IOOptions = Field(default_factory=IOOptions, alias=AliasChoices('io','io_options'))
+    fit: FitOptions = Field(default_factory=FitOptions, alias=AliasChoices('fit','fit_options'))
+    mcmc: MCMCOptions = Field(default_factory=MCMCOptions, alias=AliasChoices('mcmc','mcmc_options'))
+    comp: CompOptions = Field(default_factory=CompOptions, alias=AliasChoices('comp','comp_options'))
 
-    power: PowerOptions = Field(default=PowerOptions(), alias=AliasChoices('power','power_options'))
-    poly: PolyOptions = Field(default=PolyOptions(), alias=AliasChoices('poly','poly_options'))
-    losvd: LOSVDOptions = Field(default=LOSVDOptions(), alias=AliasChoices('losvd','losvd_options'))
-    host: HostOptions = Field(default=HostOptions(), alias=AliasChoices('host','host_options'))
-    optfeii: VC04_Options | K10_Options = Field(default=VC04_Options(), discriminator='template', alias=AliasChoices('optfeii','opt_feii_options'))
+    power: PowerOptions = Field(default_factory=PowerOptions, alias=AliasChoices('power','power_options'))
+    poly: PolyOptions = Field(default_factory=PolyOptions, alias=AliasChoices('poly','poly_options'))
+    losvd: LOSVDOptions = Field(default_factory=LOSVDOptions, alias=AliasChoices('losvd','losvd_options'))
+    host: HostOptions = Field(default_factory=HostOptions, alias=AliasChoices('host','host_options'))
+    optfeii: VC04_Options | K10_Options = Field(default_factory=VC04_Options, discriminator='template', alias=AliasChoices('optfeii','opt_feii_options'))
 
-    plot: PlotOptions = Field(default=PlotOptions(), alias=AliasChoices('plot', 'plot_options'))
-    out: OutputOptions = Field(default=OutputOptions(), alias=AliasChoices('out', 'output_options'))
+    narrow: NarrowLine = Field(default_factory=NarrowLine, alias=AliasChoices('narrow','narrow_options'))
+    broad: BroadLine = Field(default_factory=BroadLine, alias=AliasChoices('broad','broad_options'))
+    absorp: AbsorpLine = Field(default_factory=AbsorpLine, alias=AliasChoices('absorp','absorp_options'))
 
-    narrow: NarrowLine = Field(default=NarrowLine(), alias=AliasChoices('narrow','narrow_options'))
-    broad: BroadLine = Field(default=BroadLine(), alias=AliasChoices('broad','broad_options'))
-    absorp: AbsorpLine = Field(default=AbsorpLine(), alias=AliasChoices('absorp','absorp_options'))
-
-    test: TestOptions = Field(default=TestOptions(), alias=AliasChoices('test', 'test_options'))
+    test: TestOptions = Field(default_factory=TestOptions, alias=AliasChoices('test', 'test_options'))
 
     user_lines: list[SpecLine] = Field(default_factory=list) # TODO: | SpectralLine
     user_constraints: list[list[str | Number]] = Field(default_factory=list)
@@ -403,7 +390,6 @@ class BadassConfig(CustomBaseModel):
 
     @classmethod
     def from_dict(cls, input_dict):
-        print(input_dict)
         return cls(**input_dict)
 
 
