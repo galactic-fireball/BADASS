@@ -123,7 +123,7 @@ class MCMCRunner(BadassRunContext):
 
     def __post_init__(self):
         super().__post_init__()
-        if not self.source.valid:
+        if not self.err_log is None:
             return
 
         for k,v in self.cfg.mcmc.model_dump().items():

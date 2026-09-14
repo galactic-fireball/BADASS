@@ -341,13 +341,11 @@ class BadassRunContext(LogObjMixin):
         if isinstance(user_fit_reg, (tuple,list)):
             user_fit_reg = FitReg(*user_fit_reg)
             if user_fit_reg.min > user_fit_reg.max:
-                self.log.error('Fitting boundaries overlap!')
-                self.fit_reg = None
+                self.err_log = 'Fitting boundaries overlap!'
                 return
 
             if (user_fit_reg.min > self.fit_reg.max) or (user_fit_reg.max < self.fit_reg.min):
-                self.log.error('Fitting region not available!')
-                self.fit_reg = None
+                self.err_log = 'Fitting region not available!'
                 return
 
             if (user_fit_reg.min < self.fit_reg.min) or (user_fit_reg.max > self.fit_reg.max):
@@ -360,8 +358,7 @@ class BadassRunContext(LogObjMixin):
             self.log.info('Auto setting fitting region')
             self.fit_reg = FitReg(np.max([user_fit_reg.min, self.fit_reg.min]), np.min([user_fit_reg.max, self.fit_reg.max]))
         else:
-            self.log.error('Invalid fitting region')
-            self.fit_reg = None
+            self.err_log = 'Invalid fitting region'
             return
 
         # The lower limit of the spectrum must be the lower limit of our stellar templates
@@ -376,8 +373,7 @@ class BadassRunContext(LogObjMixin):
 
         self.log.info('New fitting region is {fr}'.format(fr=self.fit_reg))
         if (self.fit_reg.max - self.fit_reg.min) < bc.MIN_FIT_REGION:
-            self.log.error('Fitting region too small! The fitting region must be at least {min_reg} A!'.format(min_reg=bc.MIN_FIT_REGION))
-            self.fit_reg = None
+            self.err_log = 'Fitting region too small! The fitting region must be at least {min_reg} A!'.format(min_reg=bc.MIN_FIT_REGION)
             return
 
         reg_mask = ((self.fit_wave >= self.fit_reg.min) & (self.fit_wave <= self.fit_reg.max))
