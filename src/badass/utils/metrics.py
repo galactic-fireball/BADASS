@@ -21,9 +21,10 @@ def r_chi_squared(data, model, noise, npar):
     # Simple calculation of reduced Chi-squared statistic for a single fit
 
     # Degrees of freedom (number of data minus free fitted parameters)
-    nu = len(data)-npar
-    rchi2 = np.nansum((data-model)**2/noise**2)/nu
-    return rchi2
+    nu = np.sum(np.isfinite(data) & np.isfinite(model)) - npar
+    chi2 = np.nansum((data-model)**2/noise**2)
+    rchi2 = chi2 / nu
+    return chi2, rchi2
 
 
 def root_mean_squared_error(data, model):
@@ -368,10 +369,28 @@ def collect_test_metrics(fit_ctx_A, fit_ctx_B):
     return metrics
 
 
-
-
 def thresholds_met(test_cfg, cur_metrics, fit_results):
     pass_list = [cur_metrics[metric] >= thresh for metric, thresh in test_cfg.metrics.items() if metric in cur_metrics]
     if 'AON' in test_cfg.metrics: pass_list.append(fit_results['aon'] >= test_cfg.metrics['AON']) # special case
     mode_func = {'any':np.any, 'all':np.all}[test_cfg.conv_mode]
     return mode_func(pass_list)
+
+
+def get_fit_metrics(result):
+    fit_mask = result.meta_components.mask
+    data = result.meta_components.data[fit_mask]
+    model = result.meta_components.model[fit_mask]
+    noise = result.meta_components.noise[fit_mask]
+
+    npar = len(result.final_theta)
+    chi2, rchi2 = r_chi_squared(data, model, noise, npar)
+    result.metrics['CHI2'] = chi2
+    result.metrics['RCHI2'] = rchi2
+
+    r2 = r_squared(data, model)
+    result.metrics['R2'] = r2
+
+    # TODO: add other metrics:
+    #   - Kolmogorov-Smirnov (K-S), Cramer-von Mises (C-vM), Anderson-Darling (A-D), Kullback-Leibler distance measure
+    #       - comparing both data-to-model, and residuals-to-N(0,1)
+
