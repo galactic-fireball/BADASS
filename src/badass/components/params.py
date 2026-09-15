@@ -62,7 +62,7 @@ class Parameter(Finalizable):
 
 
     def finalize(self, ctx, val=None):
-        tval = val if val is None else self.value
+        tval = val if not val is None else self.value
         res_val = super().finalize(ctx,val=tval)
         if val is None:
             self.value = res_val
