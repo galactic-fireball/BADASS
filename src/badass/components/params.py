@@ -33,7 +33,7 @@ class Parameter(Finalizable):
             pname = kwargs.get('name', None)
             kwargs['finalizers'] = Finalizable.get_finalizers(pname)
 
-        # dict containing and init and plim values -> FreeParameter
+        # dict containing init and plim values -> FreeParameter
         if isinstance(expr, dict):
             kwargs.update(expr)
             return FreeParameter.from_dict(**kwargs)
