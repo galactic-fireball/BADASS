@@ -17,7 +17,7 @@ from badass.components.blobs import BlobRegistry
 from badass.components.templates.common import initialize_templates
 from badass.components.spectral_lines.spectral_line import SpectralLine
 from badass.input.input import BadassSpec
-from badass.utils import plotting
+from badass.utils import metrics, plotting
 from badass.utils.config import BadassConfig
 import badass.utils.constants as bc
 from badass.utils.logger import BadassLogger, LogObjMixin
@@ -81,6 +81,7 @@ class BadassResult:
     param_cls = ParamResult
     parameter_file = 'par_table.fits'
     components_file = 'best_model_components.fits'
+    best_fit_params_file = 'best_fit_params.txt'
 
     ctx: None
     name: str
@@ -177,32 +178,55 @@ class BadassResult:
 
 
     def perform_metrics(self):
-        # METRICS - TODO
-        # self.metrics = badass_test_suite.get_fit_test_results(ctx)
-        pass
+        metrics.get_fit_metrics(self)
 
 
     def output(self):
         self.output_par_table()
         self.output_comps()
+        if self.ctx.cfg.io.outputs.print_results:
+            self.print_results()
+
         self.make_result_plots()
 
 
     def output_par_table(self):
-        table = Table([param.to_dict() for param in self.final_params.values()], meta={
+        metadata = {
             'z': self.ctx.source.target.z,
             'med_noise': np.nanmedian(self.ctx.fit_err),
             'velscale': self.ctx.source.velscale,
             'fit_norm': self.ctx.fit_norm,
             'flux_norm': self.ctx.source.flux_norm,
-        })
+        }
+        metadata = metadata | self.metrics
 
+        table = Table([param.to_dict() for param in self.final_params.values()], meta=metadata)
         table.write(self.outdir.joinpath(self.parameter_file), overwrite=True)
 
 
     def output_comps(self):
         table = Table(self.components | asdict(self.meta_components))
         table.write(self.outdir.joinpath(self.components_file), overwrite=True)
+
+
+    def print_results(self):
+        params = list(self.final_params.values())
+        if len(params) == 0:
+            return
+        headers = [k for k in params[0].to_dict()]
+        table = [list(p.to_dict().values()) for p in params]
+        pt = tabulate(table, headers, tablefmt='grid')
+
+        headers = ['Metric', 'Value']
+        table = [(m[0], '%0.4f'%m[1]) for m in self.metrics.items()]
+        mt = tabulate(table, headers, tablefmt='grid')
+
+        with open(self.outdir.joinpath(self.best_fit_params_file), 'w') as outfile:
+            outfile.write('**** Best Fit Parameters ****\n\n')
+            outfile.write(pt)
+            outfile.write('\n\n\n')
+            outfile.write('**** Fit Metrics ****\n\n')
+            outfile.write(mt)
 
 
     def make_result_plots(self):

@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import numpy as np
 from typing import Callable, List
 
 
@@ -45,6 +46,6 @@ class Finalizable:
         res_val = val
         for finalizer in self.finalizers:
             res_val = finalizer(ctx, val)
-        ctx.log.debug('Finalizing: %s [%f -> %f]'%(self.name,val,res_val))
+        ctx.log.debug('Finalizing: %s [%f -> %f]'%(self.name,np.nanmedian(val),np.nanmedian(res_val)))
         return res_val
 

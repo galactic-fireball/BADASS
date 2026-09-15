@@ -7,9 +7,8 @@ import pathlib
 from scipy import stats
 from typing import Callable, List, Union
 
-from badass.badass_utils import badass_test_suite
 from badass.runner import BadassResult, BadassRunContext, ParamResult
-from badass.utils import plotting
+from badass.utils import plotting, metrics
 import badass.utils.utils as ba_utils
 
 
@@ -99,6 +98,8 @@ class MCMCResult(BadassResult):
         for idx, bname in enumerate(self.ctx.blob_order):
             self.final_params[bname] = MCMCParamResult.from_chain(bname, blob_chains[bname])
 
+        self.metrics['LOG_LIKE'] = ParamResult.from_chain('LOG_LIKE', blob_chains['LOG_LIKE']).best_fit
+
 
 @dataclass(kw_only=True)
 class MCMCRunner(BadassRunContext):
@@ -135,7 +136,7 @@ class MCMCRunner(BadassRunContext):
         self.nwalkers = max(self.nwalkers, 2*ndim)
 
         # The blob_dtypes order needs to match what is returned from lnprob_wrapper
-        self.blob_order = ['LOG_LIKE', 'R_SQUARED', 'RCHI2_RATIO'] + self.blob_reg.get_blob_names()
+        self.blob_order = ['LOG_LIKE', 'R_SQUARED', 'RCHI2'] + self.blob_reg.get_blob_names()
         blob_dtypes = [(bname, np.float32) for bname in self.blob_order]
         self.sampler = emcee.EnsembleSampler(self.nwalkers, ndim, self.lnprob_wrapper, blobs_dtype=blob_dtypes, backend=self.result.backend)
 
@@ -178,8 +179,8 @@ class MCMCRunner(BadassRunContext):
         blobs_dict = self.blob_reg.get_blobs_dict()
         blobs_dict['LOG_LIKE'] = ll
 
-        blobs_dict['R_SQUARED'] = badass_test_suite.r_squared(self.fit_flux, self.model)
-        blobs_dict['RCHI2_RATIO'] = badass_test_suite.r_chi_squared(self.fit_flux, self.model, self.fit_err, self.param_reg.free_count)
+        blobs_dict['R_SQUARED'] = metrics.r_squared(self.fit_flux, self.model)
+        blobs_dict['RCHI2'] = metrics.r_chi_squared(self.fit_flux, self.model, self.fit_err, self.param_reg.free_count)[1]
 
         blobs = [blobs_dict[bname] for bname in self.blob_order]
 

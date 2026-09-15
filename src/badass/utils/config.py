@@ -83,6 +83,10 @@ class PlotOptions(CustomBaseModel):
     best_model: bool = Field(True, description='Plot the best model')
 
 
+class OutputOptions(CustomBaseModel):
+    print_results: bool = Field(True, description='Output a human-readable file of the results')
+
+
 class IOOptions(CustomBaseModel):
     infmt: Literal[*(consts.SUPPORTED_INSTRUMENTS+['default',])] = Field(None, json_schema_extra={'required':True}, description='The format of the input file. Currently supported options: `[\'sdss\', \'muse\', \'nirspec\', \'miri\']`')
     output_dir: Annotated[DirectoryPath, BeforeValidator(to_path)] = Field(None, description='The output directory of the BADASS results, logs, plots, etc.')
@@ -97,6 +101,7 @@ class IOOptions(CustomBaseModel):
     disperser: str = Field(None, description='The disperser of the provided NIRSpec data cube.')
     dust_cache: Annotated[DirectoryPath | None, BeforeValidator(to_path)] = Field(None, description='Directory path to cache of Irsa dust extinction data.')
     plots: PlotOptions = Field(default_factory=PlotOptions)
+    outputs: OutputOptions = Field(default_factory=OutputOptions)
 
 
 def validate_fitreg(v:list|str) -> list:

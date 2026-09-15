@@ -5,8 +5,8 @@ import scipy.optimize as op
 from tabulate import tabulate
 from typing import NamedTuple
 
-from badass.badass_utils import badass_test_suite
 from badass.runner import BadassResult, BadassRunContext, ParamResult
+from badass.utils import metrics
 
 
 # intermediate result
@@ -61,6 +61,9 @@ class MLResult(BadassResult):
         for blob in self.ctx.blob_reg.get_blobs_dict().keys():
             self.final_params[blob] = ParamResult.from_chain(blob, self.blobs_chain[blob])
 
+        # log-likelihood
+        self.metrics['LOG_LIKE'] = ParamResult.from_chain('LOG_LIKE', self.ll_chain).best_fit
+
 
 @dataclass
 class MLRunner(BadassRunContext):
@@ -71,7 +74,7 @@ class MLRunner(BadassRunContext):
     def __post_init__(self):
         super().__post_init__()
         if self.force_thresh is None:
-            self.force_thresh = badass_test_suite.root_mean_squared_error(self.fit_flux, np.full_like(self.fit_flux, np.nanmedian(self.fit_flux)))
+            self.force_thresh = metrics.root_mean_squared_error(self.fit_flux, np.full_like(self.fit_flux, np.nanmedian(self.fit_flux)))
         if not np.isfinite(self.force_thresh):
             self.force_thresh = np.inf
 
@@ -93,7 +96,7 @@ class MLRunner(BadassRunContext):
         param_bounds = self.param_reg.get_fit_bounds()
 
         n_basinhop = self.cfg.fit.n_basinhop
-        lowest_rmse = badass_test_suite.root_mean_squared_error(self.fit_flux, np.zeros(len(self.fit_flux)))
+        lowest_rmse = metrics.root_mean_squared_error(self.fit_flux, np.zeros(len(self.fit_flux)))
         callback_ftn = None
         if np.isfinite(self.force_thresh):
             self.log.debug('Required Maximum Likelihood RMSE threshold: %0.4f' % (self.force_thresh))
@@ -121,7 +124,7 @@ class MLRunner(BadassRunContext):
                     accepted_count += 1
 
                 self.fit_model()
-                rmse = badass_test_suite.root_mean_squared_error(self.fit_flux, self.model)
+                rmse = metrics.root_mean_squared_error(self.fit_flux, self.model)
                 lowest_rmse = min(lowest_rmse, rmse)
 
                 accept_thresh = 0.001 # Define an acceptance threshold
@@ -190,9 +193,9 @@ class MLRunner(BadassRunContext):
         if not self.cfg.fit.reweighting:
             return
         self.log.debug('Reweighting noise to achieve a reduced chi-squared ~ 1')
-        cur_rchi2 = badass_test_suite.r_chi_squared(self.fit_flux, self.model, self.fit_err, self.param_reg.free_count)
+        cur_rchi2 = metrics.r_chi_squared(self.fit_flux, self.model, self.fit_err, self.param_reg.free_count)
         self.log.debug('\tCurrent reduced chi-squared = %0.5f' % cur_rchi2)
         self.fit_err = self.fit_err*np.sqrt(cur_rchi2)
-        new_rchi2 = badass_test_suite.r_chi_squared(self.fit_flux, self.model, self.fit_err, self.param_reg.free_count)
+        new_rchi2 = metrics.r_chi_squared(self.fit_flux, self.model, self.fit_err, self.param_reg.free_count)
         self.log.debug('\tNew reduced chi-squared = %0.5f' % new_rchi2)
 
