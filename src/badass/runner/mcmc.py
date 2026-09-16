@@ -54,13 +54,17 @@ class MCMCParamResult(ParamResult):
 
     @classmethod
     def from_data(cls, data):
-        for conf in ['68', '95']:
-            prefix = 'ci_'+conf+'_'
-            ci = ConfidenceInterval(**{f.name:data[prefix+f.name] for f in fields(ConfidenceInterval)})
-            for f in fields(ConfidenceInterval): data.pop(prefix+f.name)
+        for conf in [68, 95]:
+            prefix = 'ci_'+str(conf)+'_'
+            ci = ConfidenceInterval(conf=conf, **{f.name:data[prefix+f.name] for f in fields(ConfidenceInterval) if prefix+f.name in data})
+            for f in fields(ConfidenceInterval): data.pop(prefix+f.name, None)
             data[prefix[:-1]] = ci
         return cls(**data)
 
+
+    def to_dict(self):
+        res_dict = super().to_dict()
+        return {k:v for k,v in res_dict.items() if not 'conf' in k}
 
 
 @dataclass
@@ -214,6 +218,11 @@ class MCMCRunner(BadassRunContext):
                 self.log.info('MCMC iteration: %d' % it)
                 if self.auto_stop and self.check_convergence():
                     break
+
+        self.log.info('MCMC complete!')
+        if self.burn_in >= self.sampler.iteration:
+            self.log.info('burn in is larger than chain length! Using 50% of chain length for burn-in')
+            self.burn_in = int(0.5 * self.sampler.get_chain().shape[0])
 
 
     def mean_conv(self, sampler, tau, tol):
