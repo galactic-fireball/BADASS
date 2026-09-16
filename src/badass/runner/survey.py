@@ -9,7 +9,6 @@ import shutil
 from tabulate import tabulate
 
 from badass.runner.pipeline import BadassPipeline
-from badass.utils import plotting
 
 
 
@@ -122,50 +121,43 @@ class SurveyPipeline(BadassPipeline):
 
 
     def finalize(self):
-        return
-        # TODO: fix these
-        pd.DataFrame().to_csv(self.outdir.joinpath('survey_results.csv'), index=False)
         self.make_survey_csv()
         self.make_report_html()
         self.make_report_pdf()
 
 
-    def make_survey_csv(self):
-        data_rows = []
-        for res in self.source_results.values():
-            row_data = {'source': res.name}
-            for param, param_dict in res.params.items():
-                std_label = param + '_STD'
-                if abs(param_dict['med']) > 1e-4:
-                    row_data[param] = round(param_dict['med'], 4)
-                    row_data[std_label] = round(param_dict['std'], 4)
-                else:
-                    row_data[param] = param_dict['med']
-                    row_data[std_label] = param_dict['std']
-            data_rows.append(row_data)
+    def get_survey_data(self):
+        data_records = []
+        bf_results = {name: res[-1] for name, res in self.source_results.items()}
 
-        df = pd.DataFrame(data_rows)
-        df.to_csv(self.cfg.io.output_dir.joinpath('survey_results.csv'), index=False)
+        for name, res in bf_results.items():
+            res_record = {'Source': name}
+            for param in res.final_params.values():
+                res_record = res_record | param.to_record()
+            data_records.append(res_record)
+
+        return pd.DataFrame(data_records)
 
 
-    def make_report_html(self):
+    def make_survey_csv(self, df=None):
+        if df is None: df = self.get_survey_data()
+        df.to_csv(self.outdir.joinpath('survey_results.csv'), index=False)
+
+
+    def make_report_html(self, df=None):
         table_cols = 3
 
         html = REPORT_HTML_HEADER
         environment = jinja2.Environment()
         template = environment.from_string(REPORT_HTML_TEMPLATE)
 
-        for res in self.source_results.values():
-            df = pd.DataFrame(columns=['Parameter', 'Best Fit', 'Std. Dev.'])
-
-            for param, param_dict in res.params.items():
-                if abs(param_dict['med']) > 1e-4:
-                    row_data = {'Parameter':param, 'Best Fit':round(param_dict['med'],4), 'Std. Dev.':round(param_dict['std'],4)}
-                else:
-                    row_data = {'Parameter':param, 'Best Fit':param_dict['med'], 'Std. Dev.':param_dict['std']}
-                df.loc[len(df)] = row_data
-
-            plot_src = res.outdir.joinpath('max_likelihood_fit.png').relative_to(self.cfg.io.output_dir)
+        bf_results = {name: res[-1] for name, res in self.source_results.items()}
+        for res in bf_results.values():
+            records = []
+            for param in res.final_params.values():
+                records.append(param.to_dict())
+            df = pd.DataFrame(records)
+            plot_src = res.outdir.joinpath('best_fit_model.png').relative_to(self.outdir)
 
             table_data = ''
             num_rows = int(np.ceil(len(df) / table_cols))
@@ -178,16 +170,17 @@ class SurveyPipeline(BadassPipeline):
             html += template.render(source_name=res.name, plot_src=str(plot_src), params_table_data=table_data)
 
         html += REPORT_HTML_FOOTER
-        with open(self.cfg.io.output_dir.joinpath('survey_results.html'), 'w') as out:
+        with open(self.outdir.joinpath('survey_results.html'), 'w') as out:
             out.write(html)
 
 
     def make_report_pdf(self):
-        pdf = PdfPages(self.cfg.io.output_dir.joinpath('survey_results.pdf'))
-        for res in self.source_results.values():
-            fit_fig = res.figures.get('ml_fit', plotting.plot_ml_results(res, self.single_sources[res.name][0]))
-            pdf.savefig(fit_fig)
-        pdf.close()
+        pass
+    #     pdf = PdfPages(self.cfg.io.output_dir.joinpath('survey_results.pdf'))
+    #     for res in self.source_results.values():
+    #         fit_fig = res.figures.get('ml_fit', plotting.plot_ml_results(res, self.single_sources[res.name][0]))
+    #         pdf.savefig(fit_fig)
+    #     pdf.close()
 
 
 def main():

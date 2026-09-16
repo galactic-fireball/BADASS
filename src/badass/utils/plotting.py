@@ -344,6 +344,7 @@ def plot_best_model(result, outdir=None):
     fig.tight_layout()
 
     if not outdir is None:
+        # TODO: put this name somewhere more useful
         plt.savefig(outdir.joinpath('best_fit_model.png'))
     else:
         return fig

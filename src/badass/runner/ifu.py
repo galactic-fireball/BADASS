@@ -36,6 +36,8 @@ class SpaxelsPipeline(IFUPipeline):
     spaxels: list = field(default_factory=list)
 
     def initialize_sources(self):
+        plot = self.cfg.fit.fit_area.plot_input
+
         # TODO: 'exclude' option
         self.spaxels = self.cfg.fit.fit_area.spaxels
         nx = self.source.flux.shape[2]
@@ -63,6 +65,11 @@ class SpaxelsPipeline(IFUPipeline):
             xs = (0,nx)
             ys = (0,ny)
 
+        if plot:
+            fig, ax = plt.subplots(figsize=(10,10))
+            medcube = self.source.get_median_map()
+            ax.imshow(medcube, origin='lower', norm=LogNorm())
+
         for spaxel in self.spaxels:
             # TODO: different cfg (user lines) for each spaxel
             spaxel_cfg = copy.deepcopy(self.cfg)
@@ -74,35 +81,40 @@ class SpaxelsPipeline(IFUPipeline):
 
             spaxel_cfg.io.output_dir = spaxel_out_dir
             spaxel_out_dir.mkdir(parents=True, exist_ok=True)
+
+            if plot:
+                ax.scatter(source_spax.x, source_spax.y, color='red', marker='x', s=30)
+
             self.single_sources[source_spax.name] = (source_spax, spaxel_cfg)
+
+        if plot:
+            ax.set_xlabel('X (px)')
+            ax.set_ylabel('Y (px)')
+            plt.show()
+            plt.close()
 
 
     def finalize(self):
-        self.make_source_plots()
         self.make_parameter_maps()
-
-
-    def make_source_plots(self):
-        for res in self.source_results.values():
-            res.figures['ml_fit'] = plotting.plot_ml_results(res, self.single_sources[res.name][0])
 
 
     def make_parameter_maps(self):
         maps = {}
-        for param_name in list(self.source_results.values())[0].params.keys():
-            maps[param_name] = np.zeros(shape=self.source.shape)
+        bf_results = {name: res[-1] for name, res in self.source_results.items()}            
 
-        for name, res in self.source_results.items():
+        for name, res in bf_results.items():
             x, y = [int(v) for v in name.split('_')[1:]]
-            for param_name, param_dict in res.params.items():
-                maps[param_name][y,x] = param_dict['med']
+            for param in res.final_params.values():
+                if not param.name in maps:
+                    maps[param.name] = np.full(self.source.shape, np.nan)
+                maps[param.name][y,x] = param.best_fit
 
         result_fits = fits.HDUList()
         result_fits.append(fits.PrimaryHDU()) # TODO: metadata
         for name, data in maps.items():
             result_fits.append(fits.ImageHDU(data, name=name))
 
-        outfile = self.cfg.io.output_dir.joinpath('parameter_maps.fits')
+        outfile = self.outdir.joinpath('parameter_maps.fits')
         result_fits.writeto(outfile, overwrite=True)
 
 
@@ -163,6 +175,7 @@ class BinsPipeline(IFUPipeline):
             add_ax_labels(spec_ax,'AA')
             spec_ax.set_ylabel('Normalized flux density')
             plt.show()
+            plt.close()
 
 
 @dataclass
@@ -203,6 +216,7 @@ class AperturesPipeline(IFUPipeline):
             add_ax_labels(spec_ax,'AA')
             spec_ax.set_ylabel('Normalized flux density')
             plt.show()
+            plt.close()
 
 
 def get_ifu_type(area_type):

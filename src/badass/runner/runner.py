@@ -41,6 +41,12 @@ class ParamResult:
         return res_dict
 
 
+    def to_record(self):
+        res_dict = self.to_dict()
+        res_dict.pop('name')
+        return {self.name+'_'+k:v for k,v in res_dict.items()}
+
+
     @classmethod
     def from_chain(cls, name, chain):
         med = np.nanmedian(chain)
@@ -94,11 +100,13 @@ class BadassResult:
     meta_components: MetaComponents = None
 
     def __post_init__(self):
-        if self.outdir is None:
+        if self.outdir is None and not self.ctx is None:
             self.outdir = self.ctx.cfg.io.output_dir
         self.outdir = self.outdir.joinpath(self.OUT_NAME)
         self.outdir.mkdir(parents=True, exist_ok=True)
-        self.ctx.outdir = self.outdir
+
+        if not self.ctx is None:
+            self.ctx.outdir = self.outdir
 
 
     @classmethod
@@ -138,7 +146,11 @@ class BadassResult:
             return
         headers = [k for k in params[0].to_dict()]
         table = [list(p.to_dict().values()) for p in params]
-        self.log.debug(tabulate(table, headers, tablefmt='grid'))
+        tbl_out = tabulate(table, headers, tablefmt='grid')
+        if self.ctx is None:
+            print(tbl_out)
+        else:
+            self.ct.log.debug(tbl_out)
 
 
     def quick_view(self):
@@ -150,6 +162,7 @@ class BadassResult:
         for label, comp in self.components.items():
             ax.plot(self.meta_components.wave, comp, label=label)
         ax.legend()
+        # TODO: flux and fit norm??
         add_ax_labels(ax, 'AA')#, yscale=int(np.log10(flux_norm)))
         plt.show()
 
@@ -394,7 +407,7 @@ class BadassRunContext(LogObjMixin):
             max_losvd = bc.LOSVD_LIBRARIES[self.cfg.losvd.library].max_losvd
             if (self.fit_reg.min < min_losvd) or (self.fit_reg.max > max_losvd):
                 self.log.warn('Warning: Fitting LOSVD requires wavelenth range between {mi} Å and {ma} Å for stellar templates. BADASS will adjust your fitting range to fit the LOSVD...'.format(mi=min_losvd, ma=max_losvd))
-                self.log.warn('Available wavelength range: ',(self.fit_reg))
+                self.log.warn('Available wavelength range: %s'%str(self.fit_reg))
             self.fit_reg = FitReg(np.max([min_losvd, self.fit_reg.min]), np.min([max_losvd, self.fit_reg.max]))
 
         self.log.info('New fitting region is {fr}'.format(fr=self.fit_reg))
