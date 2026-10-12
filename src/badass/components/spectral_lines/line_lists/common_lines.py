@@ -83,18 +83,18 @@ H_BETA_LAM = 4862.691
 NA_H_BETA = {'name': 'NA_H_BETA', 'center': H_BETA_LAM, 'disp': 'NA_OIII_5007_DISP',}
 NA_H_BETA_2 = {'name': 'NA_H_BETA_2', 'center': H_BETA_LAM, 'amp': 'NA_H_BETA_AMP*NA_OIII_5007_2_AMP/NA_OIII_5007_AMP', 'disp': 'NA_OIII_5007_2_DISP', 'voff': 'NA_OIII_5007_2_VOFF',}
 BR_H_BETA = {'name': 'BR_H_BETA', 'center': H_BETA_LAM, 'type': 'broad',}
-H_BETA = {'name': 'H_BETA', 'center': H_BETA_LAM, 'type': 'combined', 'children': [NA_H_BETA, NA_H_BETA_2, BR_H_BETA,],}
+H_BETA = {'name': 'H_BETA', 'center': H_BETA_LAM, 'type': 'combined', 'children': [NA_H_BETA, BR_H_BETA,],}
 
-OIII_4960_LAM = 4960.295
+OIII_4960_LAM = 4958.911
 NA_OIII_4960 = {'name': 'NA_OIII_4960', 'center': OIII_4960_LAM, 'amp': '(NA_OIII_5007_AMP/2.98)', 'disp': 'NA_OIII_5007_DISP', 'voff': 'NA_OIII_5007_VOFF', 'h3': 'NA_OIII_5007_H3', 'h4': 'NA_OIII_5007_H4',}
 NA_OIII_4960_2 = {'name': 'NA_OIII_4960_2', 'center': OIII_4960_LAM, 'amp': 'NA_OIII_5007_2_amp/NA_OIII_5007_amp*NA_OIII_5007_amp/2.98',}
-OIII_4960 = {'name': 'OIII_4960', 'center': OIII_4960_LAM, 'type': 'combined', 'children': [NA_OIII_4960, NA_OIII_4960_2,],}
+OIII_4960 = {'name': 'OIII_4960', 'center': OIII_4960_LAM, 'type': 'combined', 'children': [NA_OIII_4960,],}
 
-OIII_5007_LAM = 5008.240
+OIII_5007_LAM = 5006.843
 NA_OIII_5007 = {'name': 'NA_OIII_5007', 'center': OIII_5007_LAM,}
 NA_OIII_5007_2 = {'name': 'NA_OIII_5007_2', 'center': OIII_5007_LAM,}
 BR_OIII_5007 = {'name': 'BR_OIII_5007', 'center': OIII_5007_LAM, 'type': 'broad',}
-OIII_5007 = {'name': 'OIII_5007', 'center': OIII_5007_LAM, 'type': 'combined', 'children': [NA_OIII_5007, NA_OIII_5007_2, BR_OIII_5007,],}
+OIII_5007 = {'name': 'OIII_5007', 'center': OIII_5007_LAM, 'type': 'combined', 'children': [NA_OIII_5007, BR_OIII_5007,],}
 
 
 # Region 4 (5500 Å - 6200 Å)
