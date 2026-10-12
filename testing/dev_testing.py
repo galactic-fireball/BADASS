@@ -188,6 +188,21 @@ def test_nirspec_aperture():
     badass.run_BADASS(test_file, options_file=options_file)
 
 
+def test_nirspec_msa():
+    test_file = EX_SPEC_DIR.joinpath('JWST_NIRSpec', 'jw01324-o006_s000340248_nirspec_f170lp-g235h_s2d.fits')
+
+    from spark.io.load import load_spectral_product
+    slit = load_spectral_product(test_file, 'nirspec_msa')
+
+    ba_cfg = {
+        'io': {'infmt': 'nirspec_msa', 'output_dir': TESTING_DIR.joinpath('nirspec_msa')},
+        'fit': {'fit_reg': (0,20000)},
+    }
+
+    badass.run_BADASS(test_file, options=ba_cfg)
+
+
+
 def test_miri_single():
     options_file = OPTIONS_DIR.joinpath('miri_single.py')
     test_file = EX_SPEC_DIR.joinpath('JWST_MIRI', 'NGC4051_miri_ch1-short_s3d.fits')
@@ -328,12 +343,13 @@ def main():
 
     # test_nirspec_single()
     # test_nirspec_aperture()
+    test_nirspec_msa()
     # test_miri_single()
     # test_kcwi_single()
 
     # test_random()
 
-    test_output()
+    # test_output()
 
     # doc_examples()
 
