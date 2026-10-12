@@ -150,7 +150,16 @@ class BadassResult:
         if self.ctx is None:
             print(tbl_out)
         else:
-            self.ct.log.debug(tbl_out)
+            self.ctx.log.info('\n'+tbl_out)
+
+        headers = ['Metric, Value']
+        table = [[k,v] for k,v in self.metrics.items()]
+        tbl_out = tabulate(table, headers, tablefmt='grid')
+        if self.ctx is None:
+            print(tbl_out)
+        else:
+            self.ctx.log.info('\n'+tbl_out)
+
 
 
     def quick_view(self):
@@ -172,6 +181,7 @@ class BadassResult:
         self.finalize_components()
         self.perform_metrics()
         self.output()
+        self.dump()
 
 
     def set_final_theta(self):
@@ -210,6 +220,7 @@ class BadassResult:
             'velscale': self.ctx.source.velscale,
             'fit_norm': self.ctx.fit_norm,
             'flux_norm': self.ctx.source.flux_norm,
+            'par_cnt': self.ctx.param_reg.free_count,
         }
         metadata = metadata | self.metrics
 

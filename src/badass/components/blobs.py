@@ -303,7 +303,10 @@ class ContFracBlob(ContinuumBlob):
     def compute(self, ctx, kwargs):
         conts = ContinuumBlob.get_conts_at_idx(ctx, self.idx)
         for type in ['AGN', 'HOST']:
-            self.cur_val[type+'_FRAC_%d'%self.wave] = conts[type] / conts['TOTAL']
+            if conts['TOTAL'] == 0.0:
+                self.cur_val[type+'_FRAC_%d'%self.wave] = 0.0
+            else:
+                self.cur_val[type+'_FRAC_%d'%self.wave] = conts[type] / conts['TOTAL']
         return self.cur_val
 
 

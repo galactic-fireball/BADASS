@@ -322,7 +322,7 @@ def plot_best_model(result, outdir=None):
     noise_label = '%0.4f'%sigma_noise if abs(sigma_noise) > 1e-4 else '%0.4e'%sigma_noise
     resid_label = '%0.4f'%sigma_noise if abs(sigma_resid) > 1e-4 else '%0.4e'%sigma_resid
     resid_ax.plot(wave, noise, linewidth=0.5, color='xkcd:bright orange', label=r'$\sigma_{\mathrm{noise}}=%s$'%noise_label)
-    resid_ax.plot(wave, resid, linewidth=0.5, color=data_color, label=r'$\sigma_{\mathrm{resid}}=%s$'%resid_label)
+    resid_ax.plot(wave[fit_mask], resid[fit_mask], linewidth=0.5, color=data_color, label=r'$\sigma_{\mathrm{resid}}=%s$'%resid_label)
     resid_ax.axhline(0.0, linewidth=1.0, color=data_color, linestyle='--')
 
     ticks = {}

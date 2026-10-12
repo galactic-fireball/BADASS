@@ -24,15 +24,14 @@ class JWSTReader(BadassCube, JWSTCube, LogRebinMixin):
 
     def __post_init__(self):
         super().__post_init__()
+        self.velscale = np.nan
 
+        self.log_rebin()
         self.set_dispersion()
         self.disp_res = deredden(self.disp_res, self.target.z)
         self.flux_norm = 1.0
         self.flux = self.flux / self.flux_norm
         self.err = self.err / self.flux_norm
-        self.velscale = np.nan
-
-        self.log_rebin()
 
 
     def set_dispersion(self, cube_data, options, obs_wave):

@@ -71,10 +71,18 @@ class BadassPipeline(LogObjMixin):
         if not self.outdir.is_absolute():
             self.outdir = pathlib.Path(os.getcwd()).resolve().joinpath(self.outdir)
 
+        self.log = BadassLogger(name=self.outdir.name)
+
         # TODO: status.json file to check if already completed fit
+        log_out_file = self.outdir.joinpath('log', 'log.txt')
+        if log_out_file.exists():
+            if self.cfg.io.overwrite:
+                shutil.rmtree(str(self.outdir))
+            else:
+                self.log.info('Pipeline previously completed')
+                return
 
         self.outdir.mkdir(parents=True, exist_ok=True)
-        self.log = BadassLogger(name=self.outdir.name)
         self.log.set_output(self.outdir)
 
         if self.primary:

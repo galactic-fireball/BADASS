@@ -44,7 +44,7 @@ class BadassLogger:
         return logger
 
 
-    def __init__(self, name=None, level=None):
+    def __init__(self, name=None, level=None, outdir=None):
         if self._initialized:
             return
         self._initialized = True
@@ -99,13 +99,13 @@ class BadassLogger:
 
 
     def set_output(self, outdir):
-        log_out_file = outdir.joinpath('log', 'log.txt')
-        log_out_file.parent.mkdir(parents=True, exist_ok=True)
+        self._log_out_file = outdir.joinpath('log', 'log.txt')
+        self._log_out_file.parent.mkdir(parents=True, exist_ok=True)
 
         if not self._file_handler is None:
             self._logger.removeHandler(self._file_handler)
 
-        self._file_handler = logging.FileHandler(log_out_file)
+        self._file_handler = logging.FileHandler(self._log_out_file)
         self._file_handler.setFormatter(self._formatter)
         self._file_handler.setLevel(self._logger.level)
 

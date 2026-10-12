@@ -64,6 +64,7 @@ class SpaxelsPipeline(IFUPipeline):
         else:
             xs = (0,nx)
             ys = (0,ny)
+            self.spaxels = [(x,y) for x in range(*xs) for y in range(*ys)]
 
         if plot:
             fig, ax = plt.subplots(figsize=(10,10))
@@ -106,7 +107,8 @@ class SpaxelsPipeline(IFUPipeline):
             x, y = [int(v) for v in name.split('_')[1:]]
             for param in res.final_params.values():
                 if not param.name in maps:
-                    maps[param.name] = np.full(self.source.shape, np.nan)
+                    # shape = (row, col) = (ny,nx)
+                    maps[param.name] = np.full(self.source.shape[::-1], np.nan)
                 maps[param.name][y,x] = param.best_fit
 
         result_fits = fits.HDUList()

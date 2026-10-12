@@ -61,6 +61,11 @@ class MLResult(BadassResult):
         for blob in self.ctx.blob_reg.get_blobs_dict().keys():
             self.final_params[blob] = ParamResult.from_chain(blob, self.blobs_chain[blob])
 
+        blob_postfits = self.ctx.blob_reg.get_postfits(self.final_params)
+        for name, data in blob_postfits.items():
+            data['name'] = name
+            self.final_params[name] = ParamResult(**data)
+
         # log-likelihood
         self.metrics['LOG_LIKE'] = ParamResult.from_chain('LOG_LIKE', self.ll_chain).best_fit
 
@@ -187,6 +192,8 @@ class MLRunner(BadassRunContext):
 
             # return original spectrum
             self.fit_flux = orig_fit_flux
+
+        self.log.info('Bootstrapping complete')
 
 
     def reweight(self):
