@@ -356,7 +356,7 @@ SpecLine = Annotated[NarrowLine | BroadLine | AbsorpLine | CombinedLine, Field()
 
 # TODO: add descriptions
 class TestOptions(CustomBaseModel):
-    mode: Literal['line', 'config'] = 'line'
+    mode: Literal['line', 'config'] = 'config'
     test_sets: list[list[dict] | dict] = Field(default_factory=list) # TODO: list[list[SpectralLine]]
     metrics: dict[str,Number] = Field(default_factory=dict)
     conv_mode: Literal['all', 'any'] = 'all'
@@ -364,6 +364,7 @@ class TestOptions(CustomBaseModel):
     force_best: bool = True
     continue_fit: bool = True
     plot_tests: bool = True
+    # with_mcmc
 
 
 
@@ -528,6 +529,12 @@ def generate_docs():
         generate_opt_doc(field_name, field.annotation)
 
 
+def dump_defaults():
+    defaults = BadassConfig()
+    print(defaults.model_dump_json(indent=2))
+
+
 if __name__ == '__main__':
-    generate_docs()
+    dump_defaults()
+    # generate_docs()
 

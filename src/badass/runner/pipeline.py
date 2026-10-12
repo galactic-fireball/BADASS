@@ -1,10 +1,10 @@
 from dataclasses import dataclass, field
 import pathlib
+import shutil
 from typing import List
 
 from badass.input.input import BadassSpec
 from badass.runner.runner import BadassRunContext, BadassResult
-# from badass.runner.tests import TestResult, TestRunner
 from badass.runner.bootstrap import MLRunner
 from badass.runner.mcmc import MCMCRunner
 from badass.utils.config import BadassConfig
@@ -44,6 +44,11 @@ class BadassPipeline(LogObjMixin):
             from badass.runner.survey import SurveyPipeline
             log.info('Starting Survey Pipeline')
             return SurveyPipeline(source=source, cfg=cfg)
+
+        if test_cfg.fit.test_models:
+            from badass.runner.tests import TestingPipeline
+            log.info('Starting Testing Pipeline')
+            return TestingPipeline(source=source, cfg=cfg)
 
         # Single source fitting, no tests
         if isinstance(cfg, list): cfg = cfg[0]

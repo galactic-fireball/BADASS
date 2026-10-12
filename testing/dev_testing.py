@@ -18,6 +18,8 @@ NOTEBOOKS_DIR = BADASS_DIR.joinpath('example_notebooks')
 EX_SPEC_DIR = BADASS_DIR.joinpath('examples', 'example_spectra')
 
 import badass
+from badass.common_lines import *
+from badass.utils.metrics import collect_test_metrics
 
 
 def test_single():
@@ -38,8 +40,8 @@ def test_single():
     if test_old:
         badass.run_BADASS(test_file, run_dir=output_dir, options_file=options_file, sdss_spec=True)
     else:
-        print(options_file)
-        badass.run_BADASS(test_file, options_file=options_file)
+        res = badass.run_BADASS(test_file, options_file=options_file)
+        # res[0].dump()
 
 
 def test_survey():
@@ -52,7 +54,7 @@ def test_survey():
     ]
 
     options_file = OPTIONS_DIR.joinpath('sdss_single.py')
-    output_dir = test_files[0].parent.joinpath('sdss_test')
+    output_dir = TESTING_DIR.parent.joinpath('sdss_test')
 
     if output_dir.exists():
         shutil.rmtree(str(output_dir))
@@ -109,7 +111,7 @@ def test_config():
     options_file = OPTIONS_DIR.joinpath('config_test.py')
     test_file = EX_SPEC_DIR.joinpath('0-test', 'spec-1087-52930-0084.fits')
 
-    output_dir = test_file.parent.joinpath('config_test')
+    output_dir = TESTING_DIR.parent.joinpath('sdss_cfg_test')
     if output_dir.exists():
         shutil.rmtree(str(output_dir))
 
@@ -179,7 +181,7 @@ def test_nirspec_single():
 def test_nirspec_aperture():
     options_file = OPTIONS_DIR.joinpath('nirspec_aperture.py')
     test_file = EX_SPEC_DIR.joinpath('JWST_NIRSpec', 'NGC4051_nirspec_290_s3d.fits')
-    output_dir = test_file.parent.joinpath('ns_ap_test')
+    output_dir = TESTING_DIR.parent.joinpath('nirspec_test')
     if output_dir.exists():
         shutil.rmtree(str(output_dir))
 
@@ -316,6 +318,8 @@ def main():
     # test_line()
     # test_config()
     # test_input_dict()
+
+    # test_fit_compare()
 
     # test_survey()
 

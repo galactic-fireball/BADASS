@@ -53,7 +53,7 @@ def pipeline_run(source, source_cfg):
 
 def skip_existing(outdir, overwrite):
     # TODO: check for fit completed
-    if not outdir.joinpath('badass_result', 'mc_result', 'par_table.fits').exists():
+    if not outdir.joinpath('badass_result', 'ml_result', 'par_table.fits').exists():
         return False
 
     if overwrite:
@@ -118,6 +118,7 @@ class SurveyPipeline(BadassPipeline):
                         self.source_results[res[0].name] = res
                     else:
                         self.source_results[res.name] = [res,]
+        return self.source_results
 
 
     def finalize(self):
