@@ -4,6 +4,16 @@
 *Description:* The minimum and maximum desired fitting wavelength in angstroms.
 *Examples:* `(4400, 5500)`, `'auto'`
 
+## `redshift`
+*Type:* `float`<br/>
+*Default:* `0.0`<br/>
+*Description:* Redshift of the fitting target
+
+## `log_rebin_oversample`
+*Type:* `int`<br/>
+*Default:* `1`<br/>
+*Description:* Amount of oversampling used during the `log_rebin` function in order to reduce loss of spectral resolution.
+
 ## `n_basinhop`
 *Type:* `int`<br/>
 *Default:* `25`<br/>
@@ -37,10 +47,10 @@
 *Default:* `{'H0': 70.0, 'Om0': 0.3}`<br/>
 *Description:* The flat Lambda-CDM cosmology assumed for calculating luminosities from fluxes.
 
-## `test_lines`
+## `test_models`
 *Type:* `bool`<br/>
 *Default:* `False`<br/>
-*Description:* Performs tests for lines. Options are specified in `test_options`.
+*Description:* Performs tests for different line components or configurations. Options are specified in `test`.
 
 ## `mask_emline`
 *Type:* `bool`<br/>

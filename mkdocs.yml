@@ -35,6 +35,7 @@ nav:
   - Installation: documentation/installation.md
   - Examples: documentation/examples.md
   - Usage:
+    - Default Options: documentation/usage/default.md
     - I/O Options: documentation/usage/io.md
     - Fitting Options: documentation/usage/fit.md
     - MCMC Options: documentation/usage/mcmc.md

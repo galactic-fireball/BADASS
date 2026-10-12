@@ -63,6 +63,9 @@ def nirspec_aperture_example():
         'io': {
             'infmt': 'nirspec',
             'output_dir': 'nirspec_example',
+            # the filter and disperser don't usually need to be specified
+            # as SPARK will auto-find them in the fits header, but they
+            # are shown here in case they are needed for some reason
             'filter': '290',
             'disperser': 'h',
         },
@@ -71,13 +74,18 @@ def nirspec_aperture_example():
             'redshift': 0.002336,
             'fit_area': {
                 'type':'aperture',
+                # center is (x,y), BADASS will handle the python array weirdness
+                # the radius is currently in pixels (arcsec support coming!)
                 'apertures': [{'shape':'circular', 'center':(30,27), 'radius':8},],
+                # will display a quick plot of the aperture/spaxels/bins
+                # make sure to remove if running on a computing cluster
                 'plot_input':True,
             },
         },
         'comp': {
-            'fit_losvd': False,
-            'fit_feii': False,
+            # by default, fit_host is the only non-line component turned on
+            'fit_host': False,
+            'fit_power': True,
         },
     }
 

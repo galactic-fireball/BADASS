@@ -3,8 +3,6 @@ io = {
     'output_dir': 'nirspec_test', # same directory as input file
     'overwrite': True,
     'log_level': 'info',
-    'filter': '290',
-    'disperser': 'h',
     'nprocesses': 1,
     'plots': {
         'style': 'light',

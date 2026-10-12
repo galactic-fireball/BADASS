@@ -1,3 +1,23 @@
+## New in Version 11.1.0
+* Reintegration of MCMC.
+* Support for Keck's KCWI.
+* Support for DAWN-JWST Archive spectra.
+* Integrated with SPARK for more efficient handling of data from multiple instruments.
+* Support for survey fits of multiple spectra with multiprocessing.
+* Support for IFU area fits: spaxels, bins, and apertures (circular, rectangular, elliptical).
+* Robust configuration parsing and defaults with Pydantic.
+* Better logging, especially when fitting multiple sources.
+* Plotting updates.
+* Support for handling fit results programmatically after a fit.
+* More useful output for survey and IFU pipelines.
+* Documentation updates.
+* SpectralLine and LineProfile classes to better manage feature properties.
+* Centralize common template behavior.
+* Implemented ParameterRegistry and BlobRegistry for better managing parameters and blobs.
+* `log_rebin` oversample option and update to latest implementation.
+* More examples in docs and dev_testing.py
+* Numerous bug fixes.
+
 
 ## New in Version 11.0.0
 * Code has been reorganized and made more modular.
@@ -9,7 +29,10 @@
 * Plotting (`utils/plotting.py`) and logging (`utils/logger.py`) functionality moved to separate files.
 
 
-## New in Version 10.2.0
+## Older Versions:
+
+
+### 10.2.0
 * New line and configuration testing framework. See [Line Testing and Options](#line-testing-and-options).
 * Line component options.  See [Line Component Options](#line-component-options).
 * Improvements in autocorrelation calculations.
@@ -18,9 +41,6 @@
 * BADASS now normalizes the spectrum internally for fitting purposes.
 * Various improvements to global optimizer used in initial fit.
 * **Note**: The algorithm used for scaling the noise to achieve a $\chi_\nu^2=1$ was found to be numerically unstable and users should use `fit_stat='ML'` instead.
-
-
-## Older Versions:
 
 
 ### 10.0.0 - 10.3.0

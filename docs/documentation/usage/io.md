@@ -1,7 +1,7 @@
 ## `infmt` (Required)
-*Type:* `sdss | muse | nirspec | miri | kcwi`<br/>
+*Type:* `sdss | muse | nirspec | dja | miri | kcwi`<br/>
 *Default:* `None`<br/>
-*Description:* The format of the input file. Currently supported options: `['sdss', 'muse', 'nirspec', 'miri']`
+*Description:* The format of the input file. Currently supported options: `['sdss', 'muse', 'nirspec', 'dja', 'miri']`
 
 ## `output_dir`
 *Type:* `Path`<br/>
@@ -13,10 +13,10 @@
 *Default:* `False`<br/>
 *Description:* If `True`, overwrite the `output_dir` if it already exists.
 
-## `multiprocess`
-*Type:* `bool`<br/>
-*Default:* `False`<br/>
-*Description:* For runs of multiple spectra or IFU cubes, run in multiprocess mode
+## `nprocesses`
+*Type:* `int`<br/>
+*Default:* `1`<br/>
+*Description:* The number of fitting processes to run at once. Provide > 1 for multiprocessing.
 
 ## `log_level`
 *Type:* `str`<br/>
@@ -26,12 +26,12 @@
 ## `filter`
 *Type:* `str`<br/>
 *Default:* `None`<br/>
-*Description:* The filter of the provided NIRSpec data cube.
+*Description:* The filter of the provided NIRSpec data cube. This will be otherwise auto-found from the fits header.
 
 ## `disperser`
 *Type:* `str`<br/>
 *Default:* `None`<br/>
-*Description:* The disperser of the provided NIRSpec data cube.
+*Description:* The disperser of the provided NIRSpec data cube. This will be otherwise auto-found from the fits header.
 
 ## `dust_cache`
 *Type:* `Path`<br/>
