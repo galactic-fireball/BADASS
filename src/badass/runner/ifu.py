@@ -120,6 +120,42 @@ class SpaxelsPipeline(IFUPipeline):
         result_fits.writeto(outfile, overwrite=True)
 
 
+    @staticmethod
+    def rebuild_parameter_maps(out_dir):
+        spax_dirs = list(out_dir.glob('spaxel_*'))
+        if len(spax_dirs) == 0:
+            return
+
+        mx, my = 0,0
+        for sd in spax_dirs:
+            x,y = [int(v) for v in sd.name.split('_')[1:]]
+            mx, my = max(mx,x), max(my,y)
+
+        maps = {}
+        for sd in spax_dirs:
+            x,y = [int(v) for v in sd.name.split('_')[1:]]
+            pt_file = sd.joinpath('ml_result', 'par_table.fits')
+            if not pt_file.exists():
+                continue
+            hdu = fits.open(pt_file)
+            pt = hdu[1].data
+            hdu.close()
+
+            for name, best_fit, sigma, flag in pt:
+                if not name in maps:
+                    # shape = (row, col) = (my, mx)
+                    maps[name] = np.full((my,mx), np.nan)
+                maps[name][y,x] = float(best_fit)
+
+        result_fits = fits.HDUList()
+        result_fits.append(fits.PrimaryHDU()) # TODO: metadata
+        for name, data in maps.items():
+            result_fits.append(fits.ImageHDU(data, name=name))
+
+        outfile = out_dir.joinpath('parameter_maps.fits')
+        result_fits.writeto(outfile, overwrite=True)
+
+
 @dataclass
 class BinsPipeline(IFUPipeline):
     area_types = ['bin','bins',]
