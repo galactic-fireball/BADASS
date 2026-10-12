@@ -392,20 +392,21 @@ class LineComponentBlob(ComponentBlob):
     def compute_postfit(self, ctx, fit_results):
         results = {}
 
+        # TODO: fix for MCMCParamResult
         disp_res = self.line.disp_res_kms
-        results[self.line.name+'_DISP_RES'] = {'med': disp_res, 'std': 0.0}
+        results[self.line.name+'_DISP_RES'] = {'best_fit': disp_res, 'sigma': 0.0, 'flag': 0}
 
-        disp_dict = fit_results[self.line.name+'_DISP']
-        disp_corr = np.nanmax((0.0, np.sqrt(disp_dict['med']**2-disp_res**2)))
-        results[self.line.name+'_DISP_CORR'] = {'med': disp_corr, 'std': disp_dict['std'], 'flag': disp_dict.get('flag',0)}
+        disp = fit_results[self.line.name+'_DISP']
+        disp_corr = np.nanmax((0.0, np.sqrt(disp.best_fit**2-disp_res**2)))
+        results[self.line.name+'_DISP_CORR'] = {'best_fit': disp_corr, 'sigma': disp.sigma, 'flag': disp.flag}
 
-        fwhm_dict = fit_results[self.line.name+'_FWHM']
-        fwhm_corr = np.nanmax((0.0, np.sqrt(fwhm_dict['med']**2-(2.3548*disp_res)**2)))
-        results[self.line.name+'_FWHM_CORR'] = {'med': fwhm_corr, 'std': fwhm_dict['std'], 'flag': fwhm_dict.get('flag',0)}
+        fwhm = fit_results[self.line.name+'_FWHM']
+        fwhm_corr = np.nanmax((0.0, np.sqrt(fwhm.best_fit**2-(2.3548*disp_res)**2)))
+        results[self.line.name+'_FWHM_CORR'] = {'best_fit': fwhm_corr, 'sigma': fwhm.sigma, 'flag': fwhm.flag}
 
-        w80_dict = fit_results[self.line.name+'_W80']
-        w80_corr = np.nanmax((0.0, np.sqrt(w80_dict['med']**2-(2.567*disp_res)**2)))
-        results[self.line.name+'_W80_CORR'] = {'med': w80_corr, 'std': w80_dict['std'], 'flag': w80_dict.get('flag',0)}
+        w80 = fit_results[self.line.name+'_W80']
+        w80_corr = np.nanmax((0.0, np.sqrt(w80.best_fit**2-(2.567*disp_res)**2)))
+        results[self.line.name+'_W80_CORR'] = {'best_fit': w80_corr, 'sigma': w80.sigma, 'flag': w80.flag}
 
         return results
 
