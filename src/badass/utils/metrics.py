@@ -188,7 +188,7 @@ def calculate_rsquared_ratio(meta_comps_A, meta_comps_B, eval_ind):
     return rsquared_A, rsquared_B, rsquared_ratio
 
 
-def bayesian_AB_test(resid_A, resid_B, wave, noise, data, eval_ind, ddof, run_dir, plot=False):
+def bayesian_AB_test(resid_A, resid_B, noise, ddof, wave=None, plot=False):
     # Performs a Bayesian A/B hypothesis test for the likelihood distributions for two models
 
     # Smooth the noise using a 3-pixel Gaussian kernel
@@ -199,12 +199,12 @@ def bayesian_AB_test(resid_A, resid_B, wave, noise, data, eval_ind, ddof, run_di
     resid_B_lnlike  = np.empty(nsamp)
     resid_A_lnlike = np.empty(nsamp)
     for i in range(nsamp):
-        resid_B_lnlike[i] = np.sum(-0.5*(np.random.normal(loc=resid_B[eval_ind],scale=np.abs(noise[eval_ind]),size=len(eval_ind)))**2/noise[eval_ind]**2)
-        resid_A_lnlike[i] = np.sum(-0.5*(np.random.normal(loc=resid_A[eval_ind],scale=np.abs(noise[eval_ind]),size=len(eval_ind)))**2/noise[eval_ind]**2)
+        resid_B_lnlike[i] = np.sum(-0.5*(np.random.normal(loc=resid_B,scale=np.abs(noise),size=len(noise)))**2/noise**2)
+        resid_A_lnlike[i] = np.sum(-0.5*(np.random.normal(loc=resid_A,scale=np.abs(noise),size=len(noise)))**2/noise**2)
 
     # Penalize by degrees of freedom
-    resid_B_lnlike /= (len(data)-ddof)
-    resid_A_lnlike /= (len(data))
+    resid_B_lnlike /= (len(noise)-ddof)
+    resid_A_lnlike /= (len(noise))
     p_B = np.percentile(resid_B_lnlike, [16,50,84])
     p_A = np.percentile(resid_A_lnlike, [16,50,84])
 
@@ -234,7 +234,7 @@ def bayesian_AB_test(resid_A, resid_B, wave, noise, data, eval_ind, ddof, run_di
     signif = d/disp # significance
     overlap = np.min([(p_B[2]-p_A[0]), (p_A[2]-p_B[0])]).clip(0) # 1-sigma overlap
 
-    if plot:
+    if plot and not wave is None:
         fontsize = 16
         fig = plt.figure(figsize=(18,10)) 
         gs = gridspec.GridSpec(2,4)
