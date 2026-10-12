@@ -3,7 +3,7 @@ io = {
     'output_dir': 'sdss_test',
     'overwrite': True,
     'log_level': 'debug',
-    'nprocesses': 1,
+    'nprocesses': 2,
 }
 
 fit = {
@@ -12,20 +12,32 @@ fit = {
     'n_basinhop': 2,
 }
 
+user_mask = [(4600,4800),]
+
+# mcmc = {
+#     'mcmc_fit': True,
+#     'burn_in': 50,
+#     'min_iter': 100,
+#     'max_iter': 200,
+#     'write_iter': 10,
+#     'write_thresh': 10,
+#     'auto_stop': True,
+# }
+
 mcmc = {
     'mcmc_fit': True,
-    'burn_in': 0,
-    'min_iter': 1,
+    'burn_in': 2,
+    'min_iter': 3,
     'max_iter': 5,
-    'write_iter': 5,
-    'write_thresh': 5,
-    'auto_stop': False,
+    'write_iter': 1,
+    'write_thresh': 1,
+    'auto_stop': True,
 }
 
 comp = {
-    'fit_losvd': False,
+    # 'fit_losvd': False,
     # 'fit_host': True,
-    'fit_feii': False,
+    'fit_feii': True,
     # 'fit_poly': True,
     # 'tie_line_voff': True,
     # 'tie_line_disp': True,

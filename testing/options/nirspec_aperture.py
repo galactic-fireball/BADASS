@@ -5,7 +5,10 @@ io = {
     'log_level': 'info',
     'filter': '290',
     'disperser': 'h',
-    'nprocesses': 2,
+    'nprocesses': 1,
+    'plots': {
+        'style': 'light',
+    }
 }
 
 fit = {
@@ -13,13 +16,13 @@ fit = {
     'redshift': 0.002336,
     'fit_area': {'type':'aperture','apertures': [
         {'shape':'circular', 'center':(30,27), 'radius':8},
-        {'shape':'rectangular', 'center':(25,25), 'width':5}
+        # {'shape':'rectangular', 'center':(25,25), 'width':5}
     ],
-    'plot_input':True,},
+    'plot_input':False,},
 }
 
 mcmc = {
-    'mcmc_fit': True,
+    'mcmc_fit': False,
     'burn_in': 2,
     'min_iter': 3,
     'max_iter': 5,
@@ -33,6 +36,7 @@ comp = {
     'fit_losvd': False,
     # 'fit_host': True,
     'fit_feii': False,
+    'fit_power': True,
 }
 
 # user_lines = {
