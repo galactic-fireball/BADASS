@@ -32,6 +32,7 @@ dependencies = [
     "jinja2 (>=3.1.6,<4.0.0)",
     "spark @ git+https://github.com/galactic-fireball/SPARK.git",
     "h5py (>=3.16.0,<4.0.0)",
+    "dust-extinction (>=1.7,<2.0)",
 ]
 
 [tool.poetry]

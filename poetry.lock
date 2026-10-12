@@ -621,6 +621,25 @@ docs = ["ipython", "matplotlib", "numpydoc", "sphinx"]
 tests = ["pytest", "pytest-cov", "pytest-xdist"]
 
 [[package]]
+name = "dust-extinction"
+version = "1.7"
+description = "Interstellar Dust Extinction Models"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "dust_extinction-1.7.tar.gz", hash = "sha256:c421eafc44c622e82e9a122ed444c01f0909434c7462b04715e180723aa81064"},
+]
+
+[package.dependencies]
+astropy = "*"
+scipy = "*"
+
+[package.extras]
+docs = ["graphviz", "matplotlib", "sphinx", "sphinx-automodapi"]
+test = ["matplotlib", "pytest", "pytest-cov", "pytest-doctestplus"]
+
+[[package]]
 name = "emcee"
 version = "3.1.6"
 description = "The Python ensemble sampling toolkit for MCMC"
@@ -2808,4 +2827,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.14.1 || >3.14.1"
-content-hash = "bb4b0c5d312970f48ec49e6091f66f9afcdb3406953f7f92273bedec23915685"
+content-hash = "be04f14ea4dffcb62b649b4ece563ca4dee090c14c2341fbbc6500a9e76c4e00"
