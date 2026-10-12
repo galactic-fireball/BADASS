@@ -6,7 +6,7 @@ from spark.utils import deredden
 
 from badass.input.input import LogRebinMixin, BadassSpec
 from badass.input.jwst_common import JWSTReader
-from badass.input.nirspec_reader import inst_data_dir, FILT_GRAT
+from badass.input.nirspec_reader import inst_data_dir, get_dispersion_file
 
 @dataclass
 class DJAReader(BadassSpec, DJASpec, LogRebinMixin):
@@ -20,14 +20,11 @@ class DJAReader(BadassSpec, DJASpec, LogRebinMixin):
         self.err = self.err / self.flux_norm
         self.log_rebin()
 
-        if self.cfg.io.filter == 'clear' or self.cfg.io.grating == 'prism':
-            inst_data_file = inst_data_dir.joinpath('jwst_nirspec_prism_disp.fits')
-        else:
-            grating = self.cfg.io.grating
-            if grating is None:
-                grating = FILT_GRAT[self.cfg.io.filter]
-            disperser = self.cfg.io.disperser.lower()
-            inst_data_file = inst_data_dir.joinpath('jwst_nirspec_g%s%s_disp.fits'%(grating,disperser))
+        inst_data_file = get_dispersion_file(self.target.instrument, self.cfg.io)
+        if inst_data_file is None:
+            # TODO: possible to still do some fitting?
+            raise Exception('Could not find dispersion file!')
+
         self.disp_res = JWSTReader.interp_dispersion(inst_data_file, self.obs_wave, wave_unit=self.wave_unit)
         self.disp_res = deredden(self.disp_res, self.target.z)
 
