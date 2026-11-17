@@ -81,6 +81,7 @@ def to_path(v:Any) -> pathlib.Path:
 class PlotOptions(CustomBaseModel):
     style: Literal['dark', 'light'] = Field('dark', description='Plotting style')
     best_model: bool = Field(True, description='Plot the best model')
+    plotly_html: bool = Field(False, description='Create plotly html of the best fit model')
 
 
 class OutputOptions(CustomBaseModel):

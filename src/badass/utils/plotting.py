@@ -350,9 +350,14 @@ def plot_best_model(result, outdir=None):
         return fig
 
 
-def plotly_best_fit(mlstore):
+def plotly_best_fit(result, outdir=None):
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
+    plot_opts = result.ctx.cfg.io.plots
+
+    ordinal = lambda n: '%d%s' % (n, 'tsnrhtdd'[(n//10%10!=1)*(n%10<4)*n%10::4])
+    apoly_label = ordinal(len([p for p in result.final_params.keys() if p.startswith('APOLY_')])-1)
+
 
     fig = make_subplots(rows=2, cols=1, row_heights=(3,1))
 
@@ -361,6 +366,7 @@ def plotly_best_fit(mlstore):
     plot_vals = [
         ('Host Galaxy', 'HOST_GALAXY', 'lime', dash_default, 4),
         ('Power-law', 'POWER', 'red', 'dash', 5),
+        ('%s-order Add. Poly.'%apoly_label, 'APOLY', 'magenta', dash_default, 11),
         ('Balmer cont.', 'BALMER_CONT', 'lime', 'dash', 6),
         ('UV Iron', 'UV_IRON_TEMPLATE', '#AB63FA', dash_default, 7),
         ('Narrow FeII', 'NA_OPT_FEII_TEMPLATE', 'rgb(255,255,51)', dash_default, 7),
@@ -371,42 +377,49 @@ def plotly_best_fit(mlstore):
         ('Z-transition FeII', 'Z_OPT_FEII_TEMPLATE', 'rgb(217,95,2)', dash_default, 10),
     ]
 
-    wave = mlstore.meta_comps.wave
-    fig.add_trace(go.Scatter(x=wave, y=mlstore.meta_comps.data, mode='lines', line=go.scatter.Line(color='white', width=1, dash=dash_default), name='Data', legendrank=1, showlegend=True), row=1, col=1)
-    fig.add_trace(go.Scatter(x=wave, y=mlstore.meta_comps.model, mode='lines', line=go.scatter.Line(color='red', width=1, dash=dash_default), name='Model', legendrank=2, showlegend=True), row=1, col=1)
-    fig.add_trace(go.Scatter(x=wave, y=mlstore.meta_comps.noise, mode='lines', line=go.scatter.Line(color='#FE00CE', width=1, dash=dash_default), name='Noise', legendrank=3, showlegend=True), row=1, col=1)
+    wave = result.meta_components.wave
+    data = result.meta_components.data
+    model = result.meta_components.model
+    noise = result.meta_components.noise
+    resid = result.meta_components.resid
+    data_color = 'white' if plot_opts.style == 'dark' else 'black'
+    fig.add_trace(go.Scatter(x=wave, y=data, mode='lines', line=go.scatter.Line(color=data_color, width=1, dash=dash_default), name='Data', legendrank=1, showlegend=True), row=1, col=1)
+    fig.add_trace(go.Scatter(x=wave, y=model, mode='lines', line=go.scatter.Line(color='red', width=1, dash=dash_default), name='Model', legendrank=2, showlegend=True), row=1, col=1)
+    fig.add_trace(go.Scatter(x=wave, y=noise, mode='lines', line=go.scatter.Line(color='#FE00CE', width=1, dash=dash_default), name='Noise', legendrank=3, showlegend=True), row=1, col=1)
 
     for label, key, color, dash, legendrank in plot_vals:
-        if not key in mlstore.comps:
+        if not key in result.components:
             continue
-        fig.add_trace(go.Scatter(x=wave, y=mlstore.comps[key], mode='lines', line=go.scatter.Line(color=color, width=1, dash=dash), name=label, legendrank=legendrank, showlegend=True), row=1, col=1)
+        fig.add_trace(go.Scatter(x=wave, y=result.components[key], mode='lines', line=go.scatter.Line(color=color, width=1, dash=dash), name=label, legendrank=legendrank, showlegend=True), row=1, col=1)
 
     # (legendgroup, color, legendrank)
     line_params = {
-        'na': ('narrow lines', '#00B5F7', 11),
-        'br': ('broad lines', '#22FFA7', 13),
-        'abs': ('absorption lines', '#DA16FF', 15),
+        'na': ('Narrow lines', '#00B5F7', 11),
+        'br': ('Broad lines', '#22FFA7', 13),
+        'abs': ('Absorption lines', '#DA16FF', 15),
     }
 
+    line_centers = set()
     def add_line(line):
+        line_centers.add(line.center)
         if line.is_combined:
             for child in line.children:
                 add_line(child)
             return
-        if (line.prefix == '') or (not line.name in mlstore.comps):
+        if (line.prefix == '') or (not line.name in result.components):
             return
 
         legendgroup, color, legendrank = line_params[line.prefix.lower()]
-        fig.add_trace(go.Scatter(x=wave, y=mlstore.comps[line.name], mode='lines', line=go.scatter.Line(color=color, width=1), name=line.name, legendgroup=legendgroup, legendgrouptitle_text=legendgroup, legendrank=legendrank), row=1, col=1)
+        fig.add_trace(go.Scatter(x=wave, y=result.components[line.name], mode='lines', line=go.scatter.Line(color=color, width=1), name=line.name, legendgroup=legendgroup, legendgrouptitle_text=legendgroup, legendrank=legendrank), row=1, col=1)
 
-    for line in mlstore.ctx.line_list:
+    for line in result.ctx.line_list:
         add_line(line)
 
     fig.add_hline(y=0.0, line=dict(color='gray', width=2), row=1, col=1)
 
     # Residuals
-    fig.add_trace(go.Scatter(x=wave, y=mlstore.meta_comps.resid, mode='lines', line=go.scatter.Line(color='white', width=1), name='Residuals', showlegend=False), row=2, col=1)
-    fig.add_trace(go.Scatter(x=wave, y=mlstore.meta_comps.noise, mode='lines', line=go.scatter.Line(color='#FE00CE', width=1), name='Noise', showlegend=False), row=2, col=1)
+    fig.add_trace(go.Scatter(x=wave, y=resid, mode='lines', line=go.scatter.Line(color=data_color, width=1), name='Residuals', showlegend=False), row=2, col=1)
+    fig.add_trace(go.Scatter(x=wave, y=noise, mode='lines', line=go.scatter.Line(color='#FE00CE', width=1), name='Noise', showlegend=False), row=2, col=1)
 
     fig.update_layout(
         autosize=False,
@@ -419,7 +432,7 @@ def plotly_best_fit(mlstore):
             t=100,
             pad=1
         ),
-        title= mlstore.ctx.source.name,
+        title= result.ctx.source.name,
         font_family='Times New Roman',
         font_size=16,
         font_color='white',
@@ -440,7 +453,11 @@ def plotly_best_fit(mlstore):
                      gridwidth=1, gridcolor='#222A2A', zerolinewidth=2, zerolinecolor='#222A2A', row=2, col=1)
 
     fig.update_xaxes(matches='x')
-    fig.write_html(mlstore.ctx.source.outdir.joinpath('%s_bestfit.html' % mlstore.ctx.source.name), include_mathjax='cdn')
+
+    if not outdir is None:
+        fig.write_html(outdir.joinpath('best_fit_model.html'), include_mathjax='cdn')
+    else:
+        return fig
 
 
 def posterior_plot(key, mcmc_results, chain, burn_in, outdir):

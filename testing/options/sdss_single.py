@@ -4,6 +4,7 @@ io = {
     'overwrite': True,
     'log_level': 'debug',
     'nprocesses': 2,
+    'plots': {'plotly_html':True}
 }
 
 fit = {

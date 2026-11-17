@@ -256,6 +256,8 @@ class BadassResult:
     def make_result_plots(self):
         if self.ctx.cfg.io.plots.best_model:
             plotting.plot_best_model(self, outdir=self.outdir)
+        if self.ctx.cfg.io.plots.plotly_html:
+            plotting.plotly_best_fit(self, outdir=self.outdir)
 
 
 class FitReg(NamedTuple):
